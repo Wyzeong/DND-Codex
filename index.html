@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Codex de campagne</title>
+  <meta name="description" content="Fiches de personnages, grimoire et progression pour une campagne D&D 3.5">
+  <meta name="theme-color" content="#1f2a3a">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,600;0,700;1,400&family=Alegreya+SC:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/persos" class="brand">Codex de campagne</a>
+    <span id="status" class="status" aria-live="polite"></span>
+  </header>
+
+  <main id="app" tabindex="-1"></main>
+
+  <nav class="bottomnav" aria-label="Navigation principale">
+    <a href="#/persos" data-nav="persos"><span class="ico" aria-hidden="true">⚔</span>Personnages</a>
+    <a href="#/sorts" data-nav="sorts"><span class="ico" aria-hidden="true">✦</span>Grimoire</a>
+    <a href="#/donnees" data-nav="donnees"><span class="ico" aria-hidden="true">⇅</span>Partage</a>
+  </nav>
+
+  <input type="file" id="fileinput" accept="application/json,.json" hidden>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>

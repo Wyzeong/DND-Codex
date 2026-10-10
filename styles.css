@@ -1,0 +1,253 @@
+:root {
+  --cover: #1f2a3a;
+  --cover-ink: #e8e4d6;
+  --page: #ecede6;
+  --surface: #f7f7f2;
+  --ink: #22252b;
+  --muted: #5d6270;
+  --line: #c9cbc0;
+  --accent: #7a1e2c;
+  --brass: #a07c33;
+  --focus: #2f6db3;
+  --on-accent: #ffffff;
+
+  /* Couleurs des écoles de magie */
+  --abjuration: #3b6ea5;
+  --divination: #8a7a2e;
+  --enchantement: #a2457a;
+  --evocation: #b4462b;
+  --illusion: #6a4fa3;
+  --invocation: #2f7d6b;
+  --necromancie: #3d3d3d;
+  --transmutation: #8a5a2b;
+  --universel: #6b7280;
+
+  --radius-s: 4px;
+  --radius-m: 10px;
+  --font: "Alegreya", Georgia, "Times New Roman", serif;
+  --font-sc: "Alegreya SC", "Alegreya", Georgia, serif;
+
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --cover: #111722;
+    --cover-ink: #e3e1d8;
+    --page: #171c26;
+    --surface: #1f2633;
+    --ink: #e3e1d8;
+    --muted: #a3a8b4;
+    --line: #353d4d;
+    --accent: #d06878;
+    --brass: #d2ae62;
+    --focus: #79a8e6;
+    --on-accent: #171c26;
+    --necromancie: #9a9a9a;
+  }
+}
+*, *::before, *::after { box-sizing: inherit; }
+html { scroll-padding-top: env(safe-area-inset-top, 0px); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  padding-bottom: 5rem;
+}
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Barre du haut */
+.topbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--cover); color: var(--cover-ink);
+  padding: .65rem 1rem;
+  border-bottom: 3px solid var(--brass);
+}
+.brand { font-family: var(--font-sc); font-weight: 700; font-size: 1.2rem; color: inherit; text-decoration: none; letter-spacing: .02em; }
+.status { font-size: .85rem; opacity: 0; transition: opacity .3s; }
+.status.on { opacity: .85; }
+
+main { max-width: 880px; margin: 0 auto; padding: 1rem; outline: none; }
+
+/* Navigation du bas */
+.bottomnav {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+  display: flex; background: var(--cover);
+  border-top: 1px solid var(--brass);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.bottomnav a {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  padding: .45rem 0 .5rem; color: var(--cover-ink); text-decoration: none; font-size: .85rem; opacity: .7;
+}
+.bottomnav a.active { opacity: 1; box-shadow: inset 0 3px 0 var(--brass); }
+.bottomnav .ico { font-size: 1.2rem; line-height: 1.2; }
+
+/* Titres */
+h1, h2, h3 { font-family: var(--font-sc); font-weight: 700; line-height: 1.2; margin: 0; }
+h1 { font-size: 1.9rem; }
+h2 { font-size: 1.5rem; }
+h3 { font-size: 1.15rem; color: var(--accent); margin-bottom: .6rem; }
+.pagehead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .75rem; margin: .5rem 0 1rem; }
+.sub { color: var(--muted); margin: .15rem 0 0; }
+
+/* Sections */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+/* Boutons */
+.btn {
+  font: inherit; font-size: .95rem; font-weight: 600;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent);
+  border-radius: var(--radius-s); padding: .45rem .9rem; cursor: pointer;
+  text-decoration: none; display: inline-block;
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.danger { background: transparent; border-color: var(--line); color: var(--muted); }
+.btn.danger:hover { color: var(--accent); border-color: var(--accent); }
+.btns { display: flex; flex-wrap: wrap; gap: .5rem; }
+.icon {
+  font: inherit; background: none; border: 1px solid transparent; color: var(--muted);
+  cursor: pointer; border-radius: var(--radius-s); padding: .2rem .5rem; flex: none; align-self: flex-start;
+}
+.icon:hover { color: var(--accent); border-color: var(--line); }
+
+/* Champs */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .75rem 1rem; margin-bottom: .75rem; }
+.grid .span2 { grid-column: span 2; }
+@media (max-width: 420px) { .grid .span2 { grid-column: 1 / -1; } }
+.f { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.f > span { font-size: .85rem; color: var(--muted); }
+input, textarea, select {
+  font: inherit; color: var(--ink); background: transparent;
+  border: none; border-bottom: 1px solid var(--line);
+  padding: .3rem .1rem; width: 100%; min-width: 0; border-radius: 0;
+}
+textarea { border: 1px solid var(--line); border-radius: var(--radius-s); padding: .45rem .55rem; resize: vertical; line-height: 1.45; }
+select { border: 1px solid var(--line); border-radius: var(--radius-s); padding: .35rem .4rem; background: var(--surface); }
+input:focus, textarea:focus, select:focus { border-color: var(--accent); outline: none; box-shadow: 0 1px 0 var(--accent); }
+input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--accent); }
+
+/* Caractéristiques */
+.caracs { display: grid; grid-template-columns: repeat(6, 1fr); gap: .5rem; }
+@media (max-width: 560px) { .caracs { grid-template-columns: repeat(3, 1fr); } }
+.carac { border: 1px solid var(--line); border-radius: var(--radius-s); padding: .45rem; text-align: center; }
+.carac b { font-family: var(--font-sc); display: block; font-size: .95rem; }
+.carac input { text-align: center; font-size: 1.35rem; font-weight: 700; }
+.carac input.mod { font-size: 1rem; font-weight: 400; color: var(--muted); }
+
+/* Listes éditables */
+.list { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .6rem; }
+.row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; }
+.row input { flex: 1 1 140px; }
+.row input.s { flex: 0 1 80px; }
+.row.stack { flex-wrap: nowrap; align-items: flex-start; border-left: 3px solid var(--line); padding-left: .6rem; }
+.row.stack .stackfields { flex: 1; display: flex; flex-direction: column; gap: .35rem; }
+.row.stack .stackfields input { flex: none; font-weight: 600; }
+.empty { color: var(--muted); font-style: italic; margin: .25rem 0; }
+
+/* Onglets */
+.tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem; overflow-x: auto; }
+.tabs a { padding: .5rem .9rem; text-decoration: none; color: var(--muted); border-bottom: 3px solid transparent; white-space: nowrap; font-weight: 600; }
+.tabs a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Liste des personnages */
+.persos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+.perso {
+  display: block; text-decoration: none; color: inherit;
+  background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--cover);
+  border-radius: var(--radius-s); padding: .9rem 1rem;
+}
+.perso:hover { border-top-color: var(--brass); }
+.perso h2 { font-size: 1.3rem; }
+.perso p { margin: .2rem 0 0; color: var(--muted); }
+
+/* Grimoire : la couleur de l'école est l'information principale */
+.ecole-abjuration { --ec: var(--abjuration); }
+.ecole-divination { --ec: var(--divination); }
+.ecole-enchantement { --ec: var(--enchantement); }
+.ecole-evocation { --ec: var(--evocation); }
+.ecole-illusion { --ec: var(--illusion); }
+.ecole-invocation { --ec: var(--invocation); }
+.ecole-necromancie { --ec: var(--necromancie); }
+.ecole-transmutation { --ec: var(--transmutation); }
+.ecole-universel { --ec: var(--universel); }
+
+.filters { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: .5rem; margin-bottom: .75rem; }
+@media (max-width: 640px) { .filters { grid-template-columns: 1fr 1fr; } .filters .q { grid-column: 1 / -1; } }
+.filters input { border: 1px solid var(--line); border-radius: var(--radius-s); padding: .4rem .55rem; background: var(--surface); }
+.count { color: var(--muted); font-size: .9rem; margin: 0 0 .5rem; }
+
+.spells { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .4rem; }
+.spell {
+  display: flex; gap: .75rem; align-items: baseline; justify-content: space-between; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line); border-left: 6px solid var(--ec, var(--line));
+  border-radius: var(--radius-s); padding: .55rem .8rem; text-decoration: none; color: inherit;
+}
+.spell .nom { font-weight: 700; font-size: 1.05rem; }
+.spell .meta { color: var(--muted); font-size: .9rem; }
+.tag { display: inline-block; font-size: .8rem; font-weight: 600; color: var(--ec, var(--muted)); }
+.maison { font-size: .75rem; border: 1px solid var(--brass); color: var(--brass); border-radius: 99px; padding: 0 .45rem; margin-left: .35rem; vertical-align: middle; }
+
+.spellhead { border-left: 8px solid var(--ec); padding-left: .9rem; margin: .5rem 0 1rem; }
+.spellhead .ecole { color: var(--ec); font-weight: 700; margin: .2rem 0 0; }
+.stats { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; margin: 0 0 1rem; }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; }
+.desc p { margin: 0 0 .7rem; max-width: 70ch; }
+
+/* Sorts du personnage */
+.linked { display: flex; flex-direction: column; gap: .5rem; }
+.linked .item { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem; align-items: center; border-left: 6px solid var(--ec, var(--line)); padding: .35rem 0 .35rem .6rem; background: var(--page); border-radius: var(--radius-s); }
+.linked .item a { font-weight: 700; text-decoration: none; }
+.linked .item .meta { display: block; font-size: .85rem; color: var(--muted); font-weight: 400; }
+.linked .item select { width: auto; }
+.linked .item .notes { grid-column: 1 / -1; padding-right: .6rem; }
+.pick { display: flex; flex-direction: column; gap: .3rem; max-height: 320px; overflow-y: auto; margin-top: .5rem; }
+.pick button {
+  font: inherit; text-align: left; background: var(--page); border: 1px solid var(--line); border-left: 5px solid var(--ec);
+  border-radius: var(--radius-s); padding: .35rem .6rem; cursor: pointer; color: var(--ink);
+}
+.pick button:hover { border-color: var(--accent); }
+
+/* Progression : frise verticale */
+.levels { position: relative; padding-left: 2.6rem; }
+.levels::before { content: ""; position: absolute; left: 1.05rem; top: .5rem; bottom: .5rem; width: 2px; background: var(--line); }
+.level { position: relative; margin-bottom: .9rem; }
+.level .pip {
+  position: absolute; left: -2.6rem; top: .55rem; width: 2.1rem; height: 2.1rem; border-radius: 50%;
+  display: grid; place-items: center; font-family: var(--font-sc); font-weight: 700;
+  background: var(--surface); border: 2px solid var(--line); color: var(--muted);
+}
+.level.done .pip { background: var(--cover); border-color: var(--cover); color: var(--cover-ink); }
+.level.next .pip { border-color: var(--brass); color: var(--brass); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brass) 25%, transparent); }
+.level.next .card { border-color: var(--brass); }
+.level.done .card { opacity: .78; }
+.levelhead { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; flex-wrap: wrap; }
+.levelhead input[type="text"] { flex: 1 1 160px; font-weight: 700; }
+.levelhead label { display: flex; align-items: center; gap: .35rem; color: var(--muted); font-size: .9rem; }
+.nextbadge { font-size: .8rem; color: var(--brass); font-weight: 700; }
+.lvlgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .6rem; }
+
+/* Divers */
+.toast {
+  position: fixed; left: 50%; bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(1rem);
+  background: var(--cover); color: var(--cover-ink); padding: .55rem 1rem; border-radius: var(--radius-s);
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 20; max-width: 90vw;
+}
+.toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+.hint { color: var(--muted); font-size: .92rem; max-width: 70ch; }
+.intro { max-width: 60ch; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
