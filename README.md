@@ -1,10 +1,11 @@
-# Codex de campagne
+# Les Reliques de l'Âge Oublié : codex de campagne
 
 PWA de suivi de campagne D&D 3.5 : fiches de personnages, grimoire et progression prévisionnelle.
 Tout est stocké dans le navigateur de chaque joueur (localStorage). Le partage se fait par export/import de fichiers JSON.
 
 ## Fichiers
 - `index.html`, `styles.css`, `app.js` : l'application
+- `regles.js` : règles D&D 3.5 (races, classes, dons, compétences, sorts par jour) utilisées pour les calculs
 - `spells.json` : les 605 sorts du SRD 3.5 (Open Game License), descriptions résumées en français
 - `manifest.json`, `sw.js`, `icons/` : installation et fonctionnement hors ligne
 

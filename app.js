@@ -8,14 +8,6 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1;
 
-const CARACS = [
-  { k: 'for', l: 'FOR', n: 'Force' },
-  { k: 'dex', l: 'DEX', n: 'Dextérité' },
-  { k: 'con', l: 'CON', n: 'Constitution' },
-  { k: 'int', l: 'INT', n: 'Intelligence' },
-  { k: 'sag', l: 'SAG', n: 'Sagesse' },
-  { k: 'cha', l: 'CHA', n: 'Charisme' },
-];
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
   'Brd': 'Barde', 'Dru': 'Druide', 'Ens/Mag': 'Ensorceleur / Magicien',
@@ -114,26 +106,6 @@ async function initSorts() {
   }
 }
 
-/* ---------- Modèles ---------- */
-function nouveauPerso() {
-  return {
-    id: uid(), nom: 'Nouveau personnage', joueur: '', race: '', classes: '', niveau: '', xp: '',
-    alignement: '', divinite: '', taille: '', age: '', sexe: '', taillePoids: '', langues: '', apparence: '',
-    caracs: Object.fromEntries(CARACS.map(c => [c.k, { val: '', mod: '' }])),
-    pvMax: '', ca: '', caContact: '', caDepourvu: '', initiative: '', vitesse: '', bba: '', lutte: '',
-    vig: '', ref: '', vol: '', rm: '', rd: '', attaques: '',
-    competences: [], dons: [], capacites: [], equipement: [],
-    argent: { pp: '', po: '', pa: '', pc: '' }, notes: '',
-    sorts: [], progression: [], maj: Date.now(),
-  };
-}
-const LIST_TEMPLATES = {
-  competences: () => ({ nom: '', total: '', notes: '' }),
-  dons: () => ({ nom: '', description: '' }),
-  capacites: () => ({ nom: '', description: '' }),
-  equipement: () => ({ nom: '', qte: '', poids: '', notes: '' }),
-};
-
 function parseNiveaux(txt) {
   return String(txt || '').split(',').map(x => x.trim()).filter(Boolean).map(x => {
     const m = x.match(/^(.+?)\s+(\d+)$/);
@@ -150,16 +122,276 @@ const state = {
   filtres: { q: '', ecole: '', classe: '', niveau: '' },
   draft: null,           // sort en cours d'édition
   pickQ: '',
+  ouverts: new Set(),    // niveaux dépliés dans la progression
+  fermes: new Set(),     // niveaux repliés volontairement
+  imgType: null,
 };
+
+/* ---------- Visuels de la marque ---------- */
+const LOGO_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true">
+  <defs>
+    <linearGradient id="lg-bronze" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E2C690"/><stop offset=".55" stop-color="#B7935A"/><stop offset="1" stop-color="#7C6238"/></linearGradient>
+    <radialGradient id="lg-halo"><stop offset="0" stop-color="#9FD4F0" stop-opacity=".9"/><stop offset="1" stop-color="#5E9ED6" stop-opacity="0"/></radialGradient>
+  </defs>
+  <circle cx="50" cy="50" r="38" fill="none" stroke="url(#lg-bronze)" stroke-width="2"/>
+  <circle cx="50" cy="50" r="32" fill="none" stroke="#B7935A" stroke-width=".7" opacity=".7"/>
+  <g fill="url(#lg-bronze)">
+    <path d="M50 3 L54.5 45.5 L50 50 L45.5 45.5Z"/><path d="M50 97 L54.5 54.5 L50 50 L45.5 54.5Z"/>
+    <path d="M3 50 L45.5 45.5 L50 50 L45.5 54.5Z"/><path d="M97 50 L54.5 45.5 L50 50 L54.5 54.5Z"/>
+    <path d="M24 24 L48 46 L50 50 L46 48Z" opacity=".75"/><path d="M76 76 L52 54 L50 50 L54 52Z" opacity=".75"/>
+    <path d="M76 24 L54 48 L50 50 L52 46Z" opacity=".75"/><path d="M24 76 L46 52 L50 50 L48 54Z" opacity=".75"/>
+  </g>
+  <path d="M50 3 L50 97 M3 50 L97 50" stroke="#0B1E2D" stroke-width=".6" opacity=".6"/>
+  <line x1="22" y1="84" x2="67" y2="33" stroke="#6B4E2C" stroke-width="4.2" stroke-linecap="round"/>
+  <line x1="22" y1="84" x2="67" y2="33" stroke="#B7935A" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="3 5"/>
+  <circle cx="71" cy="28" r="13" fill="url(#lg-halo)"/>
+  <path d="M71 13 L77 27 L71 42 L65 27Z" fill="#5E9ED6" transform="rotate(41 71 27.5)"/>
+  <path d="M71 13 L77 27 L71 27Z" fill="#CFEAF8" transform="rotate(41 71 27.5)"/>
+</svg>`;
+const SILHOUETTE_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="36" r="17" fill="currentColor"/><path d="M14 98c2-24 17-36 36-36s34 12 36 36Z" fill="currentColor"/></svg>`;
+
+/* ---------- Modèles ---------- */
+function nouveauPerso() {
+  return {
+    schema: 2, id: uid(), nom: 'Nouveau personnage', joueur: '',
+    race: '', raceAutre: '', alignement: '', divinite: '', diviniteAutre: '', sexe: '', age: '', taillePoids: '',
+    langues: [], languesAutres: '', apparence: '', portrait: '', embleme: '',
+    caracs: Object.fromEntries(R.CARACS.map(c => [c.k, { val: '' }])),
+    pvMax: '', ajust: {}, comp: {}, attaques: '',
+    donsSupp: [], dons: [], capacites: [], equipement: [],
+    argent: { pp: '', po: '', pa: '', pc: '' }, notes: '',
+    sorts: [], progression: [], maj: Date.now(),
+  };
+}
+const LIST_TEMPLATES = {
+  dons: () => ({ nom: '', description: '' }),
+  capacites: () => ({ nom: '', description: '' }),
+  equipement: () => ({ nom: '', qte: '', poids: '', notes: '' }),
+};
+function nouveauNiveau(n) {
+  return { niveau: n, classe: '', atteint: false, don: '', donRace: '', donsBonus: [], augment: '', pv: '', choix: {}, notes: '' };
+}
+
+/* Reprend les fiches créées avec la première version */
+function migrer(p) {
+  if (p.schema >= 2) return;
+  const trouve = (liste, v) => liste.find(x => norm(x) === norm(v));
+  const notes = [];
+  if (p.race && !R.RACES[p.race]) {
+    const id = Object.keys(R.RACES).find(k => norm(R.RACES[k].nom) === norm(p.race));
+    if (id) p.race = id; else { p.raceAutre = p.race; p.race = 'autre'; }
+  }
+  if (p.alignement && !R.ALIGNEMENTS.includes(p.alignement)) {
+    const a = trouve(R.ALIGNEMENTS, p.alignement);
+    if (a) p.alignement = a; else { notes.push('Alignement : ' + p.alignement); p.alignement = ''; }
+  }
+  if (p.divinite && !R.DIVINITES.includes(p.divinite)) {
+    const d = trouve(R.DIVINITES, p.divinite);
+    if (d) p.divinite = d; else { p.diviniteAutre = p.divinite; p.divinite = 'Autre'; }
+  }
+  if (p.sexe && !R.SEXES.includes(p.sexe)) {
+    const sx = trouve(R.SEXES, p.sexe) || ({ m: 'Masculin', h: 'Masculin', f: 'Féminin' })[norm(p.sexe)[0]];
+    p.sexe = sx || '';
+  }
+  if (typeof p.langues === 'string') {
+    const brut = p.langues.split(/[,;/]+/).map(x => x.trim()).filter(Boolean);
+    p.langues = brut.map(l => trouve(R.LANGUES, l)).filter(Boolean);
+    p.languesAutres = brut.filter(l => !trouve(R.LANGUES, l)).join(', ');
+  }
+  if ((p.competences || []).some(c => c.nom)) {
+    notes.push('Compétences (ancienne saisie) : ' + p.competences.filter(c => c.nom).map(c => `${c.nom} ${c.total}`.trim()).join(', '));
+  }
+  if (p.classes) notes.push('Classes (ancienne saisie) : ' + p.classes);
+  for (const l of p.progression || []) {
+    const id = Object.keys(R.CLASSES).find(k => norm(l.classe || '').startsWith(norm(R.CLASSES[k].nom)));
+    const vieux = [['Classe', id ? '' : l.classe], ['Capacités', l.capacites], ['Dons', l.dons], ['Compétences', l.competences], ['Sorts', l.sorts], ['Caractéristiques', l.carac]]
+      .filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${k} : ${v}`);
+    Object.assign(l, { classe: id || '', don: '', donRace: '', donsBonus: [], augment: '', pv: l.pv || '', choix: l.choix || {} });
+    delete l.capacites; delete l.dons; delete l.competences; delete l.sorts; delete l.carac;
+    if (vieux.length) l.notes = [vieux.join('\n'), l.notes].filter(Boolean).join('\n');
+  }
+  if (notes.length) p.notes = [p.notes, notes.join('\n')].filter(Boolean).join('\n\n');
+  delete p.competences; delete p.classes; delete p.niveau; delete p.xp; delete p.taille;
+  p.ajust = p.ajust || {}; p.comp = p.comp || {}; p.donsSupp = p.donsSupp || [];
+  p.langues = Array.isArray(p.langues) ? p.langues : [];
+  p.schema = 2;
+}
+
+/* ---------- Moteur de calcul ---------- */
+const niveauActuel = p => (p.progression || []).filter(l => l.atteint && R.CLASSES[l.classe]).length;
+const num = v => (v === '' || v == null || isNaN(Number(v))) ? 0 : Number(v);
+
+/* État du personnage au niveau n.
+   prevus = true : compte aussi les niveaux planifiés (pour la progression).
+   sauf = { niveau, champ } : ignore le don d'un emplacement (vérification de ses propres prérequis). */
+function etat(p, n, prevus = false, sauf = null) {
+  const tous = [...(p.progression || [])].sort((a, b) => a.niveau - b.niveau);
+  const lv = tous.filter(l => R.CLASSES[l.classe] && (prevus || l.atteint)).slice(0, n ?? Infinity);
+  const race = R.RACES[p.race] || null;
+  const e = { niveau: lv.length, classes: {}, etapes: [], bba: 0, js: { vig: 0, ref: 0, vol: 0 }, dons: new Set(), donsListe: [], race, taille: race ? race.taille : 'M' };
+  e.car = {};
+  for (const c of R.CARACS) e.car[c.k] = p.caracs?.[c.k]?.val === '' || p.caracs?.[c.k]?.val == null ? null : num(p.caracs[c.k].val);
+  const ajoute = (id, source, niveau, libre = false) => {
+    if (!id || !R.DON[id]) return;
+    e.dons.add(id);
+    e.donsListe.push({ id, source, niveau, libre });
+  };
+  for (const l of lv) {
+    const cl = R.CLASSES[l.classe];
+    const k = (e.classes[l.classe] || 0) + 1;
+    e.classes[l.classe] = k;
+    e.etapes.push({ l, cl, id: l.classe, k });
+    if (prevus && !l.atteint && l.augment && e.car[l.augment] != null) e.car[l.augment] += 1;
+    const ignore = champ => sauf && sauf.niveau === l.niveau && sauf.champ === champ;
+    if (!ignore('don')) ajoute(l.don, `Niveau ${l.niveau}`, l.niveau);
+    if (!ignore('donRace')) ajoute(l.donRace, `${race ? race.nom : 'Race'} (don supplémentaire)`, l.niveau);
+    (l.donsBonus || []).forEach((d, i) => { if (!ignore('bonus' + i)) ajoute(d, `${cl.nom} ${k} (don supplémentaire)`, l.niveau, typeof cl.donsBonusListe === 'function'); });
+    for (const d of cl.donsAuto?.[k] || []) ajoute(d, `${cl.nom} ${k} (automatique)`, l.niveau, true);
+    if (cl.donsStyle) {
+      const style = (tous.find(x => x.classe === l.classe && x.choix?.style) || {}).choix?.style;
+      const d = style && cl.donsStyle[style]?.[k];
+      if (d) ajoute(d, `${cl.nom} ${k} (style de combat)`, l.niveau, true);
+    }
+  }
+  for (const d of p.donsSupp || []) ajoute(d, 'Accordé hors progression', 0);
+  e.mods = Object.fromEntries(R.CARACS.map(c => [c.k, e.car[c.k] == null ? 0 : R.mod(e.car[c.k])]));
+  for (const [id, k] of Object.entries(e.classes)) {
+    const cl = R.CLASSES[id];
+    e.bba += R.bbaClasse(cl.bba, k);
+    for (const s of ['vig', 'ref', 'vol']) e.js[s] += R.jsClasse(cl.js[s], k);
+  }
+  e.lanceur = Math.max(0, ...Object.entries(e.classes).map(([id, k]) => {
+    const lc = R.CLASSES[id].lanceur;
+    if (!lc) return 0;
+    return lc.debut ? (k >= lc.debut ? Math.floor(k / 2) : 0) : k;
+  }));
+  return e;
+}
+
+function prerequis(don, e, p) {
+  const q = don.p, manque = [], txt = [];
+  for (const [k, v] of Object.entries(q.car || {})) {
+    const c = R.CARACS.find(x => x.k === k);
+    txt.push(`${c.n} ${v}`);
+    if ((e.car[k] ?? 0) < v) manque.push(`${c.n} ${v}`);
+  }
+  if (q.bba) { txt.push(`BBA +${q.bba}`); if (e.bba < q.bba) manque.push(`BBA +${q.bba}`); }
+  for (const d of q.dons || []) { txt.push(R.DON[d].nom); if (!e.dons.has(d)) manque.push(R.DON[d].nom); }
+  for (const [c, v] of Object.entries(q.classe || {})) { const t = `${R.CLASSES[c].nom} niveau ${v}`; txt.push(t); if ((e.classes[c] || 0) < v) manque.push(t); }
+  if (q.lanceur) { const t = `Niveau de lanceur ${q.lanceur}`; txt.push(t); if (e.lanceur < q.lanceur) manque.push(t); }
+  if (q.niveau) { const t = `Niveau ${q.niveau}`; txt.push(t); if (e.niveau < q.niveau) manque.push(t); }
+  if (q.renvoi) { txt.push('Pouvoir de renvoi'); if (!e.classes.pretre && (e.classes.paladin || 0) < 4) manque.push('Pouvoir de renvoi'); }
+  for (const [c, v] of Object.entries(q.rang || {})) {
+    const nom = R.COMPETENCES.find(x => x.id === c).nom;
+    txt.push(`${nom} ${v} rang`);
+    if (num(p.comp?.[c]?.rangs) < v) manque.push(`${nom} ${v} rang`);
+  }
+  return { ok: !manque.length, manque, txt: txt.join(', ') || 'Aucun' };
+}
+
+function valeursClasse(id, k, e) {
+  return k > 0 ? R.CLASSES[id].valeurs(k, e).filter(([, v]) => v != null && v !== '') : [];
+}
+
+function sortsParJour(id, k, e) {
+  const lc = R.CLASSES[id].lanceur;
+  if (!lc) return null;
+  const ligne = lc.parJour[k];
+  if (ligne === undefined || ligne === '') return null;
+  const base = ligne.split(' ').map(Number);
+  const debut = lc.debut ? 1 : 0;
+  const m = e.mods[lc.car];
+  const parJour = base.map((v, i) => {
+    const niv = i + debut;
+    const bonus = R.sortsBonus(m, niv);
+    return { niv, txt: `${v + bonus}${lc.domaine && niv > 0 ? ' +1' : ''}` };
+  });
+  const connus = lc.connus ? lc.connus[k].split(' ').map((v, i) => ({ niv: i, txt: v })) : null;
+  return { parJour, connus, lc };
+}
+
+const BONUS_DONS_COMP = {
+  acrobate: ['saut', 'acrobaties'], agilite: ['equilibre', 'evasion'], vigilance: ['perception', 'detection'],
+  'affinite-animaux': ['dressage', 'equitation'], athletisme: ['escalade', 'natation'], fourberie: ['deguisement', 'contrefacon'],
+  'doigts-agiles': ['escamotage', 'maitrise-cordes'], assidu: ['estimation', 'decryptage'], 'fin-limier': ['renseignements', 'fouille'],
+  'affinite-magique': ['art-magie', 'utilisation-objets'], negociation: ['diplomatie', 'psychologie'], 'doigts-de-fee': ['desamorcage', 'crochetage'],
+  persuasion: ['bluff', 'intimidation'], autonome: ['premiers-secours', 'survie'], discret: ['discretion', 'deplacement-silencieux'],
+};
+function bonusComp(id, e) {
+  let b = e.race?.comp?.[id] || 0;
+  for (const [d, l] of Object.entries(BONUS_DONS_COMP)) if (e.dons.has(d) && l.includes(id)) b += 2;
+  if (e.classes.druide && (id === 'conn-nature' || id === 'survie')) b += 2;
+  if (id === 'discretion' && e.taille === 'P') b += 4;
+  return b;
+}
+const compDeClasse = e => new Set(Object.keys(e.classes).flatMap(id => R.CLASSES[id].comp));
+
+function pointsComp(p, e) {
+  let total = 0;
+  e.etapes.forEach((s, i) => {
+    let pts = Math.max(1, s.cl.pc + e.mods.int);
+    if (e.race?.pcBonus) pts += 1;
+    total += i === 0 ? pts * 4 : pts;
+  });
+  return total;
+}
+
+/* Valeurs calculées pour la fiche */
+function stats(p, e) {
+  const a = p.ajust || {}, t = R.TAILLES[e.taille] || R.TAILLES.M;
+  const moine = e.classes.moine || 0;
+  const js = { ...e.js };
+  js.vig += e.mods.con + (e.dons.has('vigueur-surhumaine') ? 2 : 0);
+  js.ref += e.mods.dex + (e.dons.has('reflexes-surhumains') ? 2 : 0);
+  js.vol += e.mods.sag + (e.dons.has('volonte-fer') ? 2 : 0);
+  const notesJs = [];
+  if (p.race === 'halfelin') { js.vig++; js.ref++; js.vol++; notesJs.push('+1 halfelin inclus'); }
+  if ((e.classes.paladin || 0) >= 2) { js.vig += e.mods.cha; js.ref += e.mods.cha; js.vol += e.mods.cha; notesJs.push('Grâce divine incluse'); }
+  for (const s of ['vig', 'ref', 'vol']) js[s] += num(a[s]);
+  const bonusMoine = moine ? Math.max(0, e.mods.sag) + Math.floor(moine / 5) : 0;
+  const armure = num(a.armure), bouclier = num(a.bouclier), nat = num(a.naturelle), parade = num(a.parade), div = num(a.caDivers);
+  const ca = 10 + e.mods.dex + t.ca + armure + bouclier + nat + parade + div + bonusMoine;
+  const contact = 10 + e.mods.dex + t.ca + parade + div + bonusMoine;
+  const esquiveInst = (e.classes.barbare || 0) >= 2 || (e.classes.roublard || 0) >= 4;
+  const depourvu = esquiveInst ? ca : ca - Math.max(0, e.mods.dex);
+  let vitesse = e.race ? e.race.vitesse : 9;
+  const notesVit = [];
+  if (moine >= 3) { vitesse += 3 * Math.floor(moine / 3); notesVit.push('déplacement accéléré du moine inclus (sans armure)'); }
+  if (e.classes.barbare) { vitesse += 3; notesVit.push('déplacement accéléré du barbare inclus'); }
+  vitesse += num(a.vitesse);
+  const bba = e.bba + num(a.bba);
+  const pvDes = e.etapes.map(s => num(s.l.pv));
+  const pvCalc = pvDes.reduce((x, y) => x + y, 0) + e.niveau * e.mods.con + (e.dons.has('robustesse') ? 3 : 0);
+  const pvComplets = e.etapes.length > 0 && e.etapes.every(s => s.l.pv !== '' && s.l.pv != null);
+  const rm = moine >= 13 ? 10 + moine : null;
+  const rd = [];
+  if ((e.classes.barbare || 0) >= 7) rd.push((1 + Math.floor((e.classes.barbare - 7) / 3)) + '/—');
+  if (moine >= 20) rd.push('10/magie');
+  return {
+    bba, att: R.attaques(Math.max(0, bba)),
+    cac: bba + e.mods.for + t.ca, dist: bba + e.mods.dex + t.ca, lutte: bba + e.mods.for + t.lutte,
+    js, notesJs, init: e.mods.dex + (e.dons.has('science-initiative') ? 4 : 0) + num(a.init),
+    ca, contact, depourvu, esquiveInst, vitesse, notesVit, pvCalc, pvComplets, rm, rd,
+  };
+}
 
 /* ---------- Champs ---------- */
 function fi(o, path, label, opt = {}) {
   return `<label class="f${opt.span ? ' span2' : ''}"><span>${esc(label)}</span>
-    <input type="text" data-bind="${path}" value="${esc(getP(o, path))}" placeholder="${esc(opt.ph || '')}"${opt.num ? ' inputmode="text"' : ''}></label>`;
+    <input type="${opt.type || 'text'}" data-bind="${path}" value="${esc(getP(o, path))}" placeholder="${esc(opt.ph || '')}"${opt.recalc ? ' data-recalc' : ''}${opt.type === 'number' ? ' inputmode="numeric"' : ''}></label>`;
 }
 function ta(o, path, label, opt = {}) {
   return `<label class="f"><span>${esc(label)}</span>
     <textarea data-bind="${path}" rows="${opt.rows || 3}" placeholder="${esc(opt.ph || '')}">${esc(getP(o, path))}</textarea></label>`;
+}
+function sel(o, path, label, options, opt = {}) {
+  const cur = getP(o, path) ?? '';
+  const opts = options.map(x => Array.isArray(x) ? x : [x, x]);
+  return `<label class="f${opt.span ? ' span2' : ''}"><span>${esc(label)}</span>
+    <select data-bind="${path}" data-rerender>
+      <option value="">${esc(opt.vide || '— Choisir —')}</option>
+      ${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+    </select></label>`;
 }
 function liste(o, key, fields, addLabel) {
   const items = o[key] || [];
@@ -177,27 +409,43 @@ function liste(o, key, fields, addLabel) {
   return `<div class="list">${rows || '<p class="empty">Aucune entrée.</p>'}</div>
     <button class="btn ghost" data-action="add-item" data-list="${key}">+ ${esc(addLabel)}</button>`;
 }
+const classesTxt = e => Object.entries(e.classes).map(([id, k]) => `${R.CLASSES[id].nom} ${k}`).join(' / ');
+const raceNom = p => p.race === 'autre' ? (p.raceAutre || 'Autre race') : (R.RACES[p.race]?.nom || '');
 
 /* ---------- Pages ---------- */
 function pagePersos() {
   const ps = [...db.personnages].sort(byNom);
-  const cards = ps.map(p => `
-    <a class="perso" href="#/perso/${p.id}/fiche">
-      <h2>${esc(p.nom || 'Sans nom')}</h2>
-      <p>${esc([p.race, p.classes].filter(Boolean).join(', ') || 'Race et classe à renseigner')}</p>
-      <p>${p.joueur ? 'Joué par ' + esc(p.joueur) : ''}</p>
-    </a>`).join('');
+  const bannieres = ps.map(p => {
+    const e = etat(p);
+    return `
+    <a class="banniere" href="#/perso/${p.id}/fiche" aria-label="${esc(p.nom || 'Sans nom')}">
+      <div class="banniere-in">
+        <div class="banniere-img">${p.portrait ? `<img src="${p.portrait}" alt="">` : `<div class="silhouette">${SILHOUETTE_SVG}</div>`}</div>
+        <h2>${esc(p.nom || 'Sans nom')}</h2>
+        <p>${esc([raceNom(p), classesTxt(e)].filter(Boolean).join(', ') || 'À compléter')}</p>
+        ${p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
+        ${p.embleme ? `<img class="embleme-banniere" src="${p.embleme}" alt="">` : '<span class="losange" aria-hidden="true"></span>'}
+      </div>
+    </a>`;
+  }).join('');
   return `
+    <header class="hero">
+      ${LOGO_SVG}
+      <h1>Les Reliques<br>de l'Âge Oublié</h1>
+      <p class="campagne">CAMPAGNE D&amp;D 3.5</p>
+      <p class="devise">Il existe encore des secrets que le monde a oubliés…</p>
+    </header>
+    <div class="ornement" aria-hidden="true"><span></span></div>
     <div class="pagehead">
-      <div><h1>Personnages</h1><p class="sub">La troupe de la campagne</p></div>
+      <div><h1>Personnages</h1><p class="sub">La compagnie</p></div>
       <div class="btns">
         <button class="btn" data-action="new-perso">Créer un personnage</button>
         <button class="btn ghost" data-action="import">Importer</button>
       </div>
     </div>
-    ${cards ? `<div class="persos">${cards}</div>` : `
+    ${bannieres ? `<div class="persos">${bannieres}</div>` : `
       <div class="card intro">
-        <h3>Aucun personnage pour l'instant</h3>
+        <h3>La compagnie est vide</h3>
         <p>Crée ta fiche, ou importe celle qu'un autre joueur t'a envoyée (fichier .json).</p>
       </div>`}`;
 }
@@ -207,69 +455,117 @@ function pagePerso(id, tab) {
   if (!p) return `<p>Personnage introuvable. <a href="#/persos">Retour à la liste</a></p>`;
   state.ctx = p;
   tab = tab || 'fiche';
+  const e = etat(p);
   const tabs = [['fiche', 'Fiche'], ['sorts', 'Sorts'], ['progression', 'Progression']]
     .map(([k, l]) => `<a href="#/perso/${p.id}/${k}" class="${tab === k ? 'active' : ''}">${l}</a>`).join('');
-  const body = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : ongletFiche(p);
+  const body = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : ongletFiche(p, e);
   return `
     <div class="pagehead">
-      <div><h1 id="ptitle">${esc(p.nom || 'Sans nom')}</h1>
-      <p class="sub">${p.joueur ? 'Joué par ' + esc(p.joueur) : 'Joueur à renseigner'}</p></div>
+      <div class="titre-perso">
+        <div class="avatar">${p.portrait ? `<img src="${p.portrait}" alt="Portrait">` : '<span class="vide"></span>'}${p.embleme ? `<img class="embleme-avatar" src="${p.embleme}" alt="Emblème">` : ''}</div>
+        <div><h1 id="ptitle">${esc(p.nom || 'Sans nom')}</h1>
+        <p class="sub">${esc([raceNom(p), classesTxt(e) || 'aucun niveau atteint'].filter(Boolean).join(', '))}${p.joueur ? ', joué par ' + esc(p.joueur) : ''}</p></div>
+      </div>
       <div class="btns">
         <button class="btn ghost" data-action="export-perso">Exporter la fiche</button>
         <button class="btn danger" data-action="del-perso">Supprimer</button>
       </div>
     </div>
+    ${recap(p, e)}
     <nav class="tabs" aria-label="Sections du personnage">${tabs}</nav>
     ${body}`;
 }
 
-function ongletFiche(p) {
+function recap(p, e) {
+  if (!e.niveau && !e.race) return '';
+  const s = stats(p, e);
+  const pv = p.pvMax !== '' && p.pvMax != null ? p.pvMax : (s.pvComplets ? s.pvCalc : '—');
+  return `<div class="recap"><span>PV<b>${esc(pv)}</b></span><span>CA<b>${s.ca}</b></span><span>Initiative<b>${R.signe(s.init)}</b></span><span>Vitesse<b>${s.vitesse} m</b></span><span>BBA<b>${R.attTxt(s.att)}</b></span></div>`;
+}
+
+function blocImages(p) {
+  const img = (type, label, cls) => {
+    const src = p[type];
+    return `<div class="image-bloc ${cls}">
+      <button class="image-cadre" data-action="img-choisir" data-type="${type}" aria-label="${src ? 'Changer' : 'Ajouter'} : ${label}">
+        ${src ? `<img src="${src}" alt="${label}">` : `<span>${type === 'portrait' ? 'Ajouter un portrait' : 'Ajouter un emblème'}</span>`}
+      </button>
+      ${src ? `<button class="lien" data-action="img-retirer" data-type="${type}">Retirer</button>` : ''}
+    </div>`;
+  };
+  return `<div class="images">${img('portrait', 'Portrait', 'portrait')}${img('embleme', 'Emblème', 'embleme')}</div>`;
+}
+
+function ongletFiche(p, e) {
+  const s = stats(p, e);
+  const race = e.race;
+  const raceOpts = [...Object.entries(R.RACES).map(([k, r]) => [k, r.nom]), ['autre', 'Autre race (campagne)']];
+  const nivTxt = e.niveau ? `Niveau ${e.niveau} : ${classesTxt(e)}` : 'Aucun niveau atteint. Ajoute et coche tes niveaux dans l\'onglet Progression.';
+  const stat = (label, val, note) => `<div class="stat"><span>${label}</span><b>${val}</b>${note ? `<small>${note}</small>` : ''}</div>`;
+  const aj = (path, label) => `<label class="aj"><span>${label}</span><input type="text" inputmode="numeric" data-bind="ajust.${path}" data-recalc value="${esc(getP(p, 'ajust.' + path))}" placeholder="0"></label>`;
+  const valsClasses = Object.entries(e.classes).map(([id, k]) => ({ id, k, vals: valeursClasse(id, k, e) })).filter(x => x.vals.length);
+  const deluge = valsClasses.find(x => x.id === 'moine')?.vals.find(v => v[0] === 'Déluge de coups');
   return `
-  <section class="card"><h3>Identité</h3>
-    <div class="grid">
-      ${fi(p, 'nom', 'Nom', { span: 1 })}${fi(p, 'joueur', 'Joueur')}
-      ${fi(p, 'race', 'Race')}${fi(p, 'classes', 'Classe(s) et niveaux', { ph: 'Moine 5 / Guerrier 1' })}
-      ${fi(p, 'niveau', 'Niveau global')}${fi(p, 'xp', 'Points d\'expérience')}
-      ${fi(p, 'alignement', 'Alignement')}${fi(p, 'divinite', 'Divinité')}
-      ${fi(p, 'taille', 'Catégorie de taille', { ph: 'M' })}${fi(p, 'age', 'Âge')}
-      ${fi(p, 'sexe', 'Sexe')}${fi(p, 'taillePoids', 'Taille et poids')}
-      ${fi(p, 'langues', 'Langues', { span: 1 })}
+  <section class="card">
+    <div class="identite">
+      ${blocImages(p)}
+      <div class="grid">
+        ${fi(p, 'nom', 'Nom')}${fi(p, 'joueur', 'Joueur')}
+        ${sel(p, 'race', 'Race', raceOpts)}
+        ${p.race === 'autre' ? fi(p, 'raceAutre', 'Nom de la race') : ''}
+        ${sel(p, 'alignement', 'Alignement', R.ALIGNEMENTS)}
+        ${sel(p, 'divinite', 'Divinité', [...R.DIVINITES, 'Autre'])}
+        ${p.divinite === 'Autre' ? fi(p, 'diviniteAutre', 'Nom de la divinité') : ''}
+        ${sel(p, 'sexe', 'Sexe', R.SEXES)}
+        ${fi(p, 'age', 'Âge', { type: 'number' })}${fi(p, 'taillePoids', 'Taille et poids', { ph: '1,30 m, 75 kg' })}
+      </div>
     </div>
+    <p class="niveau-ligne">${esc(nivTxt)}</p>
+    ${race ? `<p class="hint">Catégorie de taille ${R.TAILLES[race.taille].nom.toLowerCase()}, vitesse de base ${race.vitesse} m. Ajustements raciaux : ${race.ajust}. Classe de prédilection : ${race.classeFav}.</p>` : ''}
+    <div class="f"><span class="lbl">Langues</span>
+      <div class="chips">${R.LANGUES.map(l => `<button class="chip ${p.langues?.includes(l) ? 'on' : ''}" data-action="toggle-langue" data-l="${esc(l)}" aria-pressed="${p.langues?.includes(l) ? 'true' : 'false'}">${esc(l)}</button>`).join('')}</div>
+    </div>
+    ${fi(p, 'languesAutres', 'Autres langues (campagne)')}
     ${ta(p, 'apparence', 'Apparence et historique')}
   </section>
 
   <section class="card"><h3>Caractéristiques</h3>
     <div class="caracs">
-      ${CARACS.map(c => `<div class="carac"><b title="${c.n}">${c.l}</b>
-        <input type="text" inputmode="numeric" data-bind="caracs.${c.k}.val" value="${esc(getP(p, `caracs.${c.k}.val`))}" aria-label="${c.n}">
-        <input type="text" class="mod" data-bind="caracs.${c.k}.mod" value="${esc(getP(p, `caracs.${c.k}.mod`))}" placeholder="mod." aria-label="Modificateur de ${c.n}">
+      ${R.CARACS.map(c => `<div class="carac"><b title="${c.n}">${c.l}</b>
+        <input type="text" inputmode="numeric" data-bind="caracs.${c.k}.val" data-recalc value="${esc(getP(p, `caracs.${c.k}.val`))}" aria-label="${c.n}">
+        <span class="mod" id="mod-${c.k}">${e.car[c.k] == null ? '—' : R.signe(e.mods[c.k])}</span>
       </div>`).join('')}
     </div>
+    <p class="hint">Saisis les valeurs finales (ajustements raciaux compris). Les modificateurs se calculent seuls.</p>
   </section>
 
-  <section class="card"><h3>Défense et attaque</h3>
-    <div class="grid">
-      ${fi(p, 'pvMax', 'Points de vie max')}${fi(p, 'ca', 'Classe d\'armure')}
-      ${fi(p, 'caContact', 'CA contact')}${fi(p, 'caDepourvu', 'CA pris au dépourvu')}
-      ${fi(p, 'initiative', 'Initiative')}${fi(p, 'vitesse', 'Vitesse', { ph: '9 m' })}
-      ${fi(p, 'bba', 'Bonus de base à l\'attaque')}${fi(p, 'lutte', 'Lutte')}
-      ${fi(p, 'vig', 'Vigueur')}${fi(p, 'ref', 'Réflexes')}${fi(p, 'vol', 'Volonté')}
-      ${fi(p, 'rm', 'Résistance à la magie')}${fi(p, 'rd', 'Réduction des dégâts')}
+  <section class="card"><h3>Combat</h3>
+    <div class="stats">
+      ${stat('Classe d\'armure', s.ca)}${stat('Contact', s.contact)}${stat('Pris au dépourvu', s.depourvu, s.esquiveInst ? 'Esquive instinctive' : '')}
+      ${stat('Initiative', R.signe(s.init))}${stat('Vitesse', s.vitesse + ' m')}
+      ${stat('Vigueur', R.signe(s.js.vig))}${stat('Réflexes', R.signe(s.js.ref))}${stat('Volonté', R.signe(s.js.vol))}
+      ${stat('BBA', R.attTxt(s.att))}${stat('Corps à corps', R.signe(s.cac))}${stat('Distance', R.signe(s.dist))}${stat('Lutte', R.signe(s.lutte))}
+      ${s.rm ? stat('Résistance à la magie', s.rm) : ''}${s.rd.length ? stat('Réduction des dégâts', s.rd.join(', ')) : ''}
     </div>
-    ${ta(p, 'attaques', 'Attaques', { ph: 'Ex. : Coup à mains nues +6 (1d8+2)' })}
+    ${deluge ? `<p class="hint"><b>Déluge de coups :</b> ${esc(deluge[1])}</p>` : ''}
+    ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
+    <div class="grid" style="margin-top:.8rem">
+      ${fi(p, 'pvMax', 'Points de vie max', { type: 'number' })}
+      <div class="f"><span>D'après les dés notés en progression</span><b class="calc">${s.pvComplets ? s.pvCalc + ' PV' : 'Dés de vie incomplets'}</b></div>
+    </div>
+    <details class="ajustements"><summary>Équipement et bonus divers (armure, objets, sorts…)</summary>
+      <div class="aj-grid">
+        ${aj('armure', 'Armure')}${aj('bouclier', 'Bouclier')}${aj('naturelle', 'Armure naturelle')}${aj('parade', 'Parade')}${aj('caDivers', 'CA divers')}
+        ${aj('vig', 'Vigueur')}${aj('ref', 'Réflexes')}${aj('vol', 'Volonté')}${aj('init', 'Initiative')}${aj('bba', 'Attaque')}${aj('vitesse', 'Vitesse (m)')}
+      </div>
+      <p class="hint">Ces bonus s'ajoutent aux valeurs calculées. Le don Esquive n'est pas compté (il ne vise qu'un adversaire).</p>
+    </details>
+    ${ta(p, 'attaques', 'Armes et attaques', { ph: 'Ex. : Kama +5 (1d6+1, critique ×2)' })}
   </section>
 
-  <section class="card"><h3>Compétences</h3>
-    ${liste(p, 'competences', [{ k: 'nom', l: 'Compétence' }, { k: 'total', l: 'Total', w: 's' }, { k: 'notes', l: 'Notes' }], 'Ajouter une compétence')}
-  </section>
-
-  <section class="card"><h3>Dons</h3>
-    ${liste(p, 'dons', [{ k: 'nom', l: 'Nom du don' }, { k: 'description', l: 'Effet', type: 'area' }], 'Ajouter un don')}
-  </section>
-
-  <section class="card"><h3>Capacités spéciales</h3>
-    ${liste(p, 'capacites', [{ k: 'nom', l: 'Capacité (raciale, de classe…)' }, { k: 'description', l: 'Effet', type: 'area' }], 'Ajouter une capacité')}
-  </section>
+  ${ficheCompetences(p, e)}
+  ${ficheDons(p, e)}
+  ${ficheCapacites(p, e, valsClasses)}
 
   <section class="card"><h3>Équipement</h3>
     ${liste(p, 'equipement', [{ k: 'nom', l: 'Objet' }, { k: 'qte', l: 'Qté', w: 's' }, { k: 'poids', l: 'Poids', w: 's' }, { k: 'notes', l: 'Notes' }], 'Ajouter un objet')}
@@ -284,6 +580,114 @@ function ongletFiche(p) {
   </section>`;
 }
 
+function ficheCompetences(p, e) {
+  const deClasse = compDeClasse(e);
+  const dispo = pointsComp(p, e);
+  let depense = 0;
+  const rangsMax = e.niveau + 3;
+  const lignes = R.COMPETENCES.map(c => {
+    const v = p.comp?.[c.id] || {};
+    const rangs = num(v.rangs), classe = deClasse.has(c.id);
+    depense += classe ? rangs : rangs * 2;
+    const mod = c.car ? e.mods[c.car] : 0;
+    const bonus = bonusComp(c.id, e);
+    const total = rangs + mod + bonus + num(v.divers);
+    const inutilisable = c.formation && rangs === 0;
+    const spe = ['artisanat', 'profession', 'representation', 'langue'].includes(c.id);
+    return `<div class="comp ${classe ? 'de-classe' : ''} ${inutilisable ? 'formation' : ''}">
+      <div class="comp-nom">${classe ? '<span class="etoile" title="Compétence de classe">★</span>' : ''}${esc(c.nom)}${c.formation ? '<span class="formation-tag" title="Formation nécessaire">F</span>' : ''}
+        <small>${c.car ? R.CARACS.find(x => x.k === c.car).l + ' ' + R.signe(mod) : ''}${bonus ? `, bonus ${R.signe(bonus)}` : ''}</small>
+        ${spe ? `<input type="text" class="spe" data-bind="comp.${c.id}.spe" value="${esc(v.spe)}" placeholder="Spécialité">` : ''}
+      </div>
+      <input type="text" inputmode="decimal" data-bind="comp.${c.id}.rangs" data-recalc value="${esc(v.rangs)}" placeholder="0" aria-label="Rangs en ${esc(c.nom)}">
+      <input type="text" inputmode="numeric" data-bind="comp.${c.id}.divers" data-recalc value="${esc(v.divers)}" placeholder="0" aria-label="Bonus divers en ${esc(c.nom)}">
+      <b class="comp-total">${inutilisable ? '—' : R.signe(total)}</b>
+    </div>`;
+  }).join('');
+  return `<section class="card"><h3>Compétences</h3>
+    <p class="hint">Points : ${depense} dépensés sur ${dispo} disponibles${e.race?.pcBonus ? ' (bonus humain compris)' : ''}. Rangs max : ${rangsMax} pour une compétence de classe ★, ${String(rangsMax / 2).replace('.', ',')} sinon (une compétence hors classe coûte 2 points par rang). F = formation nécessaire.</p>
+    <div class="comp entete"><span>Compétence</span><span>Rangs</span><span>Divers</span><span>Total</span></div>
+    <div class="comps">${lignes}</div>
+  </section>`;
+}
+
+function carteDon(d, e, p, source, libre = false) {
+  const pr = libre ? { ok: true, txt: 'ne s\'appliquent pas (don accordé par la classe)' } : prerequis(d, e, p);
+  const calc = d.calc ? d.calc(e) : '';
+  return `<div class="don">
+    <div class="don-tete"><b>${esc(d.nom)}</b> <span class="type-don">${R.TYPES_DONS[d.type]}</span>${source ? `<span class="source">${esc(source)}</span>` : ''}</div>
+    <p>${esc(d.texte)}</p>
+    ${calc ? `<p class="calcul">${esc(calc)}</p>` : ''}
+    <p class="prereq ${pr.ok ? '' : 'ko'}">Prérequis : ${esc(pr.txt)}${pr.ok ? '' : ` (manque : ${esc(pr.manque.join(', '))})`}</p>
+  </div>`;
+}
+
+function ficheDons(p, e) {
+  const cartes = e.donsListe.map(x => carteDon(R.DON[x.id], e, p, x.source, x.libre)).join('');
+  const dejaSupp = new Set(p.donsSupp || []);
+  return `<section class="card"><h3>Dons</h3>
+    <div class="dons">${cartes || '<p class="empty">Aucun don pour l\'instant. Ils se choisissent niveau par niveau dans l\'onglet Progression.</p>'}</div>
+    <h4>Dons accordés hors progression</h4>
+    <p class="hint">Pour un don offert par le MJ, un objet ou un événement de campagne.</p>
+    <div class="row">
+      <select id="don-supp" aria-label="Don à ajouter">${optionsDons(e, p, '', d => !dejaSupp.has(d.id))}</select>
+      <button class="btn ghost" data-action="add-don-supp">Ajouter</button>
+    </div>
+    ${(p.donsSupp || []).length ? `<div class="btns" style="margin-top:.5rem">${p.donsSupp.map((d, i) => `<button class="chip on" data-action="del-don-supp" data-idx="${i}" aria-label="Retirer ${esc(R.DON[d]?.nom)}">${esc(R.DON[d]?.nom || d)} ✕</button>`).join('')}</div>` : ''}
+    <h4>Autres dons (hors règles officielles)</h4>
+    ${liste(p, 'dons', [{ k: 'nom', l: 'Nom du don' }, { k: 'description', l: 'Effet', type: 'area' }], 'Ajouter un don maison')}
+  </section>`;
+}
+
+function ficheCapacites(p, e, valsClasses) {
+  const race = e.race;
+  const raceBloc = race ? `<div class="cap-groupe"><h4>${esc(race.nom)}</h4>
+    <dl class="caps">${race.traits.map(([n, t]) => `<dt>${esc(n)}</dt><dd>${esc(t)}</dd>`).join('')}</dl></div>` : '';
+  const classes = Object.entries(e.classes).map(([id, k]) => {
+    const cl = R.CLASSES[id];
+    const vals = valsClasses.find(x => x.id === id)?.vals || [];
+    const apt = cl.aptitudes.filter(a => a.niv <= k);
+    const sp = sortsParJour(id, k, e);
+    return `<div class="cap-groupe"><h4>${esc(cl.nom)} ${k}</h4>
+      ${vals.length ? `<dl class="valeurs">${vals.map(([n, v]) => `<dt>${esc(n)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+      ${sp ? tableSorts(sp) : ''}
+      <dl class="caps">${apt.map(a => `<dt>${esc(a.nom)} <small>niv. ${a.niv}</small></dt><dd>${esc(a.texte)}</dd>`).join('')}</dl>
+      <p class="hint">Maîtrises : ${esc(cl.maitrises)}</p>
+    </div>`;
+  }).join('');
+  return `<section class="card"><h3>Capacités spéciales</h3>
+    ${raceBloc}${classes}
+    ${!race && !classes ? '<p class="empty">Choisis une race et coche tes niveaux pour voir les capacités apparaître ici.</p>' : ''}
+    <h4>Autres capacités</h4>
+    ${liste(p, 'capacites', [{ k: 'nom', l: 'Capacité' }, { k: 'description', l: 'Effet', type: 'area' }], 'Ajouter une capacité')}
+  </section>`;
+}
+
+function tableSorts(sp) {
+  const cell = l => l.map(x => `<td>${x.txt}</td>`).join('');
+  const tete = sp.parJour.map(x => `<th>${x.niv}</th>`).join('');
+  return `<div class="table-sorts"><table>
+    <caption>Sorts par jour (${esc(sp.lc.type)}, bonus de ${R.CARACS.find(c => c.k === sp.lc.car).n} compris${sp.lc.domaine ? ', +1 = sort de domaine' : ''})</caption>
+    <tr><th>Niveau de sort</th>${tete}</tr>
+    <tr><th>Par jour</th>${cell(sp.parJour)}</tr>
+    ${sp.connus ? `<tr><th>Connus</th>${cell(sp.connus.slice(0, sp.parJour.length))}</tr>` : ''}
+  </table></div>`;
+}
+
+function optionsDons(e, p, cur, filtre = () => true, liste = null, sansPrerequis = false) {
+  const dons = (liste ? liste.map(id => R.DON[id]) : R.DONS).filter(Boolean).filter(filtre);
+  const groupes = {};
+  for (const d of dons) (groupes[d.type] = groupes[d.type] || []).push(d);
+  const opt = d => {
+    const ok = sansPrerequis || prerequis(d, e, p).ok;
+    const deja = e.dons.has(d.id) && d.id !== cur && !['talent', 'arme-predilection', 'ecole-renforcee', 'maniement-arme-exotique', 'maniement-armes-guerre', 'science-critique', 'specialisation-martiale'].includes(d.id);
+    return `<option value="${d.id}" ${d.id === cur ? 'selected' : ''}>${esc(d.nom)}${deja ? ' (déjà acquis)' : ok ? '' : ' (prérequis manquants)'}</option>`;
+  };
+  return `<option value="">— Choisir un don —</option>` + Object.entries(groupes).map(([t, l]) =>
+    `<optgroup label="${R.TYPES_DONS[t]}">${l.sort((a, b) => a.nom.localeCompare(b.nom, 'fr')).map(opt).join('')}</optgroup>`).join('');
+}
+
+/* ---------- Sorts du personnage ---------- */
 function ongletSorts(p) {
   const items = (p.sorts || []).map((e, i) => ({ e, i, s: findSort(e.id) }))
     .sort((a, b) => String(a.s?.nom ?? '').localeCompare(String(b.s?.nom ?? ''), 'fr'));
@@ -295,7 +699,7 @@ function ongletSorts(p) {
         ${STATUTS.map(st => `<option ${e.statut === st ? 'selected' : ''}>${st}</option>`).join('')}
       </select>
       <button class="icon" data-action="del-sort-perso" data-idx="${i}" aria-label="Retirer le sort">✕</button>
-      <input type="text" class="notes" data-bind="sorts.${i}.notes" value="${esc(e.notes)}" placeholder="Notes (nombre par jour, préparé ×2…)">
+      <input type="text" class="notes" data-bind="sorts.${i}.notes" value="${esc(e.notes)}" placeholder="Notes (charges de la baguette, préparé ×2…)">
     </div>`).join('');
   return `
   <section class="card"><h3>Sorts du personnage</h3>
@@ -318,43 +722,127 @@ function pickResults(p) {
     <b>${esc(s.nom)}</b> <span class="meta">${esc(s.ecole)}, ${esc(niveauxTxt(s))}</span></button>`).join('');
 }
 
+/* ---------- Progression ---------- */
 function ongletProgression(p) {
   const lv = [...(p.progression || [])].map((l, i) => ({ l, i })).sort((a, b) => a.l.niveau - b.l.niveau);
-  const nextIdx = lv.find(x => !x.l.atteint)?.i;
-  const cards = lv.map(({ l, i }) => {
-    const cls = l.atteint ? 'done' : i === nextIdx ? 'next' : '';
-    const champ = (k, label, ph) => `<label class="f"><span>${label}</span>
-      <textarea data-bind="progression.${i}.${k}" rows="2" placeholder="${esc(ph)}">${esc(l[k])}</textarea></label>`;
-    return `
-    <div class="level ${cls}">
-      <div class="pip" aria-hidden="true">${l.niveau}</div>
-      <div class="card">
-        <div class="levelhead">
-          <b>Niveau ${l.niveau}</b>
-          ${i === nextIdx ? '<span class="nextbadge">Prochain niveau</span>' : ''}
-          <input type="text" data-bind="progression.${i}.classe" value="${esc(l.classe)}" placeholder="Classe prise à ce niveau" aria-label="Classe prise au niveau ${l.niveau}">
-          <label><input type="checkbox" data-bind="progression.${i}.atteint" data-rerender ${l.atteint ? 'checked' : ''}> Atteint</label>
-          <button class="icon" data-action="del-level" data-idx="${i}" aria-label="Supprimer le niveau ${l.niveau}">✕</button>
-        </div>
-        <div class="lvlgrid">
-          ${champ('capacites', 'Capacités de classe', 'Ex. : Déluge de coups, Esquive totale')}
-          ${champ('dons', 'Dons', 'Ex. : Science du croc-en-jambe')}
-          ${champ('competences', 'Compétences', 'Ex. : +1 Acrobaties, +1 Équilibre')}
-          ${champ('sorts', 'Sorts', 'Sorts appris ou nouveaux emplacements')}
-          ${champ('carac', 'Caractéristiques et PV', 'Ex. : +1 SAG, 1d8 PV')}
-          ${champ('notes', 'Notes', 'Prérequis à valider, objets à acheter…')}
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+  const prochain = lv.find(x => !x.l.atteint);
+  const actuel = niveauActuel(p);
+  const cartes = lv.map(({ l, i }) => carteNiveau(p, l, i, prochain && prochain.i === i)).join('');
   return `
+  <p class="hint">${actuel ? `Niveau actuel : ${actuel} (${esc(classesTxt(etat(p)))}).` : 'Aucun niveau atteint pour l\'instant.'} Pour chaque niveau, choisis la classe : tout ce qu'elle apporte s'affiche, avec les dons à sélectionner. Coche « Atteint » quand le MJ valide la montée de niveau.</p>
   <div class="btns" style="margin-bottom:1rem">
-    <button class="btn" data-action="gen-prog">Créer les niveaux jusqu'à…</button>
-    <button class="btn ghost" data-action="add-level">Ajouter un niveau</button>
+    <button class="btn" data-action="add-level">Ajouter le niveau suivant</button>
+    <button class="btn ghost" data-action="gen-prog">Préparer les niveaux jusqu'à…</button>
   </div>
-  ${cards ? `<div class="levels">${cards}</div>` : `
-    <div class="card intro"><h3>Aucun niveau prévu</h3>
-    <p>Prépare la feuille de route du personnage : pour chaque niveau, ce qu'il gagne et ce que tu comptes prendre. Coche « Atteint » au fil de la campagne.</p></div>`}`;
+  ${cartes ? `<div class="levels">${cartes}</div>` : `
+    <div class="card intro"><h3>Aucun niveau</h3>
+    <p>Ajoute le niveau 1 pour commencer. Si ton personnage est déjà au niveau 4, ajoute les quatre premiers niveaux et coche-les.</p></div>`}`;
+}
+
+function carteNiveau(p, l, i, estProchain) {
+  const n = l.niveau;
+  const cl = R.CLASSES[l.classe];
+  const cls = l.atteint ? 'done' : estProchain ? 'next' : '';
+  const ouvert = state.ouverts.has(n) || (estProchain && !state.fermes.has(n));
+  const avant = etat(p, n - 1, true);
+  const apres = etat(p, n, true);
+  const k = cl ? apres.classes[l.classe] : 0;
+  const resume = cl ? `${cl.nom} ${k}` : 'Classe à choisir';
+  const donsDuNiveau = [l.donRace, l.don, ...(l.donsBonus || [])].filter(Boolean).map(d => R.DON[d]?.nom).filter(Boolean);
+  const classeOpts = Object.entries(R.CLASSES).map(([id, c]) => [id, c.nom]);
+  return `
+  <div class="level ${cls}">
+    <div class="pip" aria-hidden="true">${n}</div>
+    <details class="card" data-niveau="${n}" ${ouvert ? 'open' : ''}>
+      <summary>
+        <b>Niveau ${n}</b> <span class="resume">${esc(resume)}${donsDuNiveau.length ? ', ' + esc(donsDuNiveau.join(', ')) : ''}</span>
+        ${estProchain ? '<span class="nextbadge">Prochain niveau</span>' : ''}${l.atteint ? '<span class="atteint-badge">Atteint</span>' : ''}
+      </summary>
+      <div class="levelhead">
+        <label class="f"><span>Classe prise à ce niveau</span>
+          <select data-bind="progression.${i}.classe" data-rerender>
+            <option value="">— Choisir —</option>
+            ${classeOpts.map(([v, t]) => `<option value="${v}" ${l.classe === v ? 'selected' : ''}>${t}</option>`).join('')}
+          </select></label>
+        <label class="check"><input type="checkbox" data-bind="progression.${i}.atteint" data-rerender ${l.atteint ? 'checked' : ''}> Atteint</label>
+        <button class="icon" data-action="del-level" data-idx="${i}" aria-label="Supprimer le niveau ${n}">✕</button>
+      </div>
+      ${cl ? gainsNiveau(p, l, i, cl, k, avant, apres) : '<p class="empty">Choisis une classe pour voir ce que ce niveau apporte.</p>'}
+      ${ta(l, 'notes', 'Notes', { rows: 2 }).replace('data-bind="notes"', `data-bind="progression.${i}.notes"`)}
+    </details>
+  </div>`;
+}
+
+function gainsNiveau(p, l, i, cl, k, avant, apres) {
+  const n = l.niveau;
+  const g = [];
+  const delta = (a, b) => a === b ? R.signe(b) : `${R.signe(a)} → <b>${R.signe(b)}</b>`;
+  g.push(['Dé de vie', `d${cl.dv}${n === 1 ? ' (maximum au niveau 1)' : ''}, + mod Con (${R.signe(apres.mods.con)})`]);
+  g.push(['Bonus de base à l\'attaque', avant.bba === apres.bba ? `${R.attTxt(R.attaques(apres.bba))} (inchangé)` : `${R.attTxt(R.attaques(avant.bba))} → <b>${R.attTxt(R.attaques(apres.bba))}</b>`]);
+  g.push(['Jets de sauvegarde de base', `Vig ${delta(avant.js.vig, apres.js.vig)}, Réf ${delta(avant.js.ref, apres.js.ref)}, Vol ${delta(avant.js.vol, apres.js.vol)}`]);
+  let pc = Math.max(1, cl.pc + apres.mods.int) + (apres.race?.pcBonus ? 1 : 0);
+  g.push(['Points de compétence', `${n === 1 ? pc * 4 : pc} (${cl.pc} + mod Int${apres.race?.pcBonus ? ' + 1 humain' : ''}${n === 1 ? ', ×4 au niveau 1' : ''})`]);
+  const lignes = g.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+
+  /* Choix à faire */
+  const choix = [];
+  const selDon = (champ, label, liste, sansPrerequis) => {
+    const e = etat(p, n, true, { niveau: n, champ });
+    const path = champ.startsWith('bonus') ? `progression.${i}.donsBonus.${champ.slice(5)}` : `progression.${i}.${champ}`;
+    const cur = champ.startsWith('bonus') ? (l.donsBonus || [])[Number(champ.slice(5))] : l[champ];
+    const d = cur && R.DON[cur];
+    return `<div class="choix-don"><label class="f"><span>${label}</span>
+      <select data-bind="${path}" data-rerender>${optionsDons(e, p, cur || '', () => true, liste, sansPrerequis)}</select></label>
+      ${d ? carteDon(d, apres, p, '', sansPrerequis) : ''}</div>`;
+  };
+  if (n === 1 && apres.race?.donBonus) choix.push(selDon('donRace', 'Don supplémentaire (humain)'));
+  if (R.NIVEAUX_DONS.includes(n)) choix.push(selDon('don', `Don du niveau ${n}`));
+  if (cl.donsBonus && cl.donsBonus(k)) {
+    const l2 = typeof cl.donsBonusListe === 'function' ? cl.donsBonusListe(k)
+      : cl.donsBonusListe === 'combat' ? R.DONS.filter(d => d.type === 'C').map(d => d.id)
+      : R.DONS.filter(d => d.type === 'M' || d.type === 'O' || d.id === 'maitrise-sorts').map(d => d.id);
+    choix.push(selDon('bonus0', `Don supplémentaire de ${cl.nom.toLowerCase()}`, l2, typeof cl.donsBonusListe === 'function'));
+  }
+  for (const d of cl.donsAuto?.[k] || []) choix.push(`<div class="choix-don"><p class="lbl">Don automatique</p>${carteDon(R.DON[d], apres, p, '', true)}</div>`);
+  const c = cl.choix?.[k];
+  if (c) {
+    choix.push(`<label class="f"><span>${esc(c.nom)}</span><select data-bind="progression.${i}.choix.${c.id}" data-rerender>
+      <option value="">— Choisir —</option>${Object.entries(c.options).map(([v, t]) => `<option value="${v}" ${l.choix?.[c.id] === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`);
+  }
+  if (cl.donsStyle) {
+    const style = (p.progression.find(x => x.classe === l.classe && x.choix?.style) || {}).choix?.style;
+    const d = style && cl.donsStyle[style][k];
+    if (d) choix.push(`<div class="choix-don"><p class="lbl">Don du style de combat</p>${carteDon(R.DON[d], apres, p, '', true)}</div>`);
+  }
+  if (n % 4 === 0) {
+    choix.push(`<label class="f"><span>Augmentation de caractéristique (+1)</span><select data-bind="progression.${i}.augment" data-rerender>
+      <option value="">— Choisir —</option>${R.CARACS.map(x => `<option value="${x.k}" ${l.augment === x.k ? 'selected' : ''}>${x.n}</option>`).join('')}</select></label>
+      <p class="hint">Une fois le niveau atteint, pense à ajouter ce +1 à la valeur sur la fiche.</p>`);
+  }
+  choix.push(`<label class="f pv-niveau"><span>Points de vie obtenus (jet du dé de vie, sans la Con)</span>
+    <input type="text" inputmode="numeric" data-bind="progression.${i}.pv" value="${esc(l.pv)}" placeholder="${n === 1 ? cl.dv : '1 à ' + cl.dv}"></label>`);
+
+  /* Nouvelles aptitudes et valeurs qui évoluent */
+  const apt = cl.aptitudes.filter(a => a.niv === k);
+  const vAvant = Object.fromEntries(valeursClasse(l.classe, k - 1, avant));
+  const changes = valeursClasse(l.classe, k, apres).filter(([nom, v]) => String(vAvant[nom]) !== String(v))
+    .map(([nom, v]) => `<li><b>${esc(nom)}</b> : ${vAvant[nom] != null ? `${esc(vAvant[nom])} → ` : ''}<b>${esc(v)}</b></li>`);
+  for (const id of avant.dons) {
+    const d = R.DON[id];
+    if (d.calc && apres.dons.has(id)) {
+      const a = d.calc(avant), b = d.calc(apres);
+      if (a !== b) changes.push(`<li><b>${esc(d.nom)}</b> : ${esc(b)}</li>`);
+    }
+  }
+  const spA = sortsParJour(l.classe, k - 1, avant), spB = sortsParJour(l.classe, k, apres);
+  const sortsChange = spB && JSON.stringify(spA?.parJour) !== JSON.stringify(spB.parJour);
+  return `
+    <dl class="gains">${lignes}</dl>
+    ${apt.length ? `<h4>Nouvelles aptitudes de ${esc(cl.nom.toLowerCase())}</h4><dl class="caps">${apt.map(a => `<dt>${esc(a.nom)}</dt><dd>${esc(a.texte)}</dd>`).join('')}</dl>` : ''}
+    ${changes.length ? `<h4>Ce qui s'améliore</h4><ul class="changes">${changes.join('')}</ul>` : ''}
+    ${sortsChange ? tableSorts(spB) : ''}
+    <h4>Choix du niveau</h4>
+    <div class="choix">${choix.join('')}</div>`;
 }
 
 /* ---------- Grimoire ---------- */
@@ -409,7 +897,7 @@ function pageSort(id) {
     <p class="ecole">${esc(ecole)}</p>
   </div>
   <section class="card">
-    <dl class="stats">
+    <dl class="fiche-sort">
       ${row('Niveau', niveauxTxt(s))}${row('Composantes', s.composantes)}${row('Temps d\'incantation', s.incantation)}
       ${row('Portée', s.portee)}${row('Cible, zone ou effet', s.cible)}${row('Durée', s.duree)}
       ${row('Jet de sauvegarde', s.sauvegarde)}${row('Résistance à la magie', s.rm)}
@@ -480,7 +968,8 @@ function pageDonnees() {
 }
 
 /* ---------- Rendu et navigation ---------- */
-function render() {
+function render(garderScroll = true) {
+  const y = window.scrollY;
   const h = location.hash.replace(/^#\/?/, '') || 'persos';
   const [page, id, tab] = h.split('/');
   state.ctx = null;
@@ -497,11 +986,12 @@ function render() {
   $('#app').innerHTML = html;
   const nav = page === 'perso' ? 'persos' : page.startsWith('sort') ? 'sorts' : page;
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav));
+  if (garderScroll) window.scrollTo(0, y);
 }
 function go(hash) {
   if (location.hash === hash) render(); else location.hash = hash;
 }
-window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { render(false); window.scrollTo(0, 0); });
 
 /* ---------- Saisie ---------- */
 document.addEventListener('input', ev => {
@@ -522,9 +1012,33 @@ document.addEventListener('input', ev => {
   if (state.ctx === state.draft) return; // le sort n'est enregistré qu'au clic sur le bouton
   state.ctx.maj = Date.now();
   if (path === 'nom') $('#ptitle').textContent = t.value || 'Sans nom';
+  const m = path.match(/^caracs\.(\w+)\.val$/);
+  if (m && $('#mod-' + m[1])) $('#mod-' + m[1]).textContent = t.value === '' ? '—' : R.signe(R.mod(t.value));
   save();
   if (t.hasAttribute('data-rerender')) render();
 });
+/* Les totaux calculés se mettent à jour quand on quitte le champ */
+document.addEventListener('change', ev => {
+  if (!ev.target.hasAttribute('data-recalc') || !state.ctx || state.ctx === state.draft) return;
+  // On attend que le focus soit passé au champ suivant, puis on le lui rend après le rafraîchissement
+  setTimeout(() => {
+    const a = document.activeElement;
+    const bind = a && a.dataset ? a.dataset.bind : null;
+    const pos = a && typeof a.selectionStart === 'number' ? a.selectionStart : null;
+    render();
+    if (bind) {
+      const n = document.querySelector(`[data-bind="${CSS.escape(bind)}"]`);
+      if (n) { n.focus({ preventScroll: true }); if (pos != null && n.setSelectionRange) try { n.setSelectionRange(pos, pos); } catch (e) {} }
+    }
+  }, 0);
+});
+/* Mémorise les niveaux dépliés ou repliés */
+document.addEventListener('toggle', ev => {
+  const d = ev.target;
+  if (!d.matches || !d.matches('details[data-niveau]')) return;
+  const n = Number(d.dataset.niveau);
+  if (d.open) { state.ouverts.add(n); state.fermes.delete(n); } else { state.ouverts.delete(n); state.fermes.add(n); }
+}, true);
 
 /* ---------- Actions ---------- */
 document.addEventListener('click', ev => {
@@ -584,7 +1098,7 @@ document.addEventListener('click', ev => {
     case 'add-level': {
       p.progression = p.progression || [];
       const n = p.progression.reduce((m, l) => Math.max(m, l.niveau), 0) + 1;
-      p.progression.push(nouveauNiveau(n)); save(); render();
+      p.progression.push(nouveauNiveau(n)); state.ouverts.add(n); save(); render();
       break;
     }
     case 'del-level':
@@ -639,6 +1153,30 @@ document.addEventListener('click', ev => {
         }).catch(e => toast('Échec : ' + e.message));
       }
       break;
+    case 'img-choisir':
+      state.imgType = b.dataset.type;
+      $('#imginput').value = '';
+      $('#imginput').click();
+      break;
+    case 'img-retirer':
+      if (confirm(b.dataset.type === 'portrait' ? 'Retirer le portrait ?' : 'Retirer l\'emblème ?')) { p[b.dataset.type] = ''; saveNow(); render(); }
+      break;
+    case 'toggle-langue': {
+      const l = b.dataset.l;
+      p.langues = p.langues || [];
+      p.langues = p.langues.includes(l) ? p.langues.filter(x => x !== l) : [...p.langues, l];
+      save(); render();
+      break;
+    }
+    case 'add-don-supp': {
+      const v = $('#don-supp').value;
+      if (!v) { toast('Choisis un don dans la liste'); break; }
+      p.donsSupp = [...(p.donsSupp || []), v]; save(); render();
+      break;
+    }
+    case 'del-don-supp':
+      p.donsSupp.splice(idx, 1); save(); render();
+      break;
     case 'import':
       $('#fileinput').value = '';
       $('#fileinput').click();
@@ -646,9 +1184,6 @@ document.addEventListener('click', ev => {
   }
 });
 
-function nouveauNiveau(n) {
-  return { niveau: n, classe: '', atteint: false, capacites: '', dons: '', competences: '', sorts: '', carac: '', notes: '' };
-}
 
 /* ---------- Import / export ---------- */
 function download(name, obj) {
@@ -675,6 +1210,7 @@ $('#fileinput').addEventListener('change', async ev => {
     if (remplaces.length && !confirm(`Ces personnages existent déjà et seront remplacés par la version importée :\n${remplaces.join(', ')}\n\nContinuer ?`)) return;
 
     for (const p of persos) {
+      migrer(p);
       const i = db.personnages.findIndex(x => x.id === p.id);
       if (i >= 0) db.personnages[i] = p; else db.personnages.push(p);
     }
@@ -691,9 +1227,42 @@ $('#fileinput').addEventListener('change', async ev => {
   }
 });
 
+/* ---------- Images (portrait et emblème) ---------- */
+async function reduireImage(file, max, type) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((ok, ko) => { img.onload = ok; img.onerror = () => ko(new Error('format d\'image non reconnu')); img.src = url; });
+    const r = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * r); c.height = Math.round(img.height * r);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    let data = c.toDataURL(type, 0.85);
+    if (!data.startsWith('data:' + type)) data = c.toDataURL('image/png');
+    return data;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+$('#imginput').addEventListener('change', async ev => {
+  const file = ev.target.files[0];
+  const p = state.ctx;
+  if (!file || !p || !state.imgType) return;
+  try {
+    const portrait = state.imgType === 'portrait';
+    p[state.imgType] = await reduireImage(file, portrait ? 640 : 256, portrait ? 'image/jpeg' : 'image/webp');
+    p.maj = Date.now();
+    saveNow(); render();
+    toast(portrait ? 'Portrait ajouté' : 'Emblème ajouté');
+  } catch (e) {
+    alert('Image impossible à charger : ' + e.message);
+  }
+});
+
 /* ---------- Démarrage ---------- */
 (async function start() {
   load();
+  db.personnages.forEach(migrer);
   render();
   await initSorts();
   render();
