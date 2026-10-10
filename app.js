@@ -43,7 +43,7 @@ function toast(msg) {
 }
 
 /* ---------- Stockage ---------- */
-let db = { version: APP_VERSION, personnages: [], sorts: [], sortsInitialises: false };
+let db = { version: APP_VERSION, personnages: [], sorts: [], sessions: [], sortsInitialises: false };
 
 function load() {
   try {
@@ -125,6 +125,9 @@ const state = {
   ouverts: new Set(),    // niveaux dépliés dans la progression
   fermes: new Set(),     // niveaux repliés volontairement
   imgType: null,
+  jq: '',               // recherche dans le journal
+  typeNote: 'note',     // type de la prochaine note
+  editNote: null,       // note en cours de modification
 };
 
 /* ---------- Visuels de la marque ---------- */
@@ -845,6 +848,199 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
     <div class="choix">${choix.join('')}</div>`;
 }
 
+/* ---------- Journal de campagne ---------- */
+const TYPES_NOTES = {
+  note: 'Note', indice: 'Indice', pnj: 'PNJ', lieu: 'Lieu', quete: 'Quête', butin: 'Butin', question: 'Question',
+};
+const TYPES_SUIVIS = ['question', 'quete'];
+const findSession = id => (db.sessions || []).find(s => s.id === id);
+const sessionsTriees = () => [...(db.sessions || [])].sort((a, b) => (b.numero || 0) - (a.numero || 0));
+const titreSession = s => `Session ${s.numero}${s.titre ? ' : ' + s.titre : ''}`;
+const dateFr = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+const heure = t => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+/* Mentions : @Nom ou @[Nom en plusieurs mots] */
+const RE_MENTION = /@\[([^\]]+)\]|@([\p{L}\p{N}_'’-]+)/gu;
+function mentionsDe(texte) {
+  return [...String(texte || '').matchAll(RE_MENTION)].map(m => (m[1] || m[2].replace(/_/g, ' ')).trim()).filter(Boolean);
+}
+function avecMentions(texte) {
+  const t = String(texte || '');
+  let out = '', last = 0;
+  for (const m of t.matchAll(RE_MENTION)) {
+    const nom = (m[1] || m[2].replace(/_/g, ' ')).trim();
+    out += esc(t.slice(last, m.index)) + `<a class="mention" href="#/journal/recherche/${encodeURIComponent(nom)}">${esc(nom)}</a>`;
+    last = m.index + m[0].length;
+  }
+  return (out + esc(t.slice(last))).replace(/\n/g, '<br>');
+}
+function indexMentions() {
+  const compte = new Map();
+  for (const s of db.sessions || []) {
+    const textes = [s.recap, ...(s.notes || []).map(n => n.texte)];
+    /* Chaque passage (note ou récapitulatif) ne compte qu'une fois par nom */
+    for (const nom of textes.flatMap(t => [...new Map(mentionsDe(t).map(m => [norm(m), m])).values()])) {
+      const cle = norm(nom);
+      const cur = compte.get(cle) || { nom, n: 0 };
+      cur.n++;
+      compte.set(cle, cur);
+    }
+  }
+  return [...compte.values()].sort((a, b) => b.n - a.n || a.nom.localeCompare(b.nom, 'fr'));
+}
+
+function nouvelleSession() {
+  const numero = (db.sessions || []).reduce((m, s) => Math.max(m, s.numero || 0), 0) + 1;
+  return { id: uid(), numero, date: new Date().toISOString().slice(0, 10), titre: '', recap: '', notes: [], maj: Date.now() };
+}
+
+function noteHtml(n, i, s, editable) {
+  const suivi = TYPES_SUIVIS.includes(n.type);
+  if (editable && state.editNote === n.id) {
+    return `<li class="note note-${n.type} edition">
+      <textarea data-bind="notes.${i}.texte" rows="3" aria-label="Texte de la note">${esc(n.texte)}</textarea>
+      <div class="note-actions">
+        <select data-bind="notes.${i}.type" data-rerender aria-label="Type de note">${Object.entries(TYPES_NOTES).map(([k, l]) => `<option value="${k}" ${n.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <button class="btn" data-action="note-fin">Terminé</button>
+        <button class="btn danger" data-action="note-suppr" data-idx="${i}">Supprimer</button>
+      </div>
+    </li>`;
+  }
+  return `<li class="note note-${n.type} ${n.resolu ? 'resolue' : ''}">
+    <div class="note-tete">
+      <span class="type-note">${TYPES_NOTES[n.type] || 'Note'}</span>
+      ${s ? `<a class="note-session" href="#/session/${s.id}">${esc(titreSession(s))}</a>` : `<span class="note-heure">${heure(n.t)}</span>`}
+      ${suivi ? `<label class="check-resolu"><input type="checkbox" data-action="note-resolu" data-s="${(s || state.ctx).id}" data-n="${n.id}" ${n.resolu ? 'checked' : ''}> Résolu</label>` : ''}
+      ${editable ? `<button class="icon" data-action="note-edit" data-id="${n.id}" aria-label="Modifier la note">✎</button>` : ''}
+    </div>
+    <p>${avecMentions(n.texte)}</p>
+  </li>`;
+}
+
+function pageJournal(mode, q) {
+  if (mode === 'recherche' && q != null) state.jq = decodeURIComponent(q);
+  const sessions = sessionsTriees();
+  return `
+  <div class="pagehead">
+    <div><h1>Journal</h1><p class="sub">Notes et récapitulatifs de session</p></div>
+    <div class="btns">
+      <button class="btn" data-action="new-session">Nouvelle session</button>
+      ${sessions[0] ? `<a class="btn ghost" href="#/session/${sessions[0].id}">Reprendre la session ${sessions[0].numero}</a>` : ''}
+    </div>
+  </div>
+  <input type="search" id="jq" value="${esc(state.jq)}" placeholder="Chercher dans toutes les notes : un nom, un lieu, un mot…" aria-label="Chercher dans le journal">
+  <div id="jres">${resultatsJournal()}</div>`;
+}
+
+function resultatsJournal() {
+  const sessions = sessionsTriees();
+  const q = norm(state.jq).trim();
+  if (q) {
+    const res = [];
+    for (const s of sessions) {
+      (s.notes || []).forEach(n => { if (norm(n.texte).includes(q)) res.push(noteHtml(n, 0, s, false)); });
+      if (norm(s.recap).includes(q) || norm(s.titre).includes(q)) {
+        res.push(`<li class="note note-recap"><div class="note-tete"><span class="type-note">Récapitulatif</span><a class="note-session" href="#/session/${s.id}">${esc(titreSession(s))}</a></div>
+          <p>${avecMentions(extrait(s.recap || s.titre, q))}</p></li>`);
+      }
+    }
+    return `<p class="count">${res.length} résultat${res.length > 1 ? 's' : ''} pour « ${esc(state.jq)} » <button class="lien" data-action="jq-effacer">Effacer</button></p>
+      ${res.length ? `<ul class="notes">${res.join('')}</ul>` : '<p class="empty">Rien trouvé. Essaie un autre mot.</p>'}`;
+  }
+
+  const fils = [];
+  for (const s of sessions) for (const n of s.notes || []) if (TYPES_SUIVIS.includes(n.type) && !n.resolu) fils.push(noteHtml(n, 0, s, false));
+  const index = indexMentions();
+  const cartes = sessions.map(s => {
+    const nb = (s.notes || []).length;
+    return `<a class="session-carte" href="#/session/${s.id}">
+      <span class="session-num">${s.numero}</span>
+      <span class="session-txt"><b>${esc(s.titre || 'Sans titre')}</b>
+        <small>${esc(dateFr(s.date))}${nb ? `, ${nb} note${nb > 1 ? 's' : ''}` : ''}${s.recap ? ', récap rédigé' : ''}</small>
+        ${s.recap ? `<span class="session-extrait">${esc(String(s.recap).replace(/\s+/g, ' ').slice(0, 140))}${s.recap.length > 140 ? '…' : ''}</span>` : ''}
+      </span></a>`;
+  }).join('');
+  return `
+  ${fils.length ? `<section class="card"><h3>Fils rouges</h3>
+    <p class="hint">Questions et quêtes encore ouvertes, toutes sessions confondues. Coche « Résolu » quand c'est réglé.</p>
+    <ul class="notes">${fils.join('')}</ul></section>` : ''}
+  <section class="card"><h3>Sessions</h3>
+    ${cartes ? `<div class="sessions">${cartes}</div>` : '<p class="empty">Aucune session. Crée la première au début de ta prochaine partie.</p>'}
+  </section>
+  ${index.length ? `<section class="card"><h3>Index</h3>
+    <p class="hint">Tout ce que tu as mentionné avec @ dans tes notes. Touche un nom pour retrouver chaque passage.</p>
+    <div class="chips">${index.map(m => `<a class="chip" href="#/journal/recherche/${encodeURIComponent(m.nom)}">${esc(m.nom)} <small>${m.n}</small></a>`).join('')}</div>
+  </section>` : ''}`;
+}
+function extrait(texte, q) {
+  const t = String(texte || '');
+  const i = norm(t).indexOf(q);
+  const d = Math.max(0, i - 60);
+  return (d > 0 ? '…' : '') + t.slice(d, i + q.length + 100) + (i + q.length + 100 < t.length ? '…' : '');
+}
+
+function pageSession(id) {
+  const s = findSession(id);
+  if (!s) return `<p>Session introuvable. <a href="#/journal">Retour au journal</a></p>`;
+  state.ctx = s;
+  const notes = (s.notes || []).map((n, i) => ({ n, i })).reverse();
+  const type = state.typeNote || 'note';
+  return `
+  <p><a href="#/journal">← Journal</a></p>
+  <div class="pagehead"><div><h1>${esc(titreSession(s))}</h1><p class="sub">${esc(dateFr(s.date))}</p></div>
+    <button class="btn danger" data-action="del-session">Supprimer la session</button></div>
+  <section class="card">
+    <div class="grid">
+      ${fi(s, 'numero', 'Numéro', { type: 'number', recalc: true })}
+      ${fi(s, 'date', 'Date', { type: 'date', recalc: true })}
+      ${fi(s, 'titre', 'Titre', { ph: 'Ex. : Le tombeau des anciens', recalc: true, span: true })}
+    </div>
+  </section>
+
+  <section class="card saisie"><h3>Prise de notes</h3>
+    <div class="chips types" role="group" aria-label="Type de la prochaine note">
+      ${Object.entries(TYPES_NOTES).map(([k, l]) => `<button class="chip note-${k} ${type === k ? 'on' : ''}" data-action="type-note" data-type="${k}" aria-pressed="${type === k}">${l}</button>`).join('')}
+    </div>
+    <textarea id="nouvelle-note" rows="2" placeholder="Ce qui vient de se passer… (Entrée pour enregistrer)" aria-label="Nouvelle note"></textarea>
+    <div class="btns" style="margin-top:.5rem"><button class="btn" data-action="add-note">Ajouter la note</button></div>
+    <p class="hint">Écris <b>@Nom</b> pour un PNJ, un lieu ou un objet (<b>@[Nom en plusieurs mots]</b> s'il y a des espaces) : il rejoint l'index du journal. Maj + Entrée pour aller à la ligne.</p>
+    ${notes.length ? `<ul class="notes">${notes.map(({ n, i }) => noteHtml(n, i, null, true)).join('')}</ul>` : '<p class="empty">Pas encore de note pour cette session.</p>'}
+  </section>
+
+  <section class="card"><h3>Récapitulatif</h3>
+    <p class="hint">À rédiger après la partie. Le brouillon reprend tes notes, classées par type : il ne reste qu'à écrire le résumé.</p>
+    <div class="btns" style="margin-bottom:.6rem"><button class="btn ghost" data-action="recap-brouillon">Préparer un brouillon depuis les notes</button></div>
+    <textarea data-bind="recap" rows="14" aria-label="Récapitulatif de la session">${esc(s.recap)}</textarea>
+  </section>`;
+}
+
+function brouillonRecap(s) {
+  const notes = s.notes || [];
+  const bloc = (titre, type) => {
+    const l = notes.filter(n => n.type === type);
+    return l.length ? [titre, ...l.map(n => `- ${n.texte.replace(/\n+/g, ' ')}${n.resolu ? ' (résolu)' : ''}`), ''] : [];
+  };
+  return [
+    'Résumé', '(Ce qui s\'est passé, en quelques phrases.)', '',
+    ...bloc('Quêtes', 'quete'), ...bloc('Indices', 'indice'), ...bloc('PNJ', 'pnj'), ...bloc('Lieux', 'lieu'),
+    ...bloc('Butin', 'butin'), ...bloc('Questions en suspens', 'question'), ...bloc('Autres notes', 'note'),
+  ].join('\n').trim();
+}
+
+function ajouterNote() {
+  const s = state.ctx, champ = $('#nouvelle-note');
+  if (!s || !champ) return;
+  const texte = champ.value.trim();
+  if (!texte) { champ.focus(); return; }
+  s.notes = s.notes || [];
+  s.notes.push({ id: uid(), t: Date.now(), type: state.typeNote || 'note', texte, resolu: false });
+  s.maj = Date.now();
+  state.typeNote = 'note';
+  saveNow();
+  render();
+  $('#nouvelle-note')?.focus();
+}
+
 /* ---------- Grimoire ---------- */
 function filtrerSorts() {
   const f = state.filtres, q = norm(f.q);
@@ -947,6 +1143,7 @@ function pageDonnees() {
 
   <section class="card intro"><h3>Partager avec la troupe</h3>
     <p>Chaque joueur remplit sa fiche sur son propre téléphone, puis l'exporte depuis la page du personnage. Le fichier .json s'envoie par Discord, mail ou message, et le destinataire l'importe ici. Un personnage déjà présent est remplacé par la version importée.</p>
+    <p>L'export de toute la campagne contient aussi ton journal (sessions, notes et récapitulatifs). C'est pratique pour passer d'un appareil à l'autre, mais pense-y avant de l'envoyer à quelqu'un.</p>
     <div class="btns">
       <button class="btn" data-action="import">Importer un fichier</button>
       <button class="btn ghost" data-action="export-all">Exporter toute la campagne</button>
@@ -980,11 +1177,13 @@ function render(garderScroll = true) {
     case 'sorts': html = pageSorts(); break;
     case 'sort': html = pageSort(id); break;
     case 'sort-edit': html = pageSortEdit(id); break;
+    case 'journal': html = pageJournal(id, tab); break;
+    case 'session': html = pageSession(id); break;
     case 'donnees': html = pageDonnees(); break;
     default: html = pagePersos();
   }
   $('#app').innerHTML = html;
-  const nav = page === 'perso' ? 'persos' : page.startsWith('sort') ? 'sorts' : page;
+  const nav = page === 'perso' ? 'persos' : page.startsWith('sort') ? 'sorts' : page === 'session' ? 'journal' : page;
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav));
   if (garderScroll) window.scrollTo(0, y);
 }
@@ -1001,6 +1200,12 @@ document.addEventListener('input', ev => {
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
     return;
   }
+  if (t.id === 'jq') {
+    state.jq = t.value;
+    $('#jres').innerHTML = resultatsJournal();
+    return;
+  }
+  if (t.id === 'nouvelle-note') return;
   if (t.dataset.filtre) {
     state.filtres[t.dataset.filtre] = t.value;
     $('#sortres').innerHTML = resultatsSorts();
@@ -1016,6 +1221,13 @@ document.addEventListener('input', ev => {
   if (m && $('#mod-' + m[1])) $('#mod-' + m[1]).textContent = t.value === '' ? '—' : R.signe(R.mod(t.value));
   save();
   if (t.hasAttribute('data-rerender')) render();
+});
+/* Entrée enregistre la note rapide (Maj + Entrée pour aller à la ligne) */
+document.addEventListener('keydown', ev => {
+  if (ev.target.id === 'nouvelle-note' && ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {
+    ev.preventDefault();
+    ajouterNote();
+  }
 });
 /* Les totaux calculés se mettent à jour quand on quitte le champ */
 document.addEventListener('change', ev => {
@@ -1138,7 +1350,7 @@ document.addEventListener('click', ev => {
     }
     case 'export-all':
       download(`campagne-${new Date().toISOString().slice(0, 10)}.json`,
-        { type: 'campagne', version: APP_VERSION, personnages: db.personnages, sorts: db.sorts.filter(s => s.source === 'Maison') });
+        { type: 'campagne', version: APP_VERSION, personnages: db.personnages, sessions: db.sessions || [], sorts: db.sorts.filter(s => s.source === 'Maison') });
       break;
     case 'export-sorts':
       download('grimoire.json', { type: 'sorts', version: APP_VERSION, sorts: db.sorts.filter(s => s.source === 'Maison') });
@@ -1152,6 +1364,53 @@ document.addEventListener('click', ev => {
           saveNow(); toast('Sorts d\'origine restaurés'); render();
         }).catch(e => toast('Échec : ' + e.message));
       }
+      break;
+    case 'new-session': {
+      const ns = nouvelleSession();
+      db.sessions = db.sessions || [];
+      db.sessions.push(ns); saveNow();
+      go(`#/session/${ns.id}`);
+      setTimeout(() => $('#nouvelle-note')?.focus(), 60);
+      break;
+    }
+    case 'del-session':
+      if (confirm(`Supprimer « ${titreSession(p)} » et toutes ses notes ?`)) {
+        db.sessions = db.sessions.filter(x => x.id !== p.id); saveNow();
+        toast('Session supprimée'); go('#/journal');
+      }
+      break;
+    case 'type-note':
+      state.typeNote = b.dataset.type;
+      document.querySelectorAll('.types .chip').forEach(c => { const on = c.dataset.type === state.typeNote; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); });
+      $('#nouvelle-note')?.focus();
+      break;
+    case 'add-note':
+      ajouterNote();
+      break;
+    case 'note-edit':
+      state.editNote = b.dataset.id; render();
+      break;
+    case 'note-fin':
+      state.editNote = null; save(); render();
+      break;
+    case 'note-suppr':
+      if (confirm('Supprimer cette note ?')) { p.notes.splice(idx, 1); state.editNote = null; saveNow(); render(); }
+      break;
+    case 'note-resolu': {
+      const ses = findSession(b.dataset.s);
+      const n = ses && ses.notes.find(x => x.id === b.dataset.n);
+      if (n) { n.resolu = b.checked; ses.maj = Date.now(); saveNow(); setTimeout(render, 150); }
+      break;
+    }
+    case 'recap-brouillon': {
+      if (!(p.notes || []).length) { toast('Ajoute d\'abord quelques notes à cette session'); break; }
+      if (p.recap && p.recap.trim() && !confirm('Remplacer le récapitulatif actuel par un brouillon tiré des notes ?')) break;
+      p.recap = brouillonRecap(p); saveNow(); render();
+      toast('Brouillon prêt : complète le résumé');
+      break;
+    }
+    case 'jq-effacer':
+      state.jq = ''; go('#/journal');
       break;
     case 'img-choisir':
       state.imgType = b.dataset.type;
@@ -1204,7 +1463,8 @@ $('#fileinput').addEventListener('change', async ev => {
     const data = JSON.parse(await file.text());
     const persos = data.type === 'personnage' ? [data.personnage] : data.type === 'campagne' ? data.personnages || [] : [];
     const sorts = data.sorts || [];
-    if (!persos.length && !sorts.length) throw new Error('ce fichier ne vient pas du Codex de campagne');
+    const sessions = data.type === 'campagne' ? data.sessions || [] : [];
+    if (!persos.length && !sorts.length && !sessions.length) throw new Error('ce fichier ne vient pas du Codex de campagne');
 
     const remplaces = persos.filter(p => findPerso(p.id)).map(p => p.nom);
     if (remplaces.length && !confirm(`Ces personnages existent déjà et seront remplacés par la version importée :\n${remplaces.join(', ')}\n\nContinuer ?`)) return;
@@ -1214,14 +1474,21 @@ $('#fileinput').addEventListener('change', async ev => {
       const i = db.personnages.findIndex(x => x.id === p.id);
       if (i >= 0) db.personnages[i] = p; else db.personnages.push(p);
     }
+    let nouvellesSessions = 0;
+    db.sessions = db.sessions || [];
+    for (const se of sessions) {
+      const i = db.sessions.findIndex(x => x.id === se.id);
+      if (i < 0) { db.sessions.push(se); nouvellesSessions++; }
+      else if ((se.maj || 0) > (db.sessions[i].maj || 0)) db.sessions[i] = se;
+    }
     let nouveauxSorts = 0;
     for (const s of sorts) {
       const i = db.sorts.findIndex(x => x.id === s.id);
       if (i >= 0) db.sorts[i] = s; else { db.sorts.push(s); nouveauxSorts++; }
     }
     saveNow();
-    toast(`Import terminé : ${persos.length} personnage(s), ${nouveauxSorts} nouveau(x) sort(s)`);
-    go(persos.length === 1 ? `#/perso/${persos[0].id}/fiche` : persos.length ? '#/persos' : '#/sorts');
+    toast(`Import terminé : ${persos.length} personnage(s), ${nouvellesSessions} nouvelle(s) session(s), ${nouveauxSorts} nouveau(x) sort(s)`);
+    go(persos.length === 1 ? `#/perso/${persos[0].id}/fiche` : persos.length ? '#/persos' : sessions.length ? '#/journal' : '#/sorts');
   } catch (e) {
     alert('Import impossible : ' + e.message);
   }
