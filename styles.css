@@ -912,3 +912,25 @@ button.banniere { border: none; cursor: pointer; font: inherit; width: 100%; }
 .inv-resume span { display: flex; flex-direction: column; align-items: center; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius-s); padding: .35rem .3rem; font-size: .72rem; color: var(--muted); text-align: center; }
 .inv-resume b { color: var(--ivoire); font-size: .95rem; font-variant-numeric: tabular-nums; }
 .objet .row input.s { flex: 1 1 70px; }
+
+/* ---------- États et blessures ---------- */
+.etats-puces { display: flex; flex-wrap: wrap; gap: .35rem; margin: -.5rem 0 .9rem; }
+.etat-puce { font-size: .8rem; font-weight: 600; padding: .15rem .6rem; border-radius: 99px; border: 1px solid var(--rouge); color: #F0B4A6; background: rgba(139, 74, 61, .18); }
+.etat-puce.permanent { border-color: var(--rouge-clair); background: rgba(139, 74, 61, .35); color: #FFD8CE; }
+.etats { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .7rem; }
+.etat { background: var(--inset); border: 1px solid var(--rouge); border-left: 4px solid var(--rouge-clair); border-radius: var(--radius-s); padding: .55rem .7rem; }
+.etat.gueri { opacity: .55; border-color: var(--line); border-left-color: var(--line); }
+.etat.en-edition { border-color: var(--bronze); border-left-color: var(--bronze); }
+.etat p { margin: .3rem 0 0; }
+.etat-tete { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; }
+.etat-tete b { font-family: var(--font-titre); font-weight: 600; color: #FFD8CE; letter-spacing: .02em; }
+.etat-tete .lien { margin-left: auto; }
+.etat-duree { font-size: .72rem; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 0 .45rem; }
+.malus-etat { color: var(--rouge-clair); font-weight: 600; }
+.etat-ajout select { flex: 1 1 200px; }
+.etat .btns { margin-top: .5rem; }
+.banniere-etat { color: #F0B4A6 !important; font-weight: 600; }
+.mj-etats { display: flex; flex-direction: column; gap: .3rem; margin-top: .5rem; }
+.mj-etat { border: 1px solid var(--rouge); border-left: 3px solid var(--rouge-clair); border-radius: 4px; padding: .3rem .5rem; background: rgba(139, 74, 61, .12); font-size: .85rem; }
+.mj-etat b { color: #FFD8CE; }
+.mj-etat p { margin: .15rem 0 0; color: #CBD3D3; }

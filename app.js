@@ -211,6 +211,15 @@ function bonusObjets(p) {
       (detail[b.cible] = detail[b.cible] || []).push(`${it.nom || 'Objet'} ${R.signe(v)}`);
     }
   }
+  for (const et of p.etats || []) {
+    if (et.actif === false) continue;
+    for (const b of et.bonus || []) {
+      const v = num(b.val);
+      if (!b.cible || !v) continue;
+      tot[b.cible] = (tot[b.cible] || 0) + v;
+      (detail[b.cible] = detail[b.cible] || []).push(`${et.nom || 'État'} ${R.signe(v)}`);
+    }
+  }
   return { tot, detail, maxDex, acp, echec };
 }
 
@@ -482,6 +491,7 @@ function pagePersos() {
           : `<div class="silhouette">${SILHOUETTE_SVG}</div>`}</div>
         <h2>${esc(p.nom || 'Sans nom')}</h2>
         <p>${esc([raceNom(p), classesTxt(e)].filter(Boolean).join(', ') || 'À compléter')}</p>
+        ${(p.etats || []).some(x => x.actif !== false) ? `<p class="banniere-etat">⚠ ${esc((p.etats || []).filter(x => x.actif !== false).map(x => x.nom).join(', '))}</p>` : ''}
         ${p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
         ${p.embleme ? `<img class="embleme-banniere" src="${p.embleme}" alt="">` : '<span class="losange" aria-hidden="true"></span>'}
       </div>
@@ -530,6 +540,7 @@ function pagePerso(id, tab) {
     </div>
     ${encartDroits(p)}
     ${recap(p, e)}
+    ${puceEtats(p)}
     <nav class="tabs" aria-label="Sections du personnage">${tabs}</nav>
     ${body}`;
 }
@@ -618,6 +629,7 @@ function ongletFicheBrut(p, e) {
     <p class="hint">Saisis les valeurs de base (ajustements raciaux compris, sans les objets). Les bonus des objets équipés s'ajoutent <span class="bonus-objet">en couleur</span>, et les modificateurs se calculent seuls.</p>
   </section>
 
+  ${(p.etats || []).some(x => x.actif !== false) ? ficheEtats(p) : ''}
   ${ficheCombat(p, e)}
 
   <section class="card"><h3>Défense et statistiques</h3>
@@ -631,7 +643,7 @@ function ongletFicheBrut(p, e) {
 
     ${e.objets.maxDex != null && e.mods.dex > e.objets.maxDex ? `<p class="hint">Ton armure limite ta Dextérité à ${R.signe(e.objets.maxDex)} pour la CA.</p>` : ''}
     ${e.objets.acp ? `<p class="hint">Malus d'armure ${e.objets.acp} appliqué aux compétences marquées ◘.</p>` : ''}
-    ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
+    ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets et états inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
     ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
     <div class="grid" style="margin-top:.8rem">
       ${fi(p, 'pvMax', 'Points de vie max', { type: 'number' })}
@@ -648,6 +660,7 @@ function ongletFicheBrut(p, e) {
   </section>
 
   ${ficheCompetences(p, e)}
+  ${(p.etats || []).some(x => x.actif !== false) ? '' : ficheEtats(p)}
   ${ficheDons(p, e)}
   ${ficheCapacitesLisible(p, e, valsClasses)}
 
@@ -687,6 +700,86 @@ function poidsKg(txt) {
 const poidsTxt = kg => kg < 1 ? `${Math.round(kg * 1000)} g` : `${String(Math.round(kg * 100) / 100).replace('.', ',')} kg`;
 const valeurObjet = it => num(String(it.valeur || '').replace(',', '.')) * (num(it.qte) || 1);
 const poTxt = v => `${String(Math.round(v * 100) / 100).replace('.', ',')} po`;
+
+/* ===== États et blessures ===== */
+const B = (cible, val) => ({ cible, val: String(val) });
+const ETATS_PREDEFINIS = {
+  secoue: { nom: 'Secoué', texte: '−2 aux jets d\'attaque, de sauvegarde, de compétence et de caractéristique.', bonus: [B('attaque', -2), B('js', -2)] },
+  effraye: { nom: 'Effrayé', texte: 'Comme secoué, et doit fuir la source de sa peur s\'il le peut.', bonus: [B('attaque', -2), B('js', -2)] },
+  panique: { nom: 'Paniqué', texte: 'Lâche ce qu\'il tient et fuit au hasard ; −2 aux jets de sauvegarde et aux tests.', bonus: [B('js', -2)] },
+  fievreux: { nom: 'Fiévreux', texte: '−2 aux jets d\'attaque, de dégâts, de sauvegarde, de compétence et de caractéristique.', bonus: [B('attaque', -2), B('js', -2)] },
+  nauseeux: { nom: 'Nauséeux', texte: 'Ne peut faire qu\'une action de mouvement par tour : ni attaque, ni sort, ni concentration.', bonus: [] },
+  fatigue: { nom: 'Fatigué', texte: '−2 en Force et en Dextérité ; ne peut ni courir ni charger.', bonus: [B('for', -2), B('dex', -2)] },
+  epuise: { nom: 'Épuisé', texte: '−6 en Force et en Dextérité ; se déplace à demi-vitesse.', bonus: [B('for', -6), B('dex', -6)] },
+  aveugle: { nom: 'Aveuglé', texte: '−2 à la CA, perd son bonus de Dextérité à la CA, 50 % de chances de rater ; −4 aux tests basés sur la Force et la Dextérité.', bonus: [B('caParade', -2)] },
+  assourdi: { nom: 'Assourdi', texte: '−4 en initiative ; 20 % d\'échec pour les sorts à composante verbale.', bonus: [B('init', -4)] },
+  etourdi: { nom: 'Étourdi', texte: 'Lâche ce qu\'il tient, ne peut pas agir ; −2 à la CA et perd son bonus de Dextérité.', bonus: [B('caParade', -2)] },
+  hebete: { nom: 'Hébété', texte: 'Ne peut pas agir, mais garde sa CA normale.', bonus: [] },
+  enchevetre: { nom: 'Enchevêtré', texte: '−2 aux jets d\'attaque, −4 en Dextérité, se déplace à demi-vitesse.', bonus: [B('attaque', -2), B('dex', -4)] },
+  agrippe: { nom: 'Agrippé', texte: 'Pris dans une lutte : ne peut pas se déplacer librement et perd son bonus de Dextérité contre ceux qui ne luttent pas.', bonus: [] },
+  a_terre: { nom: 'À terre', texte: '−4 aux attaques au corps à corps ; +4 à la CA contre les attaques à distance, −4 contre celles au corps à corps.', bonus: [] },
+  paralyse: { nom: 'Paralysé', texte: 'Ne peut ni bouger ni agir. Sans défense.', bonus: [] },
+  inconscient: { nom: 'Inconscient', texte: 'Sans défense, ne perçoit rien.', bonus: [] },
+  mourant: { nom: 'Mourant', texte: 'Entre −1 et −9 PV : perd 1 PV par round tant qu\'il n\'est pas stabilisé.', bonus: [] },
+  empoisonne: { nom: 'Empoisonné', texte: 'Selon le poison : affaiblissement de caractéristique, effets secondaires…', bonus: [] },
+  malade: { nom: 'Malade', texte: 'Selon la maladie : affaiblissement de caractéristique chaque jour, jusqu\'à guérison.', bonus: [] },
+};
+const gravite = et => et.duree === 'permanent' ? 'permanent' : 'temporaire';
+function puceEtats(p, max = 6) {
+  const l = (p.etats || []).filter(x => x.actif !== false);
+  if (!l.length) return '';
+  return `<div class="etats-puces">${l.slice(0, max).map(x => `<span class="etat-puce ${gravite(x)}" title="${esc(x.description || '')}">${esc(x.nom)}</span>`).join('')}${l.length > max ? `<span class="etat-puce">+${l.length - max}</span>` : ''}</div>`;
+}
+function ficheEtats(p) {
+  const mod = peutModifier(p);
+  const etats = p.etats || [];
+  const opts = cur => CIBLES_BONUS.map(([g, l]) => `<optgroup label="${g}">${l.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  const cartes = etats.map((et, i) => {
+    if (mod && state.editEtat === et.id) {
+      return `<div class="etat en-edition">
+        <div class="grid">
+          ${fi(et, 'nom', 'Nom', { span: true }).replace('data-bind="nom"', `data-bind="etats.${i}.nom"`)}
+          <label class="f"><span>Durée</span><select data-bind="etats.${i}.duree" data-rerender>
+            <option value="">Temporaire</option><option value="permanent" ${et.duree === 'permanent' ? 'selected' : ''}>Permanent</option></select></label>
+          <label class="f"><span>Depuis</span><input type="text" data-bind="etats.${i}.depuis" value="${esc(et.depuis)}" placeholder="Ex. : session 6"></label>
+        </div>
+        <label class="f"><span>Description et conséquences</span><textarea data-bind="etats.${i}.description" rows="3" placeholder="Ex. : bras gauche arraché par l'élémental. Impossible de tenir un bouclier ou une arme à deux mains.">${esc(et.description)}</textarea></label>
+        <p class="lbl">Effets chiffrés (optionnels, appliqués à la fiche)</p>
+        ${(et.bonus || []).map((b, j) => `<div class="bonus-ligne">
+          <select data-bind="etats.${i}.bonus.${j}.cible" data-rerender aria-label="Ce que l'état modifie"><option value="">— Ce que l'état modifie —</option>${opts(b.cible)}</select>
+          <input type="text" inputmode="numeric" class="bonus-val" data-bind="etats.${i}.bonus.${j}.val" data-recalc value="${esc(b.val)}" aria-label="Valeur">
+          <button class="icon" data-action="etat-del-bonus" data-idx="${i}" data-j="${j}" aria-label="Retirer cet effet">✕</button>
+        </div>`).join('')}
+        <div class="btns"><button class="lien" data-action="etat-add-bonus" data-idx="${i}">+ Effet chiffré (ex. −4 attaque)</button></div>
+        <div class="btns"><button class="btn" data-action="etat-fin">Terminé</button><button class="btn danger" data-action="etat-suppr" data-idx="${i}">Supprimer</button></div>
+      </div>`;
+    }
+    const effets = (et.bonus || []).filter(b => b.cible && num(b.val));
+    return `<div class="etat ${gravite(et)} ${et.actif === false ? 'gueri' : ''}">
+      <div class="etat-tete"><b>${esc(et.nom || 'État')}</b>
+        <span class="etat-duree">${et.duree === 'permanent' ? 'Permanent' : 'Temporaire'}</span>
+        ${et.actif === false ? '<span class="etat-duree">guéri</span>' : ''}
+        ${mod ? `<button class="lien" data-action="etat-edit" data-id="${et.id}">Modifier</button>` : ''}</div>
+      ${et.description ? `<p>${esc(et.description)}</p>` : ''}
+      ${effets.length ? `<p class="objet-bonus">${effets.map(b => `<span class="malus-etat">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`).join('')}</p>` : ''}
+      ${et.depuis ? `<p class="hint">Depuis : ${esc(et.depuis)}</p>` : ''}
+      ${mod ? `<div class="btns">${et.actif === false
+        ? `<button class="btn ghost" data-action="etat-actif" data-idx="${i}">Réactiver</button><button class="btn danger" data-action="etat-suppr" data-idx="${i}">Supprimer</button>`
+        : `<button class="btn ghost" data-action="etat-actif" data-idx="${i}">${et.duree === 'permanent' ? 'Marquer comme guéri' : 'Terminé, retirer'}</button>`}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<section class="card"><h3>États et blessures</h3>
+    ${cartes ? `<div class="etats">${cartes}</div>` : '<p class="empty">Aucun état en cours. Tout va bien… pour l\'instant.</p>'}
+    ${mod ? `<div class="row etat-ajout">
+      <select id="etat-choix" aria-label="État à ajouter">
+        <option value="perso">Blessure ou état personnalisé…</option>
+        <optgroup label="États des règles">${Object.entries(ETATS_PREDEFINIS).map(([k, v]) => `<option value="${k}">${esc(v.nom)}</option>`).join('')}</optgroup>
+      </select>
+      <button class="btn ghost" data-action="etat-add">Ajouter</button>
+    </div>
+    <p class="hint">Les états actifs apparaissent en haut de la fiche, sur l'accueil et dans l'espace MJ. Leurs effets chiffrés s'appliquent aux statistiques.</p>` : ''}
+  </section>`;
+}
 
 function bourseTxt(p) {
   const a = p.argent || {};
@@ -1202,6 +1295,7 @@ function pageMJ() {
         <span>Init<b>${R.signe(st.init)}</b></span><span>Vig<b>${R.signe(st.js.vig)}</b></span><span>Réf<b>${R.signe(st.js.ref)}</b></span><span>Vol<b>${R.signe(st.js.vol)}</b></span>
         <span>Détection<b>${R.signe(comp('detection'))}</b></span><span>Perception<b>${R.signe(comp('perception'))}</b></span><span>Psychologie<b>${R.signe(comp('psychologie'))}</b></span><span>Vitesse<b>${st.vitesse} m</b></span>
       </div>
+      ${(x.etats || []).filter(et => et.actif !== false).length ? `<div class="mj-etats">${(x.etats || []).filter(et => et.actif !== false).map(et => `<div class="mj-etat ${gravite(et)}"><b>${esc(et.nom)}</b>${et.duree === 'permanent' ? ' <small>permanent</small>' : ''}${et.description ? `<p>${esc(et.description)}</p>` : ''}</div>`).join('')}</div>` : ''}
       ${(x.langues || []).length ? `<p class="hint">Langues : ${esc(x.langues.join(', '))}</p>` : ''}
     </div>`;
   }).join('');
@@ -3393,6 +3487,41 @@ document.addEventListener('click', ev => {
     }
     case 'actualiser':
       actualiser(true);
+      break;
+    case 'etat-add': {
+      const k = $('#etat-choix').value;
+      const pre = ETATS_PREDEFINIS[k];
+      const et = pre
+        ? { id: uid(), nom: pre.nom, description: pre.texte, duree: '', depuis: '', bonus: pre.bonus.map(x => ({ ...x })), actif: true }
+        : { id: uid(), nom: '', description: '', duree: 'permanent', depuis: '', bonus: [], actif: true };
+      p.etats = [...(p.etats || []), et];
+      if (!pre) state.editEtat = et.id;
+      save(); render();
+      if (!pre) setTimeout(() => $(`[data-bind="etats.${p.etats.length - 1}.nom"]`)?.focus(), 60);
+      break;
+    }
+    case 'etat-edit':
+      state.editEtat = b.dataset.id; render();
+      break;
+    case 'etat-fin':
+      state.editEtat = null; save(); render();
+      break;
+    case 'etat-actif': {
+      const et = p.etats[idx];
+      if (et.actif === false) et.actif = true;
+      else if (et.duree === 'permanent') et.actif = false;
+      else p.etats.splice(idx, 1);
+      save(); render();
+      break;
+    }
+    case 'etat-suppr':
+      if (confirm('Supprimer cet état ?')) { p.etats.splice(idx, 1); state.editEtat = null; save(); render(); }
+      break;
+    case 'etat-add-bonus':
+      p.etats[idx].bonus = [...(p.etats[idx].bonus || []), { cible: '', val: '-2' }]; save(); render();
+      break;
+    case 'etat-del-bonus':
+      p.etats[idx].bonus.splice(Number(b.dataset.j), 1); save(); render();
       break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
