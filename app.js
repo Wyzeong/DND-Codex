@@ -178,11 +178,19 @@ function nouveauPerso() {
   };
 }
 /* Ce qu'un objet équipé peut améliorer */
+/* Résistances et protections */
+const ENERGIES = [['acide', 'à l\'acide'], ['electricite', 'à l\'électricité'], ['feu', 'au feu'], ['froid', 'au froid'], ['son', 'au son'], ['negatif', 'à l\'énergie négative']];
+const IMMUNITES = [['poison', 'poison'], ['maladie', 'maladies'], ['sommeil', 'sommeil magique'], ['peur', 'terreur'], ['mental', 'effets mentaux'], ['paralysie', 'paralysie'], ['petrification', 'pétrification'], ['feu', 'feu'], ['froid', 'froid'], ['electricite', 'électricité'], ['acide', 'acide']];
+const JS_CONTRE = [['poison', 'le poison'], ['sorts', 'les sorts'], ['enchantements', 'les enchantements'], ['peur', 'la terreur'], ['illusions', 'les illusions'], ['maladies', 'les maladies']];
+
 const CIBLES_BONUS = [
   ['Caractéristiques', R.CARACS.map(c => [c.k, c.n])],
   ['Défense', [['caArmure', 'CA (armure, bouclier, naturelle)'], ['caParade', 'CA (parade, divers : aussi au contact)']]],
   ['Jets de sauvegarde', [['js', 'Tous les jets de sauvegarde'], ['vig', 'Vigueur'], ['ref', 'Réflexes'], ['vol', 'Volonté']]],
-  ['Combat', [['attaque', 'Jets d\'attaque'], ['init', 'Initiative'], ['vitesse', 'Vitesse (m)']]],
+  ['Combat', [['attaque', 'Jets d\'attaque'], ['degats', 'Dégâts'], ['init', 'Initiative'], ['vitesse', 'Vitesse (m)']]],
+  ['Résistances (valeur = points ignorés)', ENERGIES.map(([k, l]) => ['res:' + k, 'Résistance ' + l])],
+  ['Protections', [['rm', 'Résistance à la magie'], ['rd', 'Réduction des dégâts'], ...IMMUNITES.map(([k, l]) => ['imm:' + k, 'Immunité : ' + l]), ...JS_CONTRE.map(([k, l]) => ['jsc:' + k, 'Jets de sauvegarde contre ' + l])]],
+  ['Compétences', R.COMPETENCES.map(c => ['comp:' + c.id, c.nom])],
 ];
 const NOM_CIBLE = Object.fromEntries(CIBLES_BONUS.flatMap(([, l]) => l));
 /* Somme des bonus des objets équipés, par cible, avec le détail des objets */
@@ -641,9 +649,10 @@ function ongletFicheBrut(p, e) {
       ${stat('Initiative', R.signe(s.init))}${stat('Vitesse', s.vitesse + ' m')}
       ${stat('Vigueur', R.signe(s.js.vig))}${stat('Réflexes', R.signe(s.js.ref))}${stat('Volonté', R.signe(s.js.vol))}
       ${stat('BBA', R.attTxt(s.att))}${stat('Corps à corps', R.signe(s.cac))}${stat('Distance', R.signe(s.dist))}${stat('Lutte', R.signe(s.lutte))}
-      ${s.rm ? stat('Résistance à la magie', s.rm) : ''}${s.rd.length ? stat('Réduction des dégâts', s.rd.join(', ')) : ''}
+
     </div>
 
+    ${blocProtections(p, e, s)}
     ${e.objets.maxDex != null && e.mods.dex > e.objets.maxDex ? `<p class="hint">Ton armure limite ta Dextérité à ${R.signe(e.objets.maxDex)} pour la CA.</p>` : ''}
     ${e.objets.acp ? `<p class="hint">Malus d'armure ${e.objets.acp} appliqué aux compétences marquées ◘.</p>` : ''}
     ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets et états inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
@@ -655,6 +664,8 @@ function ongletFicheBrut(p, e) {
       <div class="aj-grid">
         ${aj('armure', 'Armure')}${aj('bouclier', 'Bouclier')}${aj('naturelle', 'Armure naturelle')}${aj('parade', 'Parade')}${aj('caDivers', 'CA divers')}
         ${aj('vig', 'Vigueur')}${aj('ref', 'Réflexes')}${aj('vol', 'Volonté')}${aj('init', 'Initiative')}${aj('bba', 'Attaque')}${aj('vitesse', 'Vitesse (m)')}
+        ${ENERGIES.map(([k, l]) => aj('res_' + k, 'Résist. ' + l.replace(/^(à l'|au |à la )/, ''))).join('')}${aj('rm', 'RM')}
+        <label class="aj"><span>RD (texte)</span><input type="text" data-bind="ajust.rd" data-recalc value="${esc(getP(p, 'ajust.rd'))}" placeholder="5/argent"></label>
       </div>
       <p class="hint">Ces bonus s'ajoutent aux valeurs calculées. Le don Esquive n'est pas compté (il ne vise qu'un adversaire).</p>
     </details>
@@ -679,9 +690,13 @@ function ongletFicheBrut(p, e) {
 const GROUPES_INV = [
   ['Armes', ['arme']],
   ['Armures et boucliers', ['armure', 'bouclier']],
+  ['Vêtements', ['vetement']],
+  ['Objets magiques', ['magique']],
   ['Munitions', ['munition']],
   ['Rations', ['ration']],
   ['Consommables', ['consommable']],
+  ['Trésors', ['tresor']],
+  ['Babioles', ['babiole']],
   ['Objets', ['']],
 ];
 function groupesInventaire(items) {
@@ -782,6 +797,40 @@ function ficheEtats(p) {
     </div>
     <p class="hint">Les états actifs apparaissent en haut de la fiche, sur l'accueil et dans l'espace MJ. Leurs effets chiffrés s'appliquent aux statistiques.</p>` : ''}
   </section>`;
+}
+
+/* Toutes les résistances et protections : race, classe, objets, états, saisie manuelle */
+function protections(p, e, st) {
+  const ob = e.objets.tot, a = p.ajust || {};
+  const c = e.classes, moine = c.moine || 0;
+  const res = Object.fromEntries(ENERGIES.map(([k]) => [k, (ob['res:' + k] || 0) + num(a['res_' + k])]));
+  const imm = new Set(IMMUNITES.filter(([k]) => ob['imm:' + k]).map(([k]) => k));
+  const jsc = Object.fromEntries(JS_CONTRE.map(([k]) => [k, ob['jsc:' + k] || 0]));
+  const sources = [];
+  if (p.race === 'nain') { jsc.poison += 2; jsc.sorts += 2; sources.push('nain : +2 contre le poison et les sorts'); }
+  if (p.race === 'elfe' || p.race === 'demi-elfe') { imm.add('sommeil'); jsc.enchantements += 2; sources.push('sang elfe : immunité au sommeil magique, +2 contre les enchantements'); }
+  if (p.race === 'gnome') { jsc.illusions += 2; }
+  if (p.race === 'halfelin') { jsc.peur += 2; }
+  if (moine >= 3) jsc.enchantements += 2;
+  if (moine >= 5) imm.add('maladie');
+  if (moine >= 11) imm.add('poison');
+  if ((c.paladin || 0) >= 3) { imm.add('maladie'); imm.add('peur'); }
+  if ((c.druide || 0) >= 9) imm.add('poison');
+  const rm = Math.max(st.rm || 0, ob.rm || 0, num(a.rm));
+  const rd = [...st.rd, ...(ob.rd ? [`${ob.rd}/—`] : []), ...(a.rd ? [a.rd] : [])];
+  return { res, imm: [...imm], jsc, rm, rd, sources };
+}
+function blocProtections(p, e, st) {
+  const pr = protections(p, e, st);
+  const nomE = Object.fromEntries(ENERGIES), nomI = Object.fromEntries(IMMUNITES), nomJ = Object.fromEntries(JS_CONTRE);
+  return `<h4>Résistances et protections</h4>
+    <div class="stats resistances">
+      ${ENERGIES.map(([k, l]) => `<div class="stat ${pr.imm.includes(k) ? 'immun' : pr.res[k] ? 'actif' : 'vide'}"><span>${l.replace(/^(à l'|au |à la )/, '').replace(/^./, x => x.toUpperCase())}</span><b>${pr.imm.includes(k) ? 'Immunité' : pr.res[k] ? pr.res[k] : '—'}</b></div>`).join('')}
+      <div class="stat ${pr.rm ? 'actif' : 'vide'}"><span>Résistance à la magie</span><b>${pr.rm || '—'}</b></div>
+      <div class="stat ${pr.rd.length ? 'actif' : 'vide'}"><span>Réduction des dégâts</span><b>${esc(pr.rd.join(', ') || '—')}</b></div>
+    </div>
+    ${pr.imm.filter(k => !ENERGIES.some(([x]) => x === k)).length ? `<p class="protections"><b>Immunités :</b> ${pr.imm.filter(k => !ENERGIES.some(([x]) => x === k)).map(k => `<span class="tag-protec">${esc(nomI[k])}</span>`).join('')}</p>` : ''}
+    ${Object.entries(pr.jsc).some(([, v]) => v) ? `<p class="protections"><b>Jets de sauvegarde contre :</b> ${Object.entries(pr.jsc).filter(([, v]) => v).map(([k, v]) => `<span class="tag-protec">${esc(nomJ[k])} ${R.signe(v)}</span>`).join('')}</p>` : ''}`;
 }
 
 function bourseTxt(p) {
@@ -933,7 +982,8 @@ function ligneComp(e, c, v, base, opts) {
   const rangs = num(v.rangs);
   const mod = c.car ? e.mods[c.car] : 0;
   const malusArm = !perso && MALUS_ARMURE.has(c.id) ? (e.objets.acp || 0) * (c.id === 'natation' ? 2 : 1) : 0;
-  const bonus = (perso ? 0 : bonusComp(c.id, e)) + malusArm;
+  const bonusObjet = perso ? 0 : (e.objets.tot['comp:' + c.id] || 0);
+  const bonus = (perso ? 0 : bonusComp(c.id, e)) + malusArm + bonusObjet;
   const total = rangs + mod + bonus + num(v.divers);
   const inutilisable = c.formation && rangs === 0;
   const spe = !perso && ['artisanat', 'profession', 'representation', 'langue'].includes(c.id);
@@ -987,7 +1037,7 @@ function usagesSort(s) {
 const tagsUsages = s => usagesSort(s).map(k => `<span class="usage usage-${k}">${USAGES_SORT[k]}</span>`).join('');
 
 /* ===== En combat : actions, armes, sorts et capacités avec compteurs ===== */
-const CATS_OBJET = { '': 'Objet', arme: 'Arme', armure: 'Armure', bouclier: 'Bouclier', munition: 'Munition', consommable: 'Consommable', ration: 'Ration' };
+const CATS_OBJET = { '': 'Objet', arme: 'Arme', armure: 'Armure', bouclier: 'Bouclier', vetement: 'Vêtement', magique: 'Objet magique', munition: 'Munition', consommable: 'Consommable', ration: 'Ration', tresor: 'Trésor', babiole: 'Babiole' };
 
 function infosMainsNues(p, e, st) {
   const moine = e.classes.moine || 0;
@@ -997,7 +1047,8 @@ function infosMainsNues(p, e, st) {
     ? [[1, '1d4'], [4, '1d6'], [8, '1d8'], [12, '1d10'], [16, '2d6'], [20, '2d8']]
     : [[1, '1d6'], [4, '1d8'], [8, '1d10'], [12, '2d6'], [16, '2d8'], [20, '2d10']]) : (petit ? '1d2' : '1d3');
   const fo = e.mods.for;
-  const degats = `${de}${fo ? R.signe(fo) : ''}`;
+  const bonD = fo + (e.objets.tot.degats || 0);
+  const degats = `${de}${bonD ? R.signe(bonD) : ''}`;
   const toucher = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods.for + (R.TAILLES[e.taille]?.ca || 0));
   let deluge = null;
   if (moine) {
@@ -1083,7 +1134,7 @@ function carteArmeCombat(p, e, st, it, munitions) {
   /* Force aux dégâts : ×1,5 à deux mains, normale au corps à corps et pour les armes de jet */
   const fo = e.mods.for;
   const bonusFo = dist && !ref?.lancer ? Math.min(0, fo) : (prise === 'deux' || prise === 'double') && fo > 0 ? Math.floor(fo * 1.5) : fo;
-  const bonusDeg = bonusFo + spe;
+  const bonusDeg = bonusFo + spe + (e.objets.tot.degats || 0);
   const de = it.degats || ref?.deg || '?';
   const deg = `${de}${bonusDeg ? R.signe(bonusDeg) : ''}`;
   const moine = e.classes.moine || 0;
@@ -1451,7 +1502,7 @@ function carteVitalite(p) {
 
 /* ===== Personnages du MJ : version publique filtrée ===== */
 const VISIBILITE_SECTIONS = [
-  ['portrait', 'Portrait et emblème'], ['classes', 'Race, classe et niveau'], ['apparence', 'Apparence et historique'],
+  ['portrait', 'Portrait et emblème'], ['classes', 'Race et classe'], ['niveau', 'Niveau'], ['apparence', 'Apparence et historique'],
   ['etats', 'États et blessures'], ['pv', 'Points de vie'], ['caracs', 'Caractéristiques'], ['combat', 'Défense et attaques'],
   ['competences', 'Compétences'], ['dons', 'Dons et capacités'], ['sorts', 'Sorts'], ['baguette', 'Baguette'],
   ['langues', 'Langues'], ['bourse', 'Bourse'],
@@ -1460,7 +1511,8 @@ function projectionPublique(p) {
   const v = p.visibilite || {};
   const pub = { id: p.id, nom: p.nom, pnjMJ: true, visibilite: v, joueur: 'MJ', publie: true, schema: 2, maj: p.maj };
   if (v.portrait !== false) { pub.portrait = p.portrait; pub.embleme = p.embleme; }
-  if (v.classes) { pub.race = p.race; pub.raceAutre = p.raceAutre; pub.progression = p.progression; pub.alignement = p.alignement; }
+  if (v.classes) { pub.race = p.race; pub.raceAutre = p.raceAutre; pub.alignement = p.alignement; pub.classesNoms = Object.keys(etat(p).classes).map(id => R.CLASSES[id].nom); }
+  if (v.niveau) pub.progression = p.progression;
   if (v.apparence) pub.apparence = p.apparence;
   if (v.etats) pub.etats = p.etats;
   if (v.pv) { pub.pvMax = p.pvMax; pub.pvActuels = p.pvActuels; }
@@ -1480,6 +1532,7 @@ function carteVisibilite(p) {
   const v = p.visibilite || {};
   return `<section class="card visibilite"><h3>Visible des joueurs</h3>
     <p class="hint">Personnage du MJ : les joueurs ne voient que ce qui est coché ici, plus les objets marqués « visible » dans l'inventaire. Le reste n'est jamais envoyé à leurs appareils.</p>
+    ${fi(p, 'xp', 'Expérience de ce personnage (visible du MJ seulement)', { type: 'number' })}
     <div class="vis-grille">${VISIBILITE_SECTIONS.map(([k, l]) => `<label class="check"><input type="checkbox" data-bind="visibilite.${k}" data-rerender ${(k === 'portrait' ? v[k] !== false : v[k]) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
   </section>`;
 }
@@ -1494,7 +1547,7 @@ function pagePersoPublic(p) {
   return `
     <div class="pagehead"><div class="titre-perso">
       <div class="avatar">${p.portrait ? `<img src="${p.portrait}" alt="Portrait">` : '<span class="vide"></span>'}${p.embleme ? `<img class="embleme-avatar" src="${p.embleme}" alt="">` : ''}</div>
-      <div><h1>${esc(p.nom || 'Inconnu')}</h1><p class="sub">${esc([v.classes ? raceNom(p) : '', v.classes ? classesTxt(e) : ''].filter(Boolean).join(', ') || 'Personnage du MJ')}</p></div>
+      <div><h1>${esc(p.nom || 'Inconnu')}</h1><p class="sub">${esc([v.classes ? raceNom(p) : '', v.classes ? (v.niveau ? classesTxt(e) : (p.classesNoms || []).join(' / ')) : (v.niveau && e.niveau ? 'Niveau ' + e.niveau : '')].filter(Boolean).join(', ') || 'Personnage du MJ')}</p></div>
     </div></div>
     ${v.etats ? puceEtats(p) : ''}
     <p class="hint confidentiel">Fiche confidentielle : le MJ ne montre qu'une partie des informations.</p>
@@ -1547,6 +1600,10 @@ function fusionMJ(local, srv) {
     const t = (srv.equipement || []).find(x => x.id === it.id);
     if (t) it.qte = t.qte;
   }
+  /* Objets donnés par le MJ depuis la dernière synchronisation */
+  const ids = new Set((local.equipement || []).map(x => x.id));
+  const recus = (srv.equipement || []).filter(x => x.donMJ && num(x.donMJ) > num(local.mjMaj) && !ids.has(x.id));
+  if (recus.length) local.equipement = [...(local.equipement || []), ...recus];
   local.mjMaj = srv.mjMaj;
 }
 
@@ -1620,6 +1677,226 @@ function pageMJReelle() {
   </section>
 
   ${pageMJ().split('<section class="card"><h3>Combat en cours')[1] ? '<section class="card"><h3>Combat en cours' + pageMJ().split('<section class="card"><h3>Combat en cours')[1] : ''}`;
+}
+
+/* ===== Données de préparation du MJ (privées) ===== */
+const MJ_DEFAUT = () => ({ xp: { valeur: 0 }, pnj: [], combats: [], combat: null, objets: [], notes: '' });
+const mjd = () => (db.mjData = { ...MJ_DEFAUT(), ...(db.mjData || {}) });
+const mjAttente = new Set();
+let mjTimer;
+function saveMJ(cle) {
+  saveNow();
+  if (!enLigne() || !estMJ()) return;
+  mjAttente.add(cle);
+  clearTimeout(mjTimer);
+  mjTimer = setTimeout(envoyerMJ, 800);
+}
+async function envoyerMJ() {
+  for (const cle of [...mjAttente]) {
+    try {
+      await rpc('mj_ecrire', { p_code: db.codeMJ, p_cle: cle, p_data: mjd()[cle] ?? null });
+      mjAttente.delete(cle);
+    } catch (e) {
+      statutSync('Préparation MJ non envoyée : ' + e.message, true);
+      return;
+    }
+  }
+}
+async function chargerMJ() {
+  if (!enLigne() || !estMJ()) return;
+  try {
+    const d = await rpc('mj_lire', { p_code: db.codeMJ }) || {};
+    const m = mjd();
+    for (const [k, v] of Object.entries(d)) if (!mjAttente.has(k)) m[k] = v;
+    saveNow();
+  } catch (e) { console.warn('Préparation MJ indisponible (base pas encore en v6 ?)', e); }
+}
+
+/* Expérience commune du groupe (table 3.5 : niveau n à n(n−1)/2 × 1000 XP) */
+function niveauXP(xp) { let n = 1; while (XP_NIVEAU(n + 1) <= xp) n++; return n; }
+function carteXP() {
+  const xp = num(mjd().xp.valeur), n = niveauXP(xp);
+  const bas = XP_NIVEAU(n), haut = XP_NIVEAU(n + 1);
+  const pct = Math.round((xp - bas) / (haut - bas) * 100);
+  return `<section class="card"><h3>Expérience du groupe</h3>
+    <p class="xp-ligne"><b>${xp.toLocaleString('fr-FR')} XP</b> <span>niveau ${n}, prochain niveau à ${haut.toLocaleString('fr-FR')} XP</span></p>
+    <div class="barre xp"><span style="width:${pct}%"></span></div>
+    <div class="row xp-actions">
+      <input type="text" inputmode="numeric" id="xp-gain" placeholder="XP gagnés (ex. 450)" aria-label="XP gagnés">
+      <button class="btn" data-action="mj-xp-ajouter">Ajouter</button>
+      <button class="lien" data-action="mj-xp-fixer">Fixer le total…</button>
+    </div>
+    <p class="hint">Une seule barre pour tout le groupe. Les joueurs ne la voient pas.</p>
+  </section>`;
+}
+
+/* ----- Préparation : PNJ (bestiaire), combats ----- */
+const nouveauPNJ = () => ({ id: uid(), nom: 'Nouveau PNJ', camp: 'ennemi', pvMax: '', ca: '', init: '', attaques: '', caracs: '', notes: '', butin: [] });
+const champMJ = (path, label, opt = {}) => `<label class="f${opt.span ? ' span2' : ''}"><span>${esc(label)}</span>${opt.area
+  ? `<textarea data-mjbind="${path}" rows="${opt.rows || 2}" placeholder="${esc(opt.ph || '')}">${esc(getP(mjd(), path))}</textarea>`
+  : `<input type="text" data-mjbind="${path}" value="${esc(getP(mjd(), path))}" placeholder="${esc(opt.ph || '')}"${opt.num ? ' inputmode="numeric"' : ''}>`}</label>`;
+
+function formPNJ(x, i) {
+  const opts = Object.entries(CATS_OBJET).map(([k, l]) => [k, l]);
+  return `<div class="pnj en-edition">
+    <div class="grid">
+      ${champMJ(`pnj.${i}.nom`, 'Nom', { span: true })}
+      <label class="f"><span>Camp</span><select data-mjbind="pnj.${i}.camp" data-rerender>${[['ennemi', 'Ennemi'], ['allie', 'Allié'], ['neutre', 'Neutre']].map(([v, l]) => `<option value="${v}" ${x.camp === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${champMJ(`pnj.${i}.pvMax`, 'PV', { num: true })}${champMJ(`pnj.${i}.ca`, 'CA', { num: true })}${champMJ(`pnj.${i}.init`, 'Bonus d\'initiative', { num: true, ph: '+2' })}
+    </div>
+    ${champMJ(`pnj.${i}.caracs`, 'Caractéristiques et sauvegardes', { area: true, ph: 'For 14, Dex 12… · Vig +4, Réf +1, Vol +0' })}
+    ${champMJ(`pnj.${i}.attaques`, 'Attaques', { area: true, ph: 'Cimeterre +5 (1d6+2, 18-20)' })}
+    ${champMJ(`pnj.${i}.notes`, 'Notes, tactique, capacités', { area: true })}
+    <p class="lbl">Butin porté (ira dans « Objets en attente » à sa mort)</p>
+    ${(x.butin || []).map((it, j) => `<div class="row butin-ligne">
+      <input type="text" data-mjbind="pnj.${i}.butin.${j}.nom" value="${esc(it.nom)}" placeholder="Objet">
+      <select data-mjbind="pnj.${i}.butin.${j}.cat">${opts.map(([k, l]) => `<option value="${k}" ${(it.cat || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <input type="text" class="s" data-mjbind="pnj.${i}.butin.${j}.qte" value="${esc(it.qte)}" placeholder="Qté">
+      <input type="text" class="s" data-mjbind="pnj.${i}.butin.${j}.valeur" value="${esc(it.valeur)}" placeholder="po">
+      <button class="icon" data-action="mj-butin-suppr" data-i="${i}" data-j="${j}" aria-label="Retirer">✕</button>
+    </div>`).join('')}
+    <div class="btns"><button class="lien" data-action="mj-butin-ajout" data-i="${i}">+ Objet de butin</button></div>
+    <div class="btns"><button class="btn" data-action="mj-edit-fin">Terminé</button><button class="btn danger" data-action="mj-pnj-suppr" data-i="${i}">Supprimer</button></div>
+  </div>`;
+}
+function cartePNJ(x, i) {
+  return `<div class="pnj camp-${x.camp}">
+    <div class="pnj-tete"><b>${esc(x.nom)}</b><span class="tag-cat">${({ ennemi: 'Ennemi', allie: 'Allié', neutre: 'Neutre' })[x.camp] || ''}</span>
+      <button class="lien" data-action="mj-edit" data-cle="pnj:${x.id}">Modifier</button></div>
+    <p class="pnj-stats">PV ${esc(x.pvMax || '?')} · CA ${esc(x.ca || '?')} · Init ${esc(x.init || '+0')}${(x.butin || []).length ? ` · ${x.butin.length} objet(s) de butin` : ''}</p>
+    ${x.attaques ? `<p class="hint">${esc(x.attaques)}</p>` : ''}
+  </div>`;
+}
+function formCombat(c, i) {
+  const pnj = mjd().pnj;
+  return `<div class="pnj en-edition">
+    ${champMJ(`combats.${i}.nom`, 'Nom de la rencontre')}
+    ${champMJ(`combats.${i}.notes`, 'Notes (lieu, déclencheur, tactique)', { area: true })}
+    <p class="lbl">Participants</p>
+    ${pnj.length ? pnj.map(x => `<label class="row part-ligne"><span>${esc(x.nom)}</span>
+      <input type="text" inputmode="numeric" class="s" data-action-input="mj-combat-nb" data-i="${i}" data-pnj="${x.id}" value="${esc((c.participants || []).find(y => y.pnjId === x.id)?.nombre || '')}" placeholder="0" aria-label="Nombre de ${esc(x.nom)}"></label>`).join('')
+      : '<p class="empty">Crée d\'abord des PNJ ci-dessus.</p>'}
+    <div class="btns"><button class="btn" data-action="mj-edit-fin">Terminé</button><button class="btn danger" data-action="mj-combat-suppr" data-i="${i}">Supprimer</button></div>
+  </div>`;
+}
+function carteCombatPrep(c, i) {
+  const pnj = mjd().pnj;
+  const liste = (c.participants || []).filter(y => num(y.nombre) > 0).map(y => `${y.nombre} × ${pnj.find(x => x.id === y.pnjId)?.nom || '?'}`);
+  return `<div class="pnj">
+    <div class="pnj-tete"><b>${esc(c.nom)}</b><button class="lien" data-action="mj-edit" data-cle="combat:${c.id}">Modifier</button></div>
+    <p class="pnj-stats">${esc(liste.join(', ') || 'Aucun participant')}</p>
+    ${c.notes ? `<p class="hint">${esc(c.notes)}</p>` : ''}
+    <button class="btn" data-action="mj-combat-activer" data-i="${i}">⚔ Activer ce combat</button>
+  </div>`;
+}
+
+/* ----- Combat en cours ----- */
+function tuerPNJ(x) {
+  x.mort = true;
+  const butin = (x.butin || []).filter(it => it.nom);
+  if (butin.length) {
+    mjd().objets.push(...butin.map(it => ({ ...it, id: uid(), source: `Butin de ${x.nom}` })));
+    saveMJ('objets');
+    toast(`${x.nom} est mort : ${butin.length} objet(s) en attente`);
+  } else toast(`${x.nom} est mort`);
+}
+function lancerCombat(prep) {
+  const m = mjd();
+  const joueurs = db.personnages.filter(x => !x._public && (!x.pnjMJ || true) && (!enLigne() || x.publie));
+  const combattants = [];
+  for (const x of joueurs) {
+    combattants.push({ id: uid(), nom: x.nom, type: x.pnjMJ ? 'mj' : 'pj', persoId: x.id, init: '', bonusInit: stats(x, etat(x)).init, pv: pvActuels(x), pvMax: num(x.pvMax), ca: stats(x, etat(x)).ca, actif: !x.pnjMJ });
+  }
+  for (const y of (prep.participants || [])) {
+    const t = m.pnj.find(x => x.id === y.pnjId);
+    for (let k = 1; k <= num(y.nombre); k++) {
+      combattants.push({ id: uid(), nom: num(y.nombre) > 1 ? `${t.nom} ${k}` : t.nom, type: 'pnj', camp: t.camp, pnjId: t.id, init: '', bonusInit: num(t.init), pv: num(t.pvMax), pvMax: num(t.pvMax), ca: t.ca, actif: true, butin: (t.butin || []).map(b => ({ ...b, id: uid() })) });
+    }
+  }
+  m.combat = { id: uid(), nom: prep.nom, phase: 'initiative', tour: 0, round: 1, combattants };
+  saveMJ('combat');
+}
+function pageCombatMJ() {
+  const c = mjd().combat;
+  if (!c) return `<section class="card intro"><h3>Aucun combat en cours</h3><p>Prépare une rencontre dans l'onglet Préparation, puis touche « Activer ce combat ».</p></section>`;
+  const actifs = c.combattants.filter(x => x.actif);
+  if (c.phase === 'initiative') {
+    return `<section class="card"><h3>${esc(c.nom)} : initiatives</h3>
+      <p class="hint">Coche qui participe, puis note le résultat du jet d'initiative de chacun (d20 + bonus). Les PNJ peuvent être lancés automatiquement.</p>
+      <div class="init-saisie">${c.combattants.map((x, i) => `<div class="row init-ligne ${x.type}">
+        <label class="check"><input type="checkbox" data-mjbind="combat.combattants.${i}.actif" data-rerender ${x.actif ? 'checked' : ''}> <b>${esc(x.nom)}</b></label>
+        <small>bonus ${R.signe(num(x.bonusInit))}</small>
+        <input type="text" inputmode="numeric" class="s" data-mjbind="combat.combattants.${i}.init" value="${esc(x.init)}" placeholder="?" aria-label="Initiative de ${esc(x.nom)}">
+      </div>`).join('')}</div>
+      <div class="btns"><button class="btn ghost" data-action="mj-init-pnj">🎲 Lancer pour les PNJ</button><button class="btn" data-action="mj-combat-go">Commencer le combat</button><button class="btn danger" data-action="mj-combat-fin">Annuler</button></div>
+    </section>`;
+  }
+  const ordre = actifs;
+  const courant = ordre[c.tour % (ordre.length || 1)];
+  return `<section class="card"><h3>${esc(c.nom)}</h3>
+    <p class="xp-ligne"><b>Round ${c.round}</b> <span>au tour de ${esc(courant?.nom || '—')}</span></p>
+    <ol class="mj-init">${ordre.map(x => {
+      const i = c.combattants.indexOf(x);
+      return `<li class="${x === courant ? 'actif' : ''} ${x.type === 'pnj' && x.camp !== 'allie' ? 'ennemi' : ''} ${x.mort ? 'mort' : ''}">
+        <span class="mj-init-val">${esc(x.init || '—')}</span>
+        <span><b>${esc(x.nom)}</b>${x.ca ? ` <small>CA ${esc(x.ca)}</small>` : ''}${x.mort ? ' <small>mort</small>' : ''}</span>
+        <span class="mj-pv">${x.pvMax ? `<button class="icon" data-action="mj-cb-pv" data-i="${i}" data-d="-1" aria-label="−1 PV">−</button>${x.pv}/${x.pvMax}<button class="icon" data-action="mj-cb-pv" data-i="${i}" data-d="1" aria-label="+1 PV">+</button>` : ''}
+          ${x.type === 'pnj' && !x.mort ? `<button class="icon" data-action="mj-cb-mort" data-i="${i}" title="Mort : son butin passe dans les objets en attente">☠</button>` : ''}</span>
+      </li>`;
+    }).join('')}</ol>
+    <div class="btns"><button class="btn" data-action="mj-suivant">Tour suivant</button><button class="btn danger" data-action="mj-combat-fin">Terminer le combat</button></div>
+    <p class="hint">Les PV des personnages joueurs sont ceux de leur fiche : les modifier ici les modifie chez le joueur. Un PNJ qui tombe à 0 PV, ou que tu marques ☠, est déclaré mort : son butin part dans « Objets en attente ».</p>
+  </section>`;
+}
+
+/* ----- Objets en attente ----- */
+function pageObjetsMJ() {
+  const objets = mjd().objets;
+  const cibles = db.personnages.filter(x => !x._public && (!enLigne() || x.publie));
+  return `<section class="card"><h3>Objets en attente</h3>
+    <p class="hint">Prépare des objets à l'avance ou récupère le butin des PNJ morts, puis donne-les à un personnage : ils arrivent directement dans son inventaire.</p>
+    <div class="objets">${objets.map((it, i) => state.mjEdit === 'obj:' + it.id ? `<div class="objet en-edition">
+        <div class="row"><input type="text" data-mjbind="objets.${i}.nom" value="${esc(it.nom)}" placeholder="Objet">
+          <select data-mjbind="objets.${i}.cat">${Object.entries(CATS_OBJET).map(([k, l]) => `<option value="${k}" ${(it.cat || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="row"><input type="text" class="s" data-mjbind="objets.${i}.qte" value="${esc(it.qte)}" placeholder="Qté"><input type="text" class="s" data-mjbind="objets.${i}.valeur" value="${esc(it.valeur)}" placeholder="Valeur (po)"><input type="text" class="s" data-mjbind="objets.${i}.poids" value="${esc(it.poids)}" placeholder="Poids"></div>
+        <input type="text" data-mjbind="objets.${i}.notes" value="${esc(it.notes)}" placeholder="Description, effet, commentaire">
+        <div class="btns"><button class="btn" data-action="mj-edit-fin">Terminé</button><button class="btn danger" data-action="mj-obj-suppr" data-i="${i}">Supprimer</button></div>
+      </div>` : `<div class="objet-vue">
+        <div class="objet-vue-tete"><b>${esc(it.nom || 'Objet')}</b>${num(it.qte) > 1 ? ` <span class="qte">× ${esc(it.qte)}</span>` : ''}${it.cat ? `<span class="tag-cat cat-${it.cat}">${CATS_OBJET[it.cat]}</span>` : ''}${it.source ? `<span class="tag-cat">${esc(it.source)}</span>` : ''}
+          <button class="lien objet-modif" data-action="mj-edit" data-cle="obj:${it.id}">Modifier</button></div>
+        ${it.notes || num(it.valeur) ? `<p class="objet-det">${esc([num(it.valeur) ? `${it.valeur} po` : '', it.notes].filter(Boolean).join(' · '))}</p>` : ''}
+        <div class="row donner"><select id="cible-${it.id}" aria-label="Donner à">${cibles.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
+          <button class="btn ghost" data-action="mj-donner" data-i="${i}">Donner</button></div>
+      </div>`).join('') || '<p class="empty">Aucun objet en attente.</p>'}</div>
+    <button class="btn ghost" data-action="mj-obj-ajout">+ Préparer un objet</button>
+  </section>`;
+}
+
+/* ----- Page MJ à onglets ----- */
+function pageMJ2() {
+  if (!estMJ()) return pageMJReelle();
+  const o = state.mjOnglet || 'groupe';
+  const m = mjd();
+  const onglets = [['groupe', 'Groupe'], ['combat', m.combat ? 'Combat ⚔' : 'Combat'], ['prepa', 'Préparation'], ['objets', `Objets${m.objets.length ? ' (' + m.objets.length + ')' : ''}`], ['notes', 'Notes']];
+  let corps;
+  if (o === 'combat') corps = pageCombatMJ();
+  else if (o === 'objets') corps = pageObjetsMJ();
+  else if (o === 'notes') corps = `<section class="card"><h3>Notes secrètes</h3>${champMJ('notes', 'Rien que pour toi', { area: true, rows: 14 })}</section>`;
+  else if (o === 'prepa') {
+    corps = `<section class="card"><h3>PNJ et créatures</h3>
+      <div class="pnjs">${m.pnj.map((x, i) => state.mjEdit === 'pnj:' + x.id ? formPNJ(x, i) : cartePNJ(x, i)).join('') || '<p class="empty">Aucun PNJ préparé.</p>'}</div>
+      <button class="btn ghost" data-action="mj-pnj-ajout">+ Préparer un PNJ</button></section>
+      <section class="card"><h3>Combats préparés</h3>
+      <div class="pnjs">${m.combats.map((c, i) => state.mjEdit === 'combat:' + c.id ? formCombat(c, i) : carteCombatPrep(c, i)).join('') || '<p class="empty">Aucun combat préparé.</p>'}</div>
+      <button class="btn ghost" data-action="mj-combat-ajout">+ Préparer un combat</button></section>`;
+  } else {
+    corps = pageMJReelle().replace(/<section class="card"><h3>Combat en cours[\s\S]*$/, '')
+      .replace(/<div class="pagehead">[\s\S]*?Quitter le mode MJ<\/button><\/div>/, '')
+      .replace('<section class="card mj-actions">', carteXP() + '<section class="card mj-actions">');
+  }
+  const tete = `<div class="pagehead"><div><h1>Espace MJ</h1><p class="sub">Jour ${esc(db.jour || 1)} de l'aventure${state.persosCharges ? `, mis à jour à ${new Date(state.persosCharges).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}</p></div>
+    <button class="btn danger" data-action="mj-sortir">Quitter le mode MJ</button></div>`;
+  return `${tete}<nav class="tabs mj-onglets" aria-label="Espace MJ">${onglets.map(([k, l]) => `<a href="#/mj" data-action="mj-onglet" data-o="${k}" class="${o === k ? 'active' : ''}">${l}</a>`).join('')}</nav>${corps}`;
 }
 
 function ficheCompetences(p, e) {
@@ -3119,7 +3396,7 @@ function render(garderScroll = true) {
     case 'fiche': html = pageFiche(id); break;
     case 'session': html = pageSession(id); break;
     case 'nouveau': html = pageNouveauPerso(); break;
-    case 'mj': html = pageMJReelle(); break;
+    case 'mj': html = pageMJ2(); break;
     case 'donnees': html = pageDonnees(); break;
     default: html = pagePersos();
   }
@@ -3169,6 +3446,19 @@ document.addEventListener('input', ev => {
     return;
   }
   if (t.id === 'carnet') { state.carnet = t.value; render(); return; }
+  if (t.dataset.mjbind) {
+    setP(mjd(), t.dataset.mjbind, t.type === 'checkbox' ? t.checked : t.value);
+    saveMJ(t.dataset.mjbind.split('.')[0]);
+    if (t.hasAttribute('data-rerender')) render();
+    return;
+  }
+  if (t.dataset.actionInput === 'mj-combat-nb') {
+    const c = mjd().combats[Number(t.dataset.i)];
+    c.participants = (c.participants || []).filter(y => y.pnjId !== t.dataset.pnj);
+    if (num(t.value) > 0) c.participants.push({ pnjId: t.dataset.pnj, nombre: num(t.value) });
+    saveMJ('combats');
+    return;
+  }
   const mArmure = (t.dataset.bind || '').match(/^equipement\.(\d+)\.armureType$/);
   if (mArmure && state.ctx && peutModifier(state.ctx)) {
     const it = state.ctx.equipement[Number(mArmure[1])], ref = R.ARMURE[t.value];
@@ -3250,7 +3540,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -3710,7 +4000,7 @@ document.addEventListener('click', ev => {
       break;
     case 'mj-entrer': {
       const code = $('#code-mj').value.trim();
-      const ok = () => { db.codeMJ = code; saveNow(); toast('Bienvenue, maître du jeu'); chargerPersosMJ().then(render); };
+      const ok = () => { db.codeMJ = code; saveNow(); toast('Bienvenue, maître du jeu'); chargerPersosMJ().then(chargerMJ).then(render); };
       if (enLigne()) rpc('verifier_mj', { p_code: code }).then(v => v ? ok() : toast('Code MJ incorrect')).catch(e => alert('Vérification impossible (la base est-elle en v5 ?) : ' + e.message));
       else if (code === CODE_MJ_DEMO) ok(); else toast('Code MJ incorrect');
       break;
@@ -3718,12 +4008,20 @@ document.addEventListener('click', ev => {
     case 'mj-sortir':
       db.codeMJ = '';
       /* les versions complètes des personnages du MJ ne restent pas sur l'appareil */
-      if (enLigne()) db.personnages = db.personnages.filter(x => !x.pnjMJ);
+      if (enLigne()) { db.personnages = db.personnages.filter(x => !x.pnjMJ); db.mjData = null; }
       saveNow(); go('#/persos'); actualiser();
       break;
-    case 'mj-suivant':
-      state.mjTour = (state.mjTour || 0) + 1; render();
+    case 'mj-suivant': {
+      const c = mjd().combat;
+      if (!c) { state.mjTour = (state.mjTour || 0) + 1; render(); break; }
+      const actifs = c.combattants.filter(x => x.actif);
+      if (!actifs.length) break;
+      let n = 0;
+      do { c.tour++; n++; } while (actifs[c.tour % actifs.length].mort && n <= actifs.length);
+      c.round = Math.floor(c.tour / actifs.length) + 1;
+      saveMJ('combat'); render();
       break;
+    }
     case 'mj-pv': {
       const c = state.mjInit[idx];
       c.pv = Math.max(-10, Math.min(c.pvMax, c.pv + Number(b.dataset.d))); render();
@@ -3818,6 +4116,113 @@ document.addEventListener('click', ev => {
       Object.assign(np, { nom: 'Personnage du MJ', pnjMJ: true, joueur: 'MJ', visibilite: { portrait: true }, publie: enLigne() });
       db.personnages.push(np); saveNow(); persoModifie(np);
       go(`#/perso/${np.id}/fiche`);
+      break;
+    }
+    case 'mj-onglet':
+      ev.preventDefault(); state.mjOnglet = b.dataset.o; state.mjEdit = null; render(); window.scrollTo(0, 0);
+      break;
+    case 'mj-edit':
+      state.mjEdit = b.dataset.cle; render();
+      break;
+    case 'mj-edit-fin':
+      state.mjEdit = null; saveNow(); render();
+      break;
+    case 'mj-xp-ajouter': {
+      const n = Math.round(num($('#xp-gain').value));
+      if (!n) { toast('Indique le nombre d\'XP gagnés'); break; }
+      const m = mjd(); m.xp = { valeur: num(m.xp.valeur) + n }; saveMJ('xp'); render(); toast(`+${n} XP pour le groupe`);
+      break;
+    }
+    case 'mj-xp-fixer': {
+      const v = prompt('Total d\'expérience du groupe :', String(num(mjd().xp.valeur)));
+      if (v === null || isNaN(Number(v))) break;
+      mjd().xp = { valeur: Math.max(0, Math.round(Number(v))) }; saveMJ('xp'); render();
+      break;
+    }
+    case 'mj-pnj-ajout': {
+      const x = nouveauPNJ(); mjd().pnj.push(x); state.mjEdit = 'pnj:' + x.id; saveMJ('pnj'); render();
+      break;
+    }
+    case 'mj-pnj-suppr':
+      if (confirm('Supprimer ce PNJ ?')) { mjd().pnj.splice(Number(b.dataset.i), 1); state.mjEdit = null; saveMJ('pnj'); render(); }
+      break;
+    case 'mj-butin-ajout': {
+      const x = mjd().pnj[Number(b.dataset.i)]; x.butin = [...(x.butin || []), { nom: '', cat: '', qte: '1', valeur: '' }]; saveMJ('pnj'); render();
+      break;
+    }
+    case 'mj-butin-suppr':
+      mjd().pnj[Number(b.dataset.i)].butin.splice(Number(b.dataset.j), 1); saveMJ('pnj'); render();
+      break;
+    case 'mj-combat-ajout': {
+      const c = { id: uid(), nom: 'Nouvelle rencontre', notes: '', participants: [] }; mjd().combats.push(c); state.mjEdit = 'combat:' + c.id; saveMJ('combats'); render();
+      break;
+    }
+    case 'mj-combat-suppr':
+      if (confirm('Supprimer ce combat préparé ?')) { mjd().combats.splice(Number(b.dataset.i), 1); state.mjEdit = null; saveMJ('combats'); render(); }
+      break;
+    case 'mj-combat-activer': {
+      if (mjd().combat && !confirm('Un combat est déjà en cours. Le remplacer ?')) break;
+      lancerCombat(mjd().combats[Number(b.dataset.i)]);
+      state.mjOnglet = 'combat'; render(); window.scrollTo(0, 0);
+      break;
+    }
+    case 'mj-init-pnj':
+      for (const x of mjd().combat.combattants) if (x.type === 'pnj' && x.init === '') x.init = String(1 + Math.floor(Math.random() * 20) + num(x.bonusInit));
+      saveMJ('combat'); render();
+      break;
+    case 'mj-combat-go': {
+      const c = mjd().combat;
+      const manquants = c.combattants.filter(x => x.actif && x.init === '');
+      if (manquants.length && !confirm(`Pas d'initiative pour : ${manquants.map(x => x.nom).join(', ')}. Commencer quand même ?`)) break;
+      c.combattants.sort((a2, b2) => num(b2.init) - num(a2.init) || num(b2.bonusInit) - num(a2.bonusInit));
+      c.phase = 'combat'; c.tour = 0; c.round = 1; saveMJ('combat'); render();
+      break;
+    }
+    case 'mj-combat-fin':
+      if (confirm('Terminer le combat ?')) { mjd().combat = null; saveMJ('combat'); render(); }
+      break;
+    case 'mj-cb-pv': {
+      const c = mjd().combat, x = c.combattants[Number(b.dataset.i)];
+      const nv = Math.max(-10, Math.min(x.pvMax || 9999, num(x.pv) + Number(b.dataset.d)));
+      x.pv = nv;
+      if (x.persoId) {
+        const pj = findPerso(x.persoId);
+        if (pj) {
+          const fini = () => { pj.pvActuels = String(nv); pj.mjMaj = Date.now(); saveNow(); };
+          if (enLigne() && !pj.pnjMJ) rpc('mj_pv', { p_code: db.codeMJ, p_id: pj.id, p_pv: nv }).then(fini).catch(e => alert('Impossible : ' + e.message));
+          else { fini(); if (pj.pnjMJ) persoModifie(pj); }
+        }
+      }
+      if (x.type === 'pnj' && nv <= 0 && !x.mort) tuerPNJ(x);
+      saveMJ('combat'); render();
+      break;
+    }
+    case 'mj-cb-mort': {
+      const x = mjd().combat.combattants[Number(b.dataset.i)];
+      if (confirm(`${x.nom} est mort ? Son butin passera dans les objets en attente.`)) { tuerPNJ(x); saveMJ('combat'); render(); }
+      break;
+    }
+    case 'mj-obj-ajout': {
+      const it = { id: uid(), nom: '', cat: '', qte: '1', valeur: '', poids: '', notes: '' }; mjd().objets.push(it); state.mjEdit = 'obj:' + it.id; saveMJ('objets'); render();
+      break;
+    }
+    case 'mj-obj-suppr':
+      if (confirm('Supprimer cet objet ?')) { mjd().objets.splice(Number(b.dataset.i), 1); state.mjEdit = null; saveMJ('objets'); render(); }
+      break;
+    case 'mj-donner': {
+      const i = Number(b.dataset.i), obj = mjd().objets[i];
+      const cible = findPerso($('#cible-' + obj.id).value);
+      if (!cible) break;
+      const { source, ...propre } = obj;
+      const item = { ...propre, id: uid() };
+      const fini = () => {
+        cible.equipement = [...(cible.equipement || []), { ...item, donMJ: Date.now() }];
+        cible.mjMaj = Date.now();
+        mjd().objets.splice(i, 1); saveMJ('objets'); render();
+        toast(`${obj.nom || 'Objet'} donné à ${cible.nom}`);
+      };
+      if (enLigne() && !cible.pnjMJ) rpc('mj_donner_objet', { p_code: db.codeMJ, p_id: cible.id, p_objet: item }).then(fini).catch(e => alert('Impossible : ' + e.message));
+      else { fini(); if (cible.pnjMJ) persoModifie(cible); }
       break;
     }
     case 'replis-tout': {
@@ -3992,9 +4397,10 @@ async function actualiser(manuel = false) {
     await envoyerPersos();
     await Promise.all([chargerPersos(), chargerRecaps(), chargerFiches(), chargerInfos()]);
     await chargerPersosMJ();
+    await chargerMJ();
     if (manuel) statutSync(state.syncErreur ? 'Hors ligne' : 'À jour');
     /* On ne redessine pas sous les doigts de quelqu'un qui est en train d'écrire */
-    if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette) render();
+    if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette && !state.mjEdit) render();
   } finally {
     actualisationEnCours = false;
   }
@@ -4017,6 +4423,7 @@ setInterval(() => {
   render();
   await Promise.all([initSorts(), chargerRecaps(), chargerPersos(), chargerInfos(), chargerFiches()]);
   await chargerPersosMJ();
+  await chargerMJ();
   render();
   if (enLigne()) {
     await envoyerPersos();
