@@ -858,7 +858,8 @@ function detailsObjet(it, items) {
 function ligneObjetVue(it, i, items, modifiable) {
   const bonus = (it.bonus || []).filter(b => b.cible && num(b.val));
   const det = detailsObjet(it, items);
-  return `<div class="objet-vue ${bonus.length && it.equipe === false ? 'range' : ''} ${it.focalisateur ? 'focalisateur' : ''}">
+  return `<div class="objet-vue ${bonus.length && it.equipe === false ? 'range' : ''} ${it.focalisateur ? 'focalisateur' : ''} ${it.image ? 'avec-image' : ''}">
+    ${it.image ? `<button class="vignette" data-action="img-zoom" data-src="${it.image}" aria-label="Agrandir l'image de ${esc(it.nom || 'l\'objet')}"><img src="${it.image}" alt=""></button>` : ''}
     <div class="objet-vue-tete">
       <b>${esc(it.nom || 'Objet sans nom')}</b>${num(it.qte) > 1 || it.cat === 'munition' || it.cat === 'consommable' ? ` <span class="qte">× ${esc(it.qte || 0)}</span>` : ''}
       ${it.cat ? `<span class="tag-cat cat-${it.cat}">${CATS_OBJET[it.cat]}</span>` : ''}
@@ -957,6 +958,10 @@ function ligneObjetEdition(p, it, i) {
         <input type="text" inputmode="decimal" class="s" data-bind="equipement.${i}.valeur" value="${esc(it.valeur)}" placeholder="Valeur" aria-label="Valeur à l'unité">
         ${selUnite(`data-bind="equipement.${i}.valeurUnite" data-recalc`, it.valeurUnite)}
         <button class="icon" data-action="del-item" data-list="equipement" data-idx="${i}" aria-label="Supprimer l'objet">✕</button>
+      </div>
+      <div class="objet-image">
+        <button class="image-cadre petite" data-action="img-choisir" data-type="objet" data-id="${it.id}" aria-label="${it.image ? 'Changer' : 'Ajouter'} l'image">${it.image ? `<img src="${it.image}" alt="">` : '<span>+ Image</span>'}</button>
+        ${it.image ? `<button class="lien" data-action="img-retirer" data-type="objet" data-id="${it.id}">Retirer l'image</button>` : ''}
       </div>
       <div class="row objet-type">
         <select data-bind="equipement.${i}.cat" data-rerender aria-label="Type d'objet">${Object.entries(CATS_OBJET).map(([k, l]) => `<option value="${k}" ${(it.cat || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -1879,10 +1884,15 @@ function pageObjetsMJ() {
         ${selUnite(`data-mjbind="objets.${i}.valeurUnite"`, it.valeurUnite)}
         <input type="text" class="s" data-mjbind="objets.${i}.poids" value="${esc(it.poids)}" placeholder="Poids"></div>
       <input type="text" data-mjbind="objets.${i}.notes" value="${esc(it.notes)}" placeholder="Description, effet, commentaire">
+      <div class="objet-image">
+        <button class="image-cadre petite" data-action="img-choisir" data-type="mjobjet" data-id="${it.id}" aria-label="${it.image ? 'Changer' : 'Ajouter'} l'image">${it.image ? `<img src="${it.image}" alt="">` : '<span>+ Image</span>'}</button>
+        ${it.image ? `<button class="lien" data-action="img-retirer" data-type="mjobjet" data-id="${it.id}">Retirer l'image</button>` : ''}
+      </div>
       ${it.cat === 'magique' ? `<label class="check"><input type="checkbox" data-mjbind="objets.${i}.focalisateur" ${it.focalisateur ? 'checked' : ''}> ✦ Focalisateur</label>` : ''}
       <div class="btns"><button class="btn" data-action="mj-edit-fin">Terminé</button><button class="btn danger" data-action="mj-obj-suppr" data-i="${i}">Supprimer</button></div>
     </div>`;
-    return `<div class="objet-vue">
+    return `<div class="objet-vue ${it.image ? 'avec-image' : ''}">
+      ${it.image ? `<button class="vignette" data-action="img-zoom" data-src="${it.image}" aria-label="Agrandir l'image de ${esc(it.nom || 'l\'objet')}"><img src="${it.image}" alt=""></button>` : ''}
       <div class="objet-vue-tete"><b>${esc(it.nom || 'Objet')}</b>${num(it.qte) > 1 ? ` <span class="qte">× ${esc(it.qte)}</span>` : ''}${it.cat ? `<span class="tag-cat cat-${it.cat}">${CATS_OBJET[it.cat]}</span>` : ''}
         <span class="tag-cat ${it.type === 'vente' ? 'vente' : ''}">${it.type === 'vente' ? 'À vendre' : 'Butin'}</span>${it.source ? `<span class="tag-cat">${esc(it.source)}</span>` : ''}
         <button class="lien objet-modif" data-action="mj-edit" data-cle="obj:${it.id}">Modifier</button></div>
@@ -2010,6 +2020,7 @@ function pageMarche() {
     const i = db.marche.indexOf(a);
     const epuise = num(a.stock) <= 0;
     return `<div class="article ${a.aVendre ? '' : 'retire'} ${epuise ? 'epuise' : ''}">
+      ${a.image ? `<button class="article-image" data-action="img-zoom" data-src="${a.image}" aria-label="Agrandir l'image"><img src="${a.image}" alt=""></button>` : ''}
       <div class="objet-vue-tete"><b>${esc(a.nom || 'Article')}</b>${a.cat ? `<span class="tag-cat cat-${a.cat}">${CATS_OBJET[a.cat] || ''}</span>` : ''}${a.focalisateur ? '<span class="tag-cat focal">✦ focalisateur</span>' : ''}</div>
       ${a.notes ? `<p class="objet-det">${esc(a.notes)}</p>` : ''}
       ${(a.bonus || []).filter(x => x.cible && num(x.val)).length ? `<p class="objet-bonus">${a.bonus.filter(x => x.cible && num(x.val)).map(x => `<span class="bonus-objet">${R.signe(num(x.val))} ${esc(NOM_CIBLE[x.cible] || x.cible)}</span>`).join('')}</p>` : ''}
@@ -2053,6 +2064,7 @@ function carteFocalisateur(p) {
   return f.map(it => `<section class="card focalisateur-carte">
     <p class="recit-num">✦ Focalisateur</p>
     <h2 class="baguette-nom">${esc(it.nom || 'Focalisateur')}</h2>
+    ${it.image ? `<img class="focal-image" src="${it.image}" alt="">` : ''}
     ${it.notes ? `<p>${esc(it.notes)}</p>` : ''}
     ${(it.bonus || []).filter(b => b.cible && num(b.val)).length ? `<p class="objet-bonus">${it.bonus.filter(b => b.cible && num(b.val)).map(b => `<span class="bonus-objet">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`).join('')}</p>` : ''}
     ${it.equipe === false ? '<p class="hint">Rangé dans le sac : ses bonus ne comptent pas.</p>' : ''}
@@ -3713,7 +3725,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -4477,6 +4489,14 @@ document.addEventListener('click', ev => {
       }
       break;
     }
+    case 'img-zoom': {
+      const d = document.createElement('div');
+      d.className = 'zoom';
+      d.innerHTML = `<img src="${b.dataset.src}" alt=""><button class="btn ghost" aria-label="Fermer">Fermer</button>`;
+      d.addEventListener('click', () => d.remove());
+      document.body.appendChild(d);
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -4484,10 +4504,13 @@ document.addEventListener('click', ev => {
     }
     case 'img-choisir':
       state.imgType = b.dataset.type;
+      state.imgObjet = b.dataset.id || null;
       $('#imginput').value = '';
       $('#imginput').click();
       break;
     case 'img-retirer':
+      if (b.dataset.type === 'objet') { const it = (p.equipement || []).find(x => x.id === b.dataset.id); if (it) { delete it.image; save(); render(); } break; }
+      if (b.dataset.type === 'mjobjet') { const it = mjd().objets.find(x => x.id === b.dataset.id); if (it) { delete it.image; saveMJ('objets'); render(); } break; }
       if (b.dataset.type === 'baguette') { if (confirm('Retirer la photo de la baguette ?')) { p.baguette.photo = ''; saveNow(); persoModifie(p); render(); } break; }
       if (confirm(b.dataset.type === 'portrait' ? 'Retirer le portrait ?' : 'Retirer l\'emblème ?')) { p[b.dataset.type] = ''; saveNow(); persoModifie(p); render(); }
       break;
@@ -4609,7 +4632,19 @@ async function reduireImage(file, max, type) {
 $('#imginput').addEventListener('change', async ev => {
   const file = ev.target.files[0];
   const p = state.ctx;
-  if (!file || !p || !state.imgType) return;
+  if (!file || !state.imgType) return;
+  /* Images d'objets : petites vignettes (256 px) pour garder les fiches légères */
+  if (state.imgType === 'mjobjet') {
+    const it = mjd().objets.find(x => x.id === state.imgObjet);
+    if (it) { it.image = await reduireImage(file, 256, 'image/webp'); saveMJ('objets'); render(); toast('Image ajoutée'); }
+    return;
+  }
+  if (!p) return;
+  if (state.imgType === 'objet') {
+    const it = (p.equipement || []).find(x => x.id === state.imgObjet);
+    if (it) { it.image = await reduireImage(file, 256, 'image/webp'); p.maj = Date.now(); saveNow(); persoModifie(p); render(); toast('Image ajoutée'); }
+    return;
+  }
   try {
     if (state.imgType === 'baguette') {
       p.baguette = { ...(p.baguette || {}), photo: await reduireImage(file, 1280, 'image/jpeg') };
