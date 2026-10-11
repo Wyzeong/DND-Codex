@@ -136,6 +136,9 @@ const state = {
   typeNote: 'note',     // type de la prochaine note
   editNote: null,       // note en cours de modification
   editRecap: null,      // récapitulatif en cours de modification
+  editFiche: null,      // fiche d'encyclopédie en cours de modification
+  eq: '',               // recherche dans l'encyclopédie
+  ftype: '',            // filtre par type de fiche
 };
 
 /* ---------- Visuels de la marque ---------- */
@@ -670,41 +673,75 @@ function ficheEquipement(p) {
     <p class="hint">Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac. Tous les bonus des objets équipés s'additionnent.</p>`;
 }
 
+/* Compétences soumises au malus d'armure (◘ sur la feuille papier) */
+const MALUS_ARMURE = new Set(['acrobaties', 'deplacement-silencieux', 'discretion', 'equilibre', 'escalade', 'escamotage', 'evasion', 'saut', 'natation']);
+const nomCourt = n => n.replace(/^Connaissances \((.*)\)$/, 'Conn. ($1)').replace(' et ingénierie', '').replace('exploration souterraine', 'souterrains').replace(' et royauté', '').replace("Utilisation d'objets magiques", "Util. d'objets magiques");
+
+function ligneComp(e, c, v, base, opts) {
+  const { classe, deClasse, perso, i } = opts;
+  const rangs = num(v.rangs);
+  const mod = c.car ? e.mods[c.car] : 0;
+  const bonus = perso ? 0 : bonusComp(c.id, e);
+  const total = rangs + mod + bonus + num(v.divers);
+  const inutilisable = c.formation && rangs === 0;
+  const spe = !perso && ['artisanat', 'profession', 'representation', 'langue'].includes(c.id);
+  const car = R.CARACS.find(x => x.k === c.car);
+  const cle = perso ? `compPerso.${i}` : `comp.${c.id}`;
+  return `<div class="cl ${classe ? 'de-classe' : ''} ${inutilisable ? 'formation' : ''}">
+    <button class="cl-case ${classe ? 'on' : ''}" data-action="comp-classe" data-cle="${perso ? 'perso:' + i : c.id}" title="${classe ? 'Compétence de classe' : 'Hors classe'}${perso ? '' : deClasse ? ' (selon ta classe)' : ''}" aria-pressed="${classe}" aria-label="Compétence de classe">${classe ? '✱' : ''}</button>
+    <div class="cl-nom">
+      ${perso ? `<input type="text" class="cl-nom-perso" data-bind="${cle}.nom" value="${esc(v.nom)}" placeholder="Nom de la compétence" aria-label="Nom de la compétence">`
+        : `<span class="cl-libelle" title="${esc(c.nom)}">${esc(nomCourt(c.nom))}</span>`}
+      <span class="cl-marques">${c.formation ? '' : '<span title="Utilisable non entraîné">*</span>'}${MALUS_ARMURE.has(c.id) ? '<span title="Pénalité d\'armure ou d\'encombrement">◘</span>' : ''}</span>
+      ${spe ? `<input type="text" class="spe" data-bind="${cle}.spe" value="${esc(v.spe)}" placeholder="Spécialité" aria-label="Spécialité">` : ''}
+    </div>
+    <b class="cl-val ${total < 0 ? 'neg' : ''}" title="Bonus à ajouter au d20">${inutilisable ? '—' : R.signe(total)}</b>
+    <input type="text" inputmode="decimal" class="cl-in" data-bind="${cle}.rangs" data-recalc value="${esc(v.rangs)}" placeholder="0" aria-label="Rangs">
+    <span class="cl-car">${perso
+      ? `<select class="cl-car-sel" data-bind="${cle}.car" data-rerender aria-label="Caractéristique">${R.CARACS.map(x => `<option value="${x.k}" ${v.car === x.k ? 'selected' : ''}>${x.l.charAt(0) + x.l.slice(1).toLowerCase()}</option>`).join('')}</select>`
+      : `<small>${car ? car.l.charAt(0) + car.l.slice(1).toLowerCase() : '—'}</small>`}<b>${R.signe(mod)}</b></span>
+    <span class="cl-div">
+      <input type="text" inputmode="numeric" class="cl-in" data-bind="${cle}.divers" data-recalc value="${esc(v.divers)}" placeholder="0" aria-label="Bonus divers">
+      ${bonus ? `<small class="cl-auto" title="Bonus racial ou de don, déjà compté">${R.signe(bonus)}</small>` : ''}
+    </span>
+    ${perso ? `<button class="icon cl-suppr" data-action="del-comp-perso" data-idx="${i}" aria-label="Supprimer cette compétence">✕</button>` : ''}
+  </div>`;
+}
+
 function ficheCompetences(p, e) {
   const deClasse = compDeClasse(e);
   const dispo = pointsComp(p, e);
   let depense = 0;
   const rangsMax = e.niveau + 3;
   const reduit = !!db.compReduit;
+  const estDeClasse = (id, v) => v && typeof v.classe === 'boolean' ? v.classe : deClasse.has(id);
   const lignes = R.COMPETENCES.map(c => {
     const v = p.comp?.[c.id] || {};
-    const rangs = num(v.rangs), classe = deClasse.has(c.id);
-    depense += classe ? rangs : rangs * 2;
-    if (reduit && !classe && !rangs && !num(v.divers)) return '';
-    const mod = c.car ? e.mods[c.car] : 0;
-    const bonus = bonusComp(c.id, e);
-    const total = rangs + mod + bonus + num(v.divers);
-    const inutilisable = c.formation && rangs === 0;
-    const spe = ['artisanat', 'profession', 'representation', 'langue'].includes(c.id);
-    return `<div class="comp ${classe ? 'de-classe' : ''} ${inutilisable ? 'formation' : ''}">
-      <div class="comp-nom" title="${esc(c.nom)}">${classe ? '<span class="etoile" title="Compétence de classe">★</span>' : ''}<span class="comp-libelle">${esc(c.nom.replace(/^Connaissances \((.*)\)$/, 'Conn. : $1').replace(' et ingénierie', '').replace('exploration souterraine', 'souterrain').replace(' et royauté', ''))}</span>${c.formation ? '<span class="formation-tag" title="Formation nécessaire">F</span>' : ''}
-        </div>
-      ${spe ? `<input type="text" class="spe" data-bind="comp.${c.id}.spe" value="${esc(v.spe)}" placeholder="Spécialité">` : ''}
-      <div class="comp-val">
-        <small class="comp-car" title="${bonus ? 'Bonus racial ou de don : ' + R.signe(bonus) : ''}">${c.car ? R.CARACS.find(x => x.k === c.car).l + '<br>' + R.signe(mod) : ''}${bonus ? '*' : ''}</small>
-        <input type="text" inputmode="decimal" data-bind="comp.${c.id}.rangs" data-recalc value="${esc(v.rangs)}" placeholder="rg" aria-label="Rangs en ${esc(c.nom)}">
-        <input type="text" inputmode="numeric" data-bind="comp.${c.id}.divers" data-recalc value="${esc(v.divers)}" placeholder="div" aria-label="Bonus divers en ${esc(c.nom)}">
-        <b class="comp-total" title="Total">${inutilisable ? '—' : R.signe(total)}</b>
-      </div>
-    </div>`;
-  }).join('');
+    const classe = estDeClasse(c.id, v);
+    depense += classe ? num(v.rangs) : num(v.rangs) * 2;
+    if (reduit && !classe && !num(v.rangs) && !num(v.divers)) return '';
+    return ligneComp(e, c, v, null, { classe, deClasse: deClasse.has(c.id) });
+  });
+  const perso = (p.compPerso || []).map((v, i) => {
+    depense += v.classe ? num(v.rangs) : num(v.rangs) * 2;
+    return ligneComp(e, { id: 'perso' + i, nom: v.nom, car: v.car || 'int', formation: false }, v, null, { classe: !!v.classe, perso: true, i });
+  });
+  const tete = '<div class="cl cl-tete"><span></span><span>Compétences</span><span>Val</span><span>Rg</span><span>Car</span><span>Div</span></div>';
+  const toutes = [...lignes.filter(Boolean), ...perso];
+  const moitie = Math.ceil(toutes.length / 2);
   return `<section class="card"><h3>Compétences</h3>
-    <p class="hint">Points : ${depense} dépensés sur ${dispo} disponibles${e.race?.pcBonus ? ' (bonus humain compris)' : ''}. Rangs max : ${rangsMax} pour une compétence de classe ★, ${String(rangsMax / 2).replace('.', ',')} sinon (une compétence hors classe coûte 2 points par rang). F = formation nécessaire.</p>
-    <div class="comp-outils">
-      <p class="hint">Dans chaque case : caractéristique, rangs (rg), bonus divers (div), puis le total calculé. * = bonus racial ou de don inclus.</p>
-      <label class="check"><input type="checkbox" data-action="comp-reduit" ${reduit ? 'checked' : ''}> Seulement les compétences de classe et celles avec des rangs</label>
+    <div class="cl-resume">
+      <span>Points : <b>${depense}</b> / ${dispo}${e.race?.pcBonus ? ' (humain compris)' : ''}</span>
+      <span>Rang max CC = niveau + 3 = <b>${rangsMax}</b></span>
+      <span>Rang max CaC = (niveau + 3) / 2 = <b>${String(rangsMax / 2).replace('.', ',')}</b></span>
     </div>
-    <div class="comps">${lignes}</div>
+    <label class="check"><input type="checkbox" data-action="comp-reduit" ${reduit ? 'checked' : ''}> Seulement les compétences de classe et celles avec des rangs</label>
+    <div class="cl-colonnes">
+      <div class="cl-col">${tete}${toutes.slice(0, moitie).join('')}</div>
+      <div class="cl-col">${tete}${toutes.slice(moitie).join('')}</div>
+    </div>
+    <button class="btn ghost" data-action="add-comp-perso" style="margin-top:.6rem">+ Autre compétence (langage secret, etc.)</button>
+    <p class="hint cl-legende"><b>Val</b> : le bonus à ajouter au d20 quand le MJ demande un jet. <b>Rg</b> : rangs. <b>Car</b> : modificateur de caractéristique. <b>Div</b> : bonus divers (objets, circonstances). La case ✱ indique une compétence de classe : touche-la pour changer si ton MJ l'autorise.<br>* Utilisable non entraîné · ◘ Pénalité d'armure ou d'encombrement · Un « — » signifie qu'il faut au moins 1 rang pour l'utiliser.</p>
   </section>`;
 }
 
@@ -984,23 +1021,30 @@ const heure = t => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', mi
 
 function sousNav(actif) {
   return `<nav class="tabs" aria-label="Journal">
-    <a href="#/recaps" class="${actif === 'recaps' ? 'active' : ''}">Récapitulatifs</a>
+    <a href="#/recaps" class="${actif === 'recaps' ? 'active' : ''}">Récits</a>
+    <a href="#/encyclo" class="${actif === 'encyclo' ? 'active' : ''}">Encyclopédie</a>
     <a href="#/notes" class="${actif === 'notes' ? 'active' : ''}">Mes notes</a>
   </nav>`;
 }
 
 /* Mentions : @Nom ou @[Nom en plusieurs mots] */
 const RE_MENTION = /@\[([^\]]+)\]|@([\p{L}\p{N}_'’-]+)/gu;
-const sansMentions = t => String(t || '').replace(RE_MENTION, (m, a, b) => (a || b.replace(/_/g, ' ')).trim());
+/* @[Fiche|texte affiché] : lien vers « Fiche », affiché « texte affiché » */
+function partiesMention(a, b) {
+  if (a) { const [c, t] = a.split('|'); return { cible: c.trim(), texte: (t ?? c).trim() }; }
+  const n = b.replace(/_/g, ' ').trim();
+  return { cible: n, texte: n };
+}
+const sansMentions = t => String(t || '').replace(RE_MENTION, (m, a, b) => partiesMention(a, b).texte);
 function mentionsDe(texte) {
-  return [...String(texte || '').matchAll(RE_MENTION)].map(m => (m[1] || m[2].replace(/_/g, ' ')).trim()).filter(Boolean);
+  return [...String(texte || '').matchAll(RE_MENTION)].map(m => partiesMention(m[1], m[2]).cible).filter(Boolean);
 }
 function avecMentions(texte) {
   const t = String(texte || '');
   let out = '', last = 0;
   for (const m of t.matchAll(RE_MENTION)) {
-    const nom = (m[1] || m[2].replace(/_/g, ' ')).trim();
-    out += esc(t.slice(last, m.index)) + `<a class="mention" href="#/notes/recherche/${encodeURIComponent(nom)}">${esc(nom)}</a>`;
+    const { cible: nom, texte } = partiesMention(m[1], m[2]);
+    out += esc(t.slice(last, m.index)) + `<a class="mention" href="#/notes/recherche/${encodeURIComponent(nom)}">${esc(texte)}</a>`;
     last = m.index + m[0].length;
   }
   return (out + esc(t.slice(last))).replace(/\n/g, '<br>');
@@ -1053,7 +1097,7 @@ function statutRecap(r) {
   return 'publie';
 }
 const STATUTS_RECAP = { brouillon: 'Non publié', modifie: 'Modifié, non publié', publie: 'Publié' };
-const aPublier = () => recapsTous().filter(r => statutRecap(r) !== 'publie').length + (db.recapsSupprimes || []).length;
+const aPublier = () => recapsTous().filter(r => statutRecap(r) !== 'publie').length + (db.recapsSupprimes || []).length + fichesAPublier();
 
 /* Base de données en ligne (Supabase), configurée dans config.js */
 const CFG = window.CODEX_CONFIG || {};
@@ -1151,6 +1195,11 @@ async function publierTout() {
       if (r.photo !== undefined) { state.photos = state.photos || {}; state.photos[r.id] = r.photo; }
     }
     for (const id of db.recapsSupprimes || []) await rpc('supprimer_recap', { p_code: db.codeCampagne, p_id: id });
+    for (const f of fichesToutes().filter(x => statutPublication(x) !== 'publie')) {
+      await rpc('sauver_fiche', { p_code: db.codeCampagne, p_id: f.id, p_nom: f.nom || '', p_type: f.type || 'pnj', p_role: f.role || '', p_lieu: f.lieu || '', p_statut: f.statut || '', p_alias: f.alias || '', p_description: f.description || '' });
+    }
+    for (const id of db.fichesSupprimees || []) await rpc('supprimer_fiche', { p_code: db.codeCampagne, p_id: id });
+    await chargerFiches();
     await chargerRecaps();
     render();
     toast('Publié pour toute la compagnie');
@@ -1187,14 +1236,14 @@ function bandeauPublication() {
   if (enLigne()) {
     return `<section class="card bandeau">
       <h3>À publier</h3>
-      <p>${n} récapitulatif${pluriel} pas encore publié${pluriel}. Tant qu'ils ne le sont pas, les autres joueurs ne les voient pas.</p>
+      <p>${n} élément${pluriel} (récits ou fiches) pas encore publié${pluriel}. Tant qu'ils ne le sont pas, les autres joueurs ne les voient pas.</p>
       <div class="btns" style="margin-top:.6rem"><button class="btn" data-action="publier-tout">Publier maintenant</button></div>
     </section>`;
   }
   return `<section class="card bandeau">
     <h3>À publier</h3>
-    <p>${n} récapitulatif${pluriel} modifié${pluriel} sur cet appareil seulement. Tant qu'ils ne sont pas publiés, les autres joueurs ne les voient pas.</p>
-    <div class="btns"><button class="btn" data-action="export-recaps">Exporter recaps.json</button></div>
+    <p>${n} élément${pluriel} (récits ou fiches) modifié${pluriel} sur cet appareil seulement. Tant qu'ils ne sont pas publiés, les autres joueurs ne les voient pas.</p>
+    <div class="btns"><button class="btn" data-action="export-recaps">Exporter recaps.json</button><button class="btn ghost" data-action="export-fiches">Exporter fiches.json</button></div>
     <p class="hint">Ensuite, place <b>recaps.json</b> dans le dossier du site et fais un <b>git push</b>. Un autre joueur peut aussi t'envoyer ce fichier : importe-le depuis l'onglet Partage, puis publie.</p>
   </section>`;
 }
@@ -1217,6 +1266,7 @@ function pageRecaps() {
     <div><h1>Récapitulatifs</h1><p class="sub">Le récit lu en début de session, commun à toute la compagnie</p></div>
     ${estAdmin() ? '<button class="btn" data-action="new-recap">Nouveau récapitulatif</button>' : ''}
   </div>
+  <input type="search" id="rq" placeholder="Chercher un PNJ, un lieu, une quête dans les récits…" aria-label="Chercher dans les récits">
   ${carteConteur(estAdmin())}
   ${estAdmin() ? bandeauPublication() : ''}
   <section class="card"><h3>Les sessions racontées</h3>
@@ -1234,7 +1284,7 @@ function pageRecap(id) {
     state.editRecapObj = loc;
     const noms = [...new Set([...db.personnages.map(p => p.joueur), ...db.personnages.map(p => p.nom)].filter(Boolean))];
     return `${sousNav('recaps')}
-    <p><a href="#/recaps">← Récapitulatifs</a></p>
+    <p><a href="#/recaps">← Récits</a></p>
     <h1>Modifier le récapitulatif</h1>
     <section class="card" style="margin-top:1rem">
       <div class="grid">
@@ -1269,7 +1319,7 @@ function pageRecap(id) {
   if (r.photoMaj && photoRecap(r) === undefined) chargerPhoto(r.id);
   const paragraphes = formaterRecit(r.texte);
   return `${sousNav('recaps')}
-  <p><a href="#/recaps">← Récapitulatifs</a></p>
+  <p><a href="#/recaps">← Récits</a></p>
   <article class="recit">
     <p class="recit-num">Session ${esc(r.numero)}</p>
     <h1>${esc(r.titre || 'Sans titre')}</h1>
@@ -1291,14 +1341,24 @@ function pageRecap(id) {
    **gras**  _italique_  ++souligné++  ==mise en valeur==
    # Titre   ## Grand texte   > citation   - liste   --- séparateur */
 function formaterLigne(t) {
-  return esc(t)
+  return liensMentions(esc(t)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\+\+(.+?)\+\+/g, '<u>$1</u>')
     .replace(/==(.+?)==/g, '<mark>$1</mark>')
-    .replace(/(^|[\s(«"'’])_(.+?)_(?=$|[\s).,;:!?»"'’])/g, '$1<em>$2</em>');
+    .replace(/(^|[\s(«"'’])_(.+?)_(?=$|[\s).,;:!?»"'’])/g, '$1<em>$2</em>'));
 }
+/* Les @mentions deviennent des liens vers les fiches de l'encyclopédie (marqueurs posés avant l'échappement) */
+function marquerMentions(t) {
+  const idx = indexNoms();
+  return String(t || '').replace(RE_MENTION, (m, a, b) => {
+    const { cible, texte } = partiesMention(a, b);
+    const f = idx.get(norm(cible));
+    return `\u0001${f ? f.id : ''}\u0002${texte}\u0003`;
+  });
+}
+const liensMentions = h => h.replace(/\u0001([^\u0002]*)\u0002([^\u0003]*)\u0003/g, (m, id, nom) => id ? `<a class="mention" href="#/fiche/${id}">${nom}</a>` : nom);
 function formaterRecit(texte) {
-  const lignes = sansMentions(texte).replace(/\r/g, '').split('\n');
+  const lignes = marquerMentions(texte).replace(/\r/g, '').split('\n');
   const out = [];
   let para = [], liste = [];
   const finPara = () => { if (para.length) { out.push(`<p>${para.map(formaterLigne).join('<br>')}</p>`); para = []; } };
@@ -1359,6 +1419,261 @@ function appliquerFormat(zone, fmt) {
   zone.focus();
   zone.setSelectionRange(debutSel, finSel);
   zone.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* ===== Encyclopédie de campagne =====
+   Fiches partagées (PNJ, lieux, quêtes…), publiées comme les récapitulatifs :
+   lecture pour tous, écriture par l'administrateur. */
+const TYPES_FICHE = {
+  quete: 'Quêtes', pnj: 'PNJ', lieu: 'Lieux', faction: 'Factions et familles',
+  objet: 'Objets', savoir: 'Histoire et savoir', pj: 'Personnages joueurs',
+};
+const TYPE_FICHE_UN = { quete: 'Quête', pnj: 'PNJ', lieu: 'Lieu', faction: 'Faction', objet: 'Objet', savoir: 'Savoir', pj: 'Personnage joueur' };
+const STATUTS_FICHE = {
+  quete: ['En cours', 'Terminée', 'Échouée', 'Abandonnée'],
+  pnj: ['Vivant', 'Mort', 'Disparu', 'Inconnu'],
+  pj: ['Dans le groupe', 'Absent', 'Mort'],
+  faction: ['Alliée', 'Neutre', 'Hostile', 'Inconnue'],
+  objet: ['Possédé', 'Perdu', 'Donné', 'Vendu'],
+  lieu: ['Visité', 'Pas encore visité'],
+  savoir: [],
+};
+const champsFiche = f => JSON.stringify(['nom', 'type', 'role', 'lieu', 'statut', 'alias', 'description'].map(k => String(f[k] ?? '')));
+const fichesPubliees = () => db.fichesPubliees || [];
+function fichesToutes() {
+  const sup = new Set(db.fichesSupprimees || []);
+  const m = new Map(fichesPubliees().map(f => [f.id, f]));
+  for (const f of db.fiches || []) m.set(f.id, f);
+  return [...m.values()].filter(f => !sup.has(f.id)).sort((a, b) => String(a.nom).localeCompare(String(b.nom), 'fr'));
+}
+const findFiche = id => fichesToutes().find(f => f.id === id);
+function statutPublication(f) {
+  const pub = fichesPubliees().find(x => x.id === f.id);
+  const loc = (db.fiches || []).find(x => x.id === f.id);
+  if (!pub) return 'brouillon';
+  if (loc && champsFiche(loc) !== champsFiche(pub)) return 'modifie';
+  return 'publie';
+}
+const fichesAPublier = () => fichesToutes().filter(f => statutPublication(f) !== 'publie').length + (db.fichesSupprimees || []).length;
+
+async function chargerFiches() {
+  try {
+    let pub;
+    if (enLigne()) {
+      pub = await api('fiches?select=id,nom,type,role,lieu,statut,alias,description,maj&order=nom.asc') || [];
+      pub = pub.map(f => ({ ...f, role: f.role || '', lieu: f.lieu || '', statut: f.statut || '', alias: f.alias || '', description: f.description || '' }));
+    } else {
+      const res = await fetch('fiches.json', { cache: 'no-store' });
+      pub = res.ok ? ((await res.json()).fiches || []) : [];
+    }
+    db.fichesPubliees = pub;
+    db.fiches = (db.fiches || []).filter(l => { const p = pub.find(x => x.id === l.id); return !p || champsFiche(p) !== champsFiche(l); });
+    db.fichesSupprimees = (db.fichesSupprimees || []).filter(id => pub.some(x => x.id === id));
+    saveNow();
+  } catch (e) {
+    console.warn('Encyclopédie indisponible (base pas encore en v4 ?)', e);
+  }
+}
+function ficheLocale(id) {
+  db.fiches = db.fiches || [];
+  let f = db.fiches.find(x => x.id === id);
+  if (!f) {
+    const pub = fichesPubliees().find(x => x.id === id);
+    if (!pub) return null;
+    f = { ...pub };
+    db.fiches.push(f);
+  }
+  return f;
+}
+
+/* Nom ou alias → fiche */
+function indexNoms() {
+  const m = new Map();
+  for (const f of fichesToutes()) {
+    for (const n of [f.nom, ...String(f.alias || '').split(',')]) {
+      const k = norm(n).trim();
+      if (k && !m.has(k)) m.set(k, f);
+    }
+  }
+  return m;
+}
+const nomsDe = f => [f.nom, ...String(f.alias || '').split(',')].map(n => n.trim()).filter(n => n.length > 2);
+
+/* Passages des récits où la fiche apparaît (par son nom ou un alias) */
+const reMot = n => new RegExp('(^|[^a-z0-9])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])');
+function apparitions(f) {
+  const noms = nomsDe(f).map(n => reMot(norm(n)));
+  const res = [];
+  for (const r of [...recapsTous()].sort((a, b) => num(a.numero) - num(b.numero))) {
+    const paras = sansMentions(r.texte).split(/\n+/).map(p => p.replace(/^(#{1,2}|>|-)\s+/, '').trim()).filter(Boolean);
+    const trouves = paras.filter(p => { const n = norm(p); return noms.some(re => re.test(n)); });
+    if (trouves.length) res.push({ r, extraits: trouves.slice(0, 3), total: trouves.length });
+  }
+  return res;
+}
+function surligner(texte, termes) {
+  let h = esc(texte.replace(/\*\*|\+\+|==/g, ''));
+  for (const t of termes) {
+    if (!t) continue;
+    const re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    h = h.replace(re, '<mark>$1</mark>');
+  }
+  return h;
+}
+
+function lienFiche(nom) {
+  const f = indexNoms().get(norm(nom).trim());
+  return f ? `<a class="mention" href="#/fiche/${f.id}">${esc(nom)}</a>` : esc(nom);
+}
+function badgeStatut(f) {
+  if (!f.statut) return '';
+  const cls = /mort|échou|hostile|perdu|abandon/i.test(f.statut) ? 'ko' : /termin|alli|possédé|dans le groupe|vivant|visité$/i.test(f.statut) ? 'ok' : '';
+  return `<span class="statut-fiche ${cls}">${esc(f.statut)}</span>`;
+}
+
+function carteFiche(f) {
+  const st = statutPublication(f);
+  return `<a class="fiche-carte type-${f.type}" href="#/fiche/${f.id}">
+    <span class="fiche-carte-tete"><b>${esc(f.nom)}</b>${badgeStatut(f)}</span>
+    ${f.role || f.lieu ? `<small>${esc([f.role, f.lieu].filter(Boolean).join(', '))}</small>` : ''}
+    ${st !== 'publie' && estAdmin() ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
+  </a>`;
+}
+
+function pageEncyclo(mode, q) {
+  if (mode === 'recherche' && q != null) state.eq = decodeURIComponent(q);
+  return `${sousNav('encyclo')}
+  <div class="pagehead">
+    <div><h1>Encyclopédie</h1><p class="sub">Tout ce que la compagnie sait du monde</p></div>
+    <div class="btns">
+      ${estAdmin() ? '<button class="btn" data-action="new-fiche">Nouvelle fiche</button>' : ''}
+      <button class="btn ghost" data-action="export-ia">Exporter pour une IA</button>
+    </div>
+  </div>
+  ${estAdmin() ? bandeauPublication() : ''}
+  <input type="search" id="eq" value="${esc(state.eq)}" placeholder="Chercher un nom, un lieu, un mot dans les fiches et les récits…" aria-label="Chercher dans l'encyclopédie et les récits">
+  <div id="eres">${resultatsEncyclo()}</div>`;
+}
+
+function resultatsEncyclo() {
+  const fiches = fichesToutes();
+  const q = norm(state.eq).trim();
+  if (q) {
+    const f = fiches.filter(x => [x.nom, x.alias, x.role, x.lieu, x.description].some(v => norm(v).includes(q)));
+    const passages = [];
+    for (const r of [...recapsTous()].sort((a, b) => num(a.numero) - num(b.numero))) {
+      for (const p of sansMentions(r.texte).split(/\n+/).map(x => x.replace(/^(#{1,2}|>|-)\s+/, '').trim()).filter(Boolean)) {
+        if (norm(p).includes(q)) passages.push({ r, p });
+      }
+    }
+    const termes = [state.eq.trim()];
+    return `<p class="count">${f.length} fiche${f.length > 1 ? 's' : ''} et ${passages.length} passage${passages.length > 1 ? 's' : ''} pour « ${esc(state.eq)} » <button class="lien" data-action="eq-effacer">Effacer</button></p>
+      ${f.length ? `<div class="fiches">${f.map(carteFiche).join('')}</div>` : ''}
+      ${passages.length ? `<h4>Dans les récits</h4><ul class="passages">${passages.slice(0, 60).map(({ r, p }) => `<li><a href="#/recap/${r.id}">Session ${esc(r.numero)}${r.titre ? ' : ' + esc(r.titre) : ''}</a><p>${surligner(p, termes)}</p></li>`).join('')}</ul>` : ''}
+      ${!f.length && !passages.length ? '<p class="empty">Rien trouvé. Essaie un autre mot, ou une partie du nom.</p>' : ''}`;
+  }
+  const filtre = state.ftype || '';
+  const chips = `<div class="chips">${[['', 'Tout'], ...Object.entries(TYPES_FICHE)].map(([k, l]) =>
+    `<button class="chip ${filtre === k ? 'on' : ''}" data-action="ftype" data-type="${k}">${l} <small>${k ? fiches.filter(f => f.type === k).length : fiches.length}</small></button>`).join('')}</div>`;
+  const groupes = Object.entries(TYPES_FICHE).filter(([k]) => !filtre || filtre === k).map(([k, l]) => {
+    const liste = fiches.filter(f => f.type === k);
+    if (!liste.length) return '';
+    return `<section class="card"><h3>${l}</h3><div class="fiches">${liste.map(carteFiche).join('')}</div></section>`;
+  }).join('');
+  return chips + (groupes || `<section class="card intro"><p class="empty">L'encyclopédie est vide.${estAdmin() ? ' Crée une première fiche, ou importe un fichier d\'encyclopédie depuis l\'onglet Partage.' : ''}</p></section>`);
+}
+
+function pageFiche(id) {
+  const f = findFiche(id);
+  if (!f) return `${sousNav('encyclo')}<p>Fiche introuvable. <a href="#/encyclo">Retour à l'encyclopédie</a></p>`;
+  if (state.editFiche === id && estAdmin()) return formFiche(f);
+  const st = statutPublication(f);
+  const perso = f.type === 'pj' && db.personnages.find(p => norm(p.nom) === norm(f.nom));
+  const app = apparitions(f);
+  const termes = nomsDe(f);
+  return `${sousNav('encyclo')}
+  <p><a href="#/encyclo">← Encyclopédie</a></p>
+  <article class="fiche type-${f.type}">
+    <p class="recit-num">${esc(TYPE_FICHE_UN[f.type] || 'Fiche')}</p>
+    <h1>${esc(f.nom)}</h1>
+    ${f.role ? `<p class="sub">${esc(f.role)}</p>` : ''}
+    <div class="fiche-meta">
+      ${f.lieu ? `<span>Lieu : ${lienFiche(f.lieu)}</span>` : ''}${badgeStatut(f)}
+      ${f.alias ? `<span>Aussi appelé : ${esc(f.alias)}</span>` : ''}
+    </div>
+    <div class="ornement" aria-hidden="true"><span></span></div>
+    <div class="recit-texte">${formaterRecit(f.description) || '<p class="empty">Pas encore de description.</p>'}</div>
+    ${perso ? `<p><a class="btn ghost" href="#/perso/${perso.id}/fiche">Voir la fiche de personnage</a></p>` : ''}
+  </article>
+  <section class="card"><h3>Apparaît dans</h3>
+    ${app.length ? `<ul class="passages">${app.map(({ r, extraits, total }) => `<li><a href="#/recap/${r.id}">Session ${esc(r.numero)}${r.titre ? ' : ' + esc(r.titre) : ''}</a>${total > 1 ? ` <small>${total} passages</small>` : ''}
+      ${extraits.map(p => `<p>${surligner(p, termes)}</p>`).join('')}</li>`).join('')}</ul>` : '<p class="empty">Aucun récit ne la mentionne encore.</p>'}
+  </section>
+  ${estAdmin() ? `<div class="btns">
+    <button class="btn" data-action="fiche-edit" data-id="${f.id}">Modifier</button>
+    ${st !== 'publie' ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
+  </div>${st !== 'publie' ? bandeauPublication() : ''}` : ''}`;
+}
+
+function formFiche(f0) {
+  const f = ficheLocale(f0.id);
+  state.ctx = f;
+  state.editFicheObj = f;
+  const lieux = fichesToutes().filter(x => x.type === 'lieu').map(x => x.nom);
+  const statuts = STATUTS_FICHE[f.type] || [];
+  return `${sousNav('encyclo')}
+  <p><a href="#/fiche/${f.id}">← Retour à la fiche</a></p>
+  <h1>Modifier la fiche</h1>
+  <section class="card" style="margin-top:1rem">
+    <div class="grid">
+      ${fi(f, 'nom', 'Nom', { span: true })}
+      ${sel(f, 'type', 'Type', Object.entries(TYPE_FICHE_UN))}
+      ${statuts.length ? sel(f, 'statut', 'Statut', statuts) : fi(f, 'statut', 'Statut')}
+      ${fi(f, 'role', 'Rôle ou résumé en quelques mots', { span: true, ph: 'Ex. : Aubergiste de Wellon' })}
+      <label class="f span2"><span>Lieu</span><input type="text" list="liste-lieux" data-bind="lieu" value="${esc(f.lieu)}" placeholder="Ex. : Wellon"></label>
+      <datalist id="liste-lieux">${lieux.map(l => `<option value="${esc(l)}">`).join('')}</datalist>
+      ${fi(f, 'alias', 'Autres noms ou orthographes (séparés par des virgules)', { span: true, ph: 'Ex. : Phyra, l\'elfe noire' })}
+    </div>
+    <label class="f"><span>Description</span></label>
+    ${barreOutils()}
+    <textarea data-bind="description" id="zone-recit" rows="10" aria-label="Description">${esc(f.description)}</textarea>
+    <details class="apercu" open><summary>Aperçu</summary><div class="recit-texte" id="apercu-recit">${formaterRecit(f.description) || '<p class="empty">La description apparaîtra ici.</p>'}</div></details>
+    <p class="hint">Écris <b>@[Nom]</b> pour créer un lien vers une autre fiche (ex. @[Wellon]). Les autres noms servent à retrouver la fiche dans les récits, même avec une autre orthographe.</p>
+    <div class="btns">
+      ${enLigne() ? '<button class="btn" data-action="fiche-publier">Enregistrer et publier</button><button class="btn ghost" data-action="fiche-fin">Enregistrer sans publier</button>' : '<button class="btn" data-action="fiche-fin">Terminé</button>'}
+      <button class="btn danger" data-action="del-fiche" data-id="${f.id}">Supprimer</button>
+    </div>
+  </section>`;
+}
+
+/* Un seul fichier texte lisible : fiches puis récits, pour une IA ou pour archiver */
+function exportIA() {
+  const L = [`# ${document.title}`, '', `Export du ${new Date().toLocaleDateString('fr-FR')}. Ce document contient l'encyclopédie de la campagne (fiches de référence), puis les récits des sessions dans l'ordre.`, ''];
+  for (const [k, l] of Object.entries(TYPES_FICHE)) {
+    const liste = fichesToutes().filter(f => f.type === k);
+    if (!liste.length) continue;
+    L.push(`## ${l}`, '');
+    for (const f of liste) {
+      L.push(`### ${f.nom}`);
+      const meta = [f.role, f.lieu && `Lieu : ${f.lieu}`, f.statut && `Statut : ${f.statut}`, f.alias && `Aussi appelé : ${f.alias}`].filter(Boolean);
+      if (meta.length) L.push(meta.join(' | '));
+      if (f.description) L.push('', texteBrut(f.description).trim());
+      L.push('');
+    }
+  }
+  L.push('## Récits des sessions', '');
+  for (const r of [...recapsTous()].sort((a, b) => num(a.numero) - num(b.numero))) {
+    L.push(`### Session ${r.numero}${r.titre ? ' : ' + r.titre : ''}`);
+    if (r.auteur || r.date) L.push([r.auteur && `Raconté par ${r.auteur}`, r.date && dateFr(r.date)].filter(Boolean).join(', '));
+    L.push('', texteBrut(r.texte).trim(), '');
+  }
+  const blob = new Blob([L.join('\n')], { type: 'text/markdown' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'encyclopedie-campagne.md';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast('Fichier exporté : encyclopedie-campagne.md');
 }
 
 /* ===== Notes personnelles ===== */
@@ -1854,6 +2169,7 @@ function render(garderScroll = true) {
   state.ctx = null;
   if (page !== 'sort-edit') state.draft = null;
   if (page !== 'recap') { state.editRecap = null; state.editRecapObj = null; }
+  if (page !== 'fiche') { state.editFiche = null; state.editFicheObj = null; }
   let html;
   switch (page) {
     case 'perso': html = pagePerso(id, tab); break;
@@ -1864,13 +2180,15 @@ function render(garderScroll = true) {
     case 'recaps': html = pageRecaps(); break;
     case 'recap': html = pageRecap(id); break;
     case 'notes': html = pageNotes(id, tab); break;
+    case 'encyclo': html = pageEncyclo(id, tab); break;
+    case 'fiche': html = pageFiche(id); break;
     case 'session': html = pageSession(id); break;
     case 'nouveau': html = pageNouveauPerso(); break;
     case 'donnees': html = pageDonnees(); break;
     default: html = pagePersos();
   }
   $('#app').innerHTML = html;
-  const nav = page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session'].includes(page) ? 'journal' : page;
+  const nav = page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav));
   if (garderScroll) window.scrollTo(0, y);
 }
@@ -1883,9 +2201,10 @@ window.addEventListener('hashchange', () => {
   if (['persos', 'perso', ''].includes(page) && enLigne() && Date.now() - (state.persosCharges || 0) > 30000) {
     chargerPersos().then(ok => { if (ok && ['persos', 'perso', ''].includes(location.hash.replace(/^#\/?/, '').split('/')[0]) && !document.activeElement?.dataset?.bind) render(); });
   }
-  if (['journal', 'recaps', 'recap'].includes(page) && Date.now() - (state.recapsCharges || 0) > 30000 && !state.editRecap) {
+  if (['journal', 'recaps', 'recap', 'encyclo', 'fiche'].includes(page) && Date.now() - (state.recapsCharges || 0) > 30000 && !state.editRecap && !state.editFiche) {
     chargerInfos();
-    chargerRecaps().then(ok => { if (ok && ['journal', 'recaps', 'recap'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); });
+    chargerFiches();
+    chargerRecaps().then(ok => { if (ok && ['journal', 'recaps', 'recap', 'encyclo', 'fiche'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); });
   }
 });
 
@@ -1895,6 +2214,11 @@ document.addEventListener('input', ev => {
   if (t.id === 'pickq') {
     state.pickQ = t.value;
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
+    return;
+  }
+  if (t.id === 'eq') {
+    state.eq = t.value;
+    $('#eres').innerHTML = resultatsEncyclo();
     return;
   }
   if (t.id === 'jq') {
@@ -1915,6 +2239,7 @@ document.addEventListener('input', ev => {
   if (!path || !state.ctx) return;
   if (db.personnages.includes(state.ctx) && !peutModifier(state.ctx)) return;
   if (state.ctx === state.editRecapObj && !estAdmin()) return;
+  if (state.ctx === state.editFicheObj && !estAdmin()) return;
   setP(state.ctx, path, t.type === 'checkbox' ? t.checked : t.value);
   if (state.ctx === state.draft) return; // le sort n'est enregistré qu'au clic sur le bouton
   state.ctx.maj = Date.now();
@@ -1926,6 +2251,11 @@ document.addEventListener('input', ev => {
 });
 /* Entrée enregistre la note rapide (Maj + Entrée pour aller à la ligne) */
 document.addEventListener('keydown', ev => {
+  if (ev.target.id === 'rq' && ev.key === 'Enter' && ev.target.value.trim()) {
+    ev.preventDefault();
+    go('#/encyclo/recherche/' + encodeURIComponent(ev.target.value.trim()));
+    return;
+  }
   if (ev.target.id === 'nouvelle-note' && ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) {
     ev.preventDefault();
     ajouterNote();
@@ -2112,7 +2442,7 @@ document.addEventListener('click', ev => {
     }
     case 'export-all':
       download(`campagne-${new Date().toISOString().slice(0, 10)}.json`,
-        { type: 'campagne', version: APP_VERSION, personnages: db.personnages, sessions: db.sessions || [], recaps: db.recaps || [], sorts: db.sorts.filter(s => s.source === 'Maison') });
+        { type: 'campagne', version: APP_VERSION, personnages: db.personnages, sessions: db.sessions || [], recaps: db.recaps || [], fiches: db.fiches || [], sorts: db.sorts.filter(s => s.source === 'Maison') });
       break;
     case 'export-sorts':
       download('grimoire.json', { type: 'sorts', version: APP_VERSION, sorts: db.sorts.filter(s => s.source === 'Maison') });
@@ -2275,6 +2605,69 @@ document.addEventListener('click', ev => {
       if (zone) appliquerFormat(zone, b.dataset.fmt);
       break;
     }
+    case 'ftype':
+      state.ftype = b.dataset.type; $('#eres').innerHTML = resultatsEncyclo();
+      break;
+    case 'eq-effacer':
+      state.eq = ''; go('#/encyclo');
+      break;
+    case 'export-ia':
+      exportIA();
+      break;
+    case 'export-fiches':
+      download('fiches.json', { type: 'encyclopedie', version: 1, fiches: fichesToutes() });
+      break;
+    case 'new-fiche': {
+      if (!estAdmin()) break;
+      const f = { id: uid(), nom: 'Nouvelle fiche', type: state.ftype || 'pnj', role: '', lieu: '', statut: '', alias: '', description: '', maj: Date.now() };
+      db.fiches = [...(db.fiches || []), f]; saveNow();
+      state.editFiche = f.id;
+      go(`#/fiche/${f.id}`);
+      setTimeout(() => { const i = $('[data-bind="nom"]'); i?.focus(); i?.select(); }, 60);
+      break;
+    }
+    case 'fiche-edit':
+      if (!estAdmin()) break;
+      state.editFiche = b.dataset.id; ficheLocale(b.dataset.id); render();
+      break;
+    case 'fiche-fin':
+      state.editFiche = null; saveNow(); render();
+      toast(aPublier() ? 'Enregistré sur cet appareil. Pense à publier.' : 'Enregistré');
+      break;
+    case 'fiche-publier':
+      if (!estAdmin()) break;
+      state.editFiche = null; saveNow();
+      publierTout();
+      break;
+    case 'del-fiche': {
+      if (!estAdmin() || !confirm('Supprimer cette fiche ? Elle disparaîtra pour tout le monde à la prochaine publication.')) break;
+      const id = b.dataset.id;
+      db.fiches = (db.fiches || []).filter(x => x.id !== id);
+      if (fichesPubliees().some(x => x.id === id)) db.fichesSupprimees = [...new Set([...(db.fichesSupprimees || []), id])];
+      state.editFiche = null; saveNow(); go('#/encyclo');
+      break;
+    }
+    case 'comp-classe': {
+      const cle = b.dataset.cle;
+      if (cle.startsWith('perso:')) { const v = p.compPerso[Number(cle.slice(6))]; v.classe = !v.classe; }
+      else {
+        p.comp = p.comp || {};
+        const v = p.comp[cle] = p.comp[cle] || {};
+        const parDefaut = compDeClasse(etat(p)).has(cle);
+        const actuel = typeof v.classe === 'boolean' ? v.classe : parDefaut;
+        if (!actuel === parDefaut) delete v.classe; else v.classe = !actuel;
+      }
+      save(); render();
+      break;
+    }
+    case 'add-comp-perso':
+      p.compPerso = [...(p.compPerso || []), { nom: '', car: 'int', rangs: '', divers: '', classe: true }];
+      save(); render();
+      setTimeout(() => { const l = document.querySelectorAll('.cl-nom-perso'); l[l.length - 1]?.focus(); }, 50);
+      break;
+    case 'del-comp-perso':
+      if (confirm('Supprimer cette compétence ?')) { p.compPerso.splice(idx, 1); save(); render(); }
+      break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -2332,8 +2725,9 @@ $('#fileinput').addEventListener('change', async ev => {
     const persos = data.type === 'personnage' ? [data.personnage] : data.type === 'campagne' ? data.personnages || [] : [];
     const sorts = data.sorts || [];
     const sessions = data.type === 'campagne' ? data.sessions || [] : [];
-    const recapsImp = data.type === 'recaps' || data.type === 'campagne' ? data.recaps || [] : [];
-    if (!persos.length && !sorts.length && !sessions.length && !recapsImp.length) throw new Error('ce fichier ne vient pas du Codex de campagne');
+    const recapsImp = ['recaps', 'campagne', 'encyclopedie'].includes(data.type) ? data.recaps || [] : [];
+    const fichesImp = ['campagne', 'encyclopedie'].includes(data.type) ? data.fiches || [] : [];
+    if (!persos.length && !sorts.length && !sessions.length && !recapsImp.length && !fichesImp.length) throw new Error('ce fichier ne vient pas du Codex de campagne');
 
     const remplaces = persos.filter(p => findPerso(p.id)).map(p => p.nom);
     if (remplaces.length && !confirm(`Ces personnages existent déjà et seront remplacés par la version importée :\n${remplaces.join(', ')}\n\nContinuer ?`)) return;
@@ -2354,6 +2748,16 @@ $('#fileinput').addEventListener('change', async ev => {
       db.recapsSupprimes = (db.recapsSupprimes || []).filter(x => x !== r.id);
       recapsMaj++;
     }
+    let fichesMaj = 0;
+    db.fiches = db.fiches || [];
+    for (const f of fichesImp) {
+      const cur = findFiche(f.id);
+      if (cur && champsFiche(cur) === champsFiche(f)) continue;
+      const i = db.fiches.findIndex(x => x.id === f.id);
+      if (i >= 0) db.fiches[i] = f; else db.fiches.push(f);
+      db.fichesSupprimees = (db.fichesSupprimees || []).filter(x => x !== f.id);
+      fichesMaj++;
+    }
     migrerSessions(sessions);
     let nouvellesSessions = 0;
     db.sessions = db.sessions || [];
@@ -2368,8 +2772,8 @@ $('#fileinput').addEventListener('change', async ev => {
       if (i >= 0) db.sorts[i] = s; else { db.sorts.push(s); nouveauxSorts++; }
     }
     saveNow();
-    toast(`Import terminé : ${persos.length} personnage(s), ${nouvellesSessions} session(s) de notes, ${recapsMaj} récapitulatif(s), ${nouveauxSorts} nouveau(x) sort(s)`);
-    go(persos.length === 1 ? `#/perso/${persos[0].id}/fiche` : persos.length ? '#/persos' : recapsImp.length ? '#/recaps' : sessions.length ? '#/notes' : '#/sorts');
+    toast(`Import terminé : ${persos.length} personnage(s), ${nouvellesSessions} session(s) de notes, ${recapsMaj} récapitulatif(s), ${fichesMaj} fiche(s), ${nouveauxSorts} nouveau(x) sort(s)`);
+    go(persos.length === 1 ? `#/perso/${persos[0].id}/fiche` : persos.length ? '#/persos' : fichesImp.length ? '#/encyclo' : recapsImp.length ? '#/recaps' : sessions.length ? '#/notes' : '#/sorts');
   } catch (e) {
     alert('Import impossible : ' + e.message);
   }
@@ -2419,7 +2823,7 @@ $('#imginput').addEventListener('change', async ev => {
   db.personnages.forEach(migrer);
   migrerSessions(db.sessions);
   render();
-  await Promise.all([initSorts(), chargerRecaps(), chargerPersos(), chargerInfos()]);
+  await Promise.all([initSorts(), chargerRecaps(), chargerPersos(), chargerInfos(), chargerFiches()]);
   render();
   if (enLigne()) {
     await envoyerPersos();
