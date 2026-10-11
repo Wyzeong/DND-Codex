@@ -1522,8 +1522,10 @@ async function chargerPersosMJ() {
     for (const d of liste) {
       if (attente.has(d.id)) continue;
       const i = db.personnages.findIndex(x => x.id === d.id);
-      const complet = { ...d, pnjMJ: true, publie: true };
-      if (i >= 0) db.personnages[i] = Object.assign(db.personnages[i], complet); else db.personnages.push(complet);
+      /* La version complète remplace entièrement la version publique reçue avant */
+      const complet = { ...d, pnjMJ: true, publie: true, _public: false };
+      if (i >= 0) { const o = db.personnages[i]; for (const k of Object.keys(o)) delete o[k]; Object.assign(o, complet); }
+      else db.personnages.push(complet);
     }
     saveNow();
   } catch (e) {
