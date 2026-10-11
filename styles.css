@@ -1019,3 +1019,35 @@ button.banniere { border: none; cursor: pointer; font: inherit; width: 100%; }
 .cat-magique { border-color: #5E9ED6; color: #9FD4F0; }
 .cat-tresor { border-color: var(--bronze); color: var(--bronze-clair); }
 .cat-babiole { border-color: var(--line); color: var(--muted); }
+
+/* ===== v29 : monnaies, bourse commune, marché, focalisateur ===== */
+.bottomnav a { flex-basis: 64px; font-size: .64rem; }
+.bottomnav .ico { width: 34px; height: 34px; }
+select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
+.pieces { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: .4rem 0 .6rem; }
+.bourse-commune { border-color: var(--bronze); margin-top: 1.2rem; }
+.bc-total b { font-family: var(--font-titre); font-size: 1.35rem; color: var(--bronze-clair); }
+.bc-total small { color: var(--muted); }
+.journal { list-style: none; padding: 0; margin: .4rem 0 0; font-size: .86rem; }
+.journal li { padding: .25rem 0; border-bottom: 1px solid var(--line); }
+.journal small { color: var(--muted); }
+.tag-coffre { color: var(--bronze-clair) !important; font-size: .78rem !important; }
+.articles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .5rem; }
+.article { background: var(--inset); border: 1px solid var(--line); border-left: 3px solid var(--bronze); border-radius: var(--radius-s); padding: .55rem .7rem; display: flex; flex-direction: column; gap: .3rem; }
+.article.retire { border-left-color: var(--line); opacity: .75; }
+.article.epuise { opacity: .55; }
+.prix { margin: .2rem 0 0; display: flex; align-items: baseline; gap: .6rem; }
+.prix b { font-size: 1.15rem; color: var(--bronze-clair); font-variant-numeric: tabular-nums; }
+.prix span { color: var(--muted); font-size: .85rem; }
+.achat { margin-top: .3rem; align-items: center; }
+.achat select { flex: 1 1 150px; }
+.achat input.s, .mj-article input.s { max-width: 4.5rem; text-align: center; }
+.mj-article { align-items: center; border-top: 1px dashed var(--line); padding-top: .4rem; }
+.mj-article .check { padding: 0; }
+.tag-cat.vente { border-color: var(--bronze); color: var(--bronze-clair); }
+.tag-cat.focal { border-color: #9FD4F0; color: #CFEAF8; background: rgba(94, 158, 214, .15); }
+.objet-vue.focalisateur { border-color: #5E9ED6; box-shadow: 0 0 0 1px rgba(94, 158, 214, .3), 0 0 18px rgba(94, 158, 214, .15); }
+.col-reliques { display: flex; flex-direction: column; }
+.focalisateur-carte { border-color: #5E9ED6; text-align: center; background: radial-gradient(120% 90% at 50% 0%, rgba(94, 158, 214, .18), transparent 60%), var(--surface); }
+.focalisateur-carte .recit-num { color: #9FD4F0; }
+.focal-case { color: #CFEAF8; }

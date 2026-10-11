@@ -501,6 +501,7 @@ function pagePersos() {
         <p>${esc([raceNom(p), classesTxt(e)].filter(Boolean).join(', ') || 'À compléter')}</p>
         ${(p.etats || []).some(x => x.actif !== false) ? `<p class="banniere-etat">⚠ ${esc((p.etats || []).filter(x => x.actif !== false).map(x => x.nom).join(', '))}</p>` : ''}
         ${p.pnjMJ ? '<p class="tag-pnj">Personnage du MJ</p>' : p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
+        ${bc().porteur_id === p.id ? '<p class="tag-coffre">Porte le coffre commun</p>' : ''}
         ${p.embleme ? `<img class="embleme-banniere" src="${p.embleme}" alt="">` : '<span class="losange" aria-hidden="true"></span>'}
       </div>
     </a>`;
@@ -520,6 +521,7 @@ function pagePersos() {
     <h2 class="titre-section">La compagnie</h2>
     ${enLigne() ? `<p class="actualiser"><button class="lien" data-action="actualiser">↻ Actualiser</button>${state.persosCharges ? ` <small>mis à jour à ${new Date(state.persosCharges).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</small>` : ''}</p>` : ''}
     <div class="persos">${bannieres}${ajout}</div>
+    ${carteBourseCommune()}
     <p class="hint centre">Pour importer une fiche reçue d'un autre joueur : onglet Partage.</p>`;
 }
 
@@ -623,7 +625,7 @@ function ongletFicheBrut(p, e) {
     ${blocLangues(p)}
     ${ta(p, 'apparence', 'Apparence et historique')}
   </section>
-  ${carteBaguette(p)}
+  <div class="col-reliques">${carteBaguette(p)}${carteFocalisateur(p)}</div>
   </div>
 
   <section class="card"><h3>Caractéristiques</h3>
@@ -700,7 +702,9 @@ const GROUPES_INV = [
   ['Objets', ['']],
 ];
 function groupesInventaire(items) {
-  return GROUPES_INV.map(([titre, cats]) => [titre, items.map((it, i) => ({ it, i })).filter(({ it }) => cats.includes(it.cat || ''))])
+  const avecIdx = items.map((it, i) => ({ it, i }));
+  return [['✦ Focalisateur', avecIdx.filter(({ it }) => it.focalisateur)],
+    ...GROUPES_INV.map(([titre, cats]) => [titre, avecIdx.filter(({ it }) => !it.focalisateur && cats.includes(it.cat || ''))])]
     .filter(([, l]) => l.length);
 }
 /* Poids saisi librement : « 500 g », « 2 kg », « 1,5kg », « 3 lb ». Sans unité, on compte en kg. */
@@ -716,7 +720,7 @@ function poidsKg(txt) {
   return v;
 }
 const poidsTxt = kg => kg < 1 ? `${Math.round(kg * 1000)} g` : `${String(Math.round(kg * 100) / 100).replace('.', ',')} kg`;
-const valeurObjet = it => num(String(it.valeur || '').replace(',', '.')) * (num(it.qte) || 1);
+const valeurObjet = it => enPo(it.valeur, it.valeurUnite) * (num(it.qte) || 1);
 const poTxt = v => `${String(Math.round(v * 100) / 100).replace('.', ',')} po`;
 
 /* ===== États et blessures ===== */
@@ -854,10 +858,11 @@ function detailsObjet(it, items) {
 function ligneObjetVue(it, i, items, modifiable) {
   const bonus = (it.bonus || []).filter(b => b.cible && num(b.val));
   const det = detailsObjet(it, items);
-  return `<div class="objet-vue ${bonus.length && it.equipe === false ? 'range' : ''}">
+  return `<div class="objet-vue ${bonus.length && it.equipe === false ? 'range' : ''} ${it.focalisateur ? 'focalisateur' : ''}">
     <div class="objet-vue-tete">
       <b>${esc(it.nom || 'Objet sans nom')}</b>${num(it.qte) > 1 || it.cat === 'munition' || it.cat === 'consommable' ? ` <span class="qte">× ${esc(it.qte || 0)}</span>` : ''}
       ${it.cat ? `<span class="tag-cat cat-${it.cat}">${CATS_OBJET[it.cat]}</span>` : ''}
+      ${it.focalisateur ? '<span class="tag-cat focal">✦ focalisateur</span>' : ''}
       ${it.cat === 'ration' && state.ctx && rationDefaut(state.ctx)?.id === it.id ? '<span class="tag-cat defaut">★ par défaut</span>' : ''}
       ${it.visibleJoueurs && state.ctx?.pnjMJ && peutModifier(state.ctx) ? '<span class="tag-cat">visible des joueurs</span>' : ''}
       ${modifiable && it.cat === 'ration' && rationDefaut(state.ctx)?.id !== it.id ? `<button class="lien" data-action="ration-defaut" data-id="${it.id}">Consommer par défaut</button>` : ''}
@@ -865,7 +870,7 @@ function ligneObjetVue(it, i, items, modifiable) {
     </div>
     ${det ? `<p class="objet-det">${esc(det)}</p>` : ''}
     ${bonus.length ? `<p class="objet-bonus">${bonus.map(b => `<span class="bonus-objet">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`).join('')}${it.equipe === false ? '<span class="range-tag">rangé</span>' : ''}</p>` : ''}
-    ${it.notes || it.poids || valeurObjet(it) ? `<p class="objet-det">${esc([it.poids && `${it.poids}`, num(String(it.valeur || '').replace(',', '.')) ? `valeur ${poTxt(num(String(it.valeur).replace(',', '.')))}${num(it.qte) > 1 ? ' pièce' : ''}` : '', it.notes].filter(Boolean).join(' · '))}</p>` : ''}
+    ${it.notes || it.poids || valeurObjet(it) ? `<p class="objet-det">${esc([it.poids && `${it.poids}`, nombre(it.valeur) ? `valeur ${prixTxt(it.valeur, it.valeurUnite)}${num(it.qte) > 1 ? ' pièce' : ''}` : '', it.notes].filter(Boolean).join(' · '))}</p>` : ''}
   </div>`;
 }
 function resumeEquipement(p) {
@@ -949,7 +954,8 @@ function ligneObjetEdition(p, it, i) {
         <input type="text" data-bind="equipement.${i}.nom" value="${esc(it.nom)}" placeholder="Objet" aria-label="Objet">
         <input type="text" class="s" data-bind="equipement.${i}.qte" value="${esc(it.qte)}" placeholder="Qté" aria-label="Quantité">
         <input type="text" class="s" data-bind="equipement.${i}.poids" value="${esc(it.poids)}" placeholder="Poids (500 g, 2 kg)" aria-label="Poids, en g ou en kg">
-        <input type="text" inputmode="decimal" class="s" data-bind="equipement.${i}.valeur" value="${esc(it.valeur)}" placeholder="Valeur (po)" aria-label="Valeur à l'unité, en pièces d'or">
+        <input type="text" inputmode="decimal" class="s" data-bind="equipement.${i}.valeur" value="${esc(it.valeur)}" placeholder="Valeur" aria-label="Valeur à l'unité">
+        ${selUnite(`data-bind="equipement.${i}.valeurUnite" data-recalc`, it.valeurUnite)}
         <button class="icon" data-action="del-item" data-list="equipement" data-idx="${i}" aria-label="Supprimer l'objet">✕</button>
       </div>
       <div class="row objet-type">
@@ -957,6 +963,7 @@ function ligneObjetEdition(p, it, i) {
         <input type="text" data-bind="equipement.${i}.notes" value="${esc(it.notes)}" placeholder="Notes" aria-label="Notes" class="objet-notes">
       </div>
       ${champCat}
+      ${it.cat === 'magique' ? `<label class="check focal-case"><input type="checkbox" data-bind="equipement.${i}.focalisateur" data-rerender ${it.focalisateur ? 'checked' : ''}> ✦ Focalisateur (mis en avant sur la fiche)</label>` : ''}
       ${it.cat === 'ration' ? '<p class="hint">Indique le type dans le nom (ration de voyage, de survie…) et la quantité. Le MJ en retire une à chaque « Ration consommée ».</p>' : ''}
       ${p.pnjMJ ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.visibleJoueurs" data-rerender ${it.visibleJoueurs ? 'checked' : ''}> Visible des joueurs</label>` : ''}
       ${bonus.map((b, j) => `<div class="bonus-ligne">
@@ -1600,6 +1607,7 @@ function fusionMJ(local, srv) {
     const t = (srv.equipement || []).find(x => x.id === it.id);
     if (t) it.qte = t.qte;
   }
+  if (srv.argent) local.argent = srv.argent;
   /* Objets donnés par le MJ depuis la dernière synchronisation */
   const ids = new Set((local.equipement || []).map(x => x.id));
   const recus = (srv.equipement || []).filter(x => x.donMJ && num(x.donMJ) > num(local.mjMaj) && !ids.has(x.id));
@@ -1752,7 +1760,8 @@ function formPNJ(x, i) {
       <input type="text" data-mjbind="pnj.${i}.butin.${j}.nom" value="${esc(it.nom)}" placeholder="Objet">
       <select data-mjbind="pnj.${i}.butin.${j}.cat">${opts.map(([k, l]) => `<option value="${k}" ${(it.cat || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <input type="text" class="s" data-mjbind="pnj.${i}.butin.${j}.qte" value="${esc(it.qte)}" placeholder="Qté">
-      <input type="text" class="s" data-mjbind="pnj.${i}.butin.${j}.valeur" value="${esc(it.valeur)}" placeholder="po">
+      <input type="text" class="s" data-mjbind="pnj.${i}.butin.${j}.valeur" value="${esc(it.valeur)}" placeholder="Valeur">
+      ${selUnite(`data-mjbind="pnj.${i}.butin.${j}.valeurUnite"`, it.valeurUnite)}
       <button class="icon" data-action="mj-butin-suppr" data-i="${i}" data-j="${j}" aria-label="Retirer">✕</button>
     </div>`).join('')}
     <div class="btns"><button class="lien" data-action="mj-butin-ajout" data-i="${i}">+ Objet de butin</button></div>
@@ -1795,7 +1804,8 @@ function tuerPNJ(x) {
   x.mort = true;
   const butin = (x.butin || []).filter(it => it.nom);
   if (butin.length) {
-    mjd().objets.push(...butin.map(it => ({ ...it, id: uid(), source: `Butin de ${x.nom}` })));
+    const t = mjd().pnj.find(y => y.id === x.pnjId);
+    mjd().objets.push(...butin.map(it => ({ ...it, id: uid(), source: `Butin de ${x.nom}`, detenteur: t ? t.nom : x.nom, type: '' })));
     saveMJ('objets');
     toast(`${x.nom} est mort : ${butin.length} objet(s) en attente`);
   } else toast(`${x.nom} est mort`);
@@ -1853,22 +1863,47 @@ function pageCombatMJ() {
 function pageObjetsMJ() {
   const objets = mjd().objets;
   const cibles = db.personnages.filter(x => !x._public && (!enLigne() || x.publie));
+  const detenteurs = [...new Set(mjd().pnj.map(x => x.nom).filter(Boolean))];
+  const groupes = [...new Set(objets.map(it => it.detenteur || ''))].sort((x, y) => (x === '') - (y === '') || x.localeCompare(y, 'fr'));
+  const ligne = it => {
+    const i = objets.indexOf(it);
+    if (state.mjEdit === 'obj:' + it.id) return `<div class="objet en-edition">
+      <div class="row"><input type="text" data-mjbind="objets.${i}.nom" value="${esc(it.nom)}" placeholder="Objet">
+        <select data-mjbind="objets.${i}.cat">${Object.entries(CATS_OBJET).map(([k, l]) => `<option value="${k}" ${(it.cat || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="row">
+        <select data-mjbind="objets.${i}.type" data-rerender aria-label="Destination"><option value="">Butin ou cadeau</option><option value="vente" ${it.type === 'vente' ? 'selected' : ''}>À vendre</option></select>
+        <select data-mjbind="objets.${i}.detenteur" aria-label="PNJ détenteur"><option value="">— Aucun PNJ —</option>${detenteurs.map(n => `<option ${it.detenteur === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}${it.detenteur && !detenteurs.includes(it.detenteur) ? `<option selected>${esc(it.detenteur)}</option>` : ''}</select>
+      </div>
+      <div class="row"><input type="text" class="s" data-mjbind="objets.${i}.qte" value="${esc(it.qte)}" placeholder="${it.type === 'vente' ? 'Stock' : 'Qté'}">
+        <input type="text" class="s" data-mjbind="objets.${i}.valeur" value="${esc(it.valeur)}" placeholder="${it.type === 'vente' ? 'Prix' : 'Valeur'}">
+        ${selUnite(`data-mjbind="objets.${i}.valeurUnite"`, it.valeurUnite)}
+        <input type="text" class="s" data-mjbind="objets.${i}.poids" value="${esc(it.poids)}" placeholder="Poids"></div>
+      <input type="text" data-mjbind="objets.${i}.notes" value="${esc(it.notes)}" placeholder="Description, effet, commentaire">
+      ${it.cat === 'magique' ? `<label class="check"><input type="checkbox" data-mjbind="objets.${i}.focalisateur" ${it.focalisateur ? 'checked' : ''}> ✦ Focalisateur</label>` : ''}
+      <div class="btns"><button class="btn" data-action="mj-edit-fin">Terminé</button><button class="btn danger" data-action="mj-obj-suppr" data-i="${i}">Supprimer</button></div>
+    </div>`;
+    return `<div class="objet-vue">
+      <div class="objet-vue-tete"><b>${esc(it.nom || 'Objet')}</b>${num(it.qte) > 1 ? ` <span class="qte">× ${esc(it.qte)}</span>` : ''}${it.cat ? `<span class="tag-cat cat-${it.cat}">${CATS_OBJET[it.cat]}</span>` : ''}
+        <span class="tag-cat ${it.type === 'vente' ? 'vente' : ''}">${it.type === 'vente' ? 'À vendre' : 'Butin'}</span>${it.source ? `<span class="tag-cat">${esc(it.source)}</span>` : ''}
+        <button class="lien objet-modif" data-action="mj-edit" data-cle="obj:${it.id}">Modifier</button></div>
+      ${it.notes || nombre(it.valeur) ? `<p class="objet-det">${esc([nombre(it.valeur) ? prixTxt(it.valeur, it.valeurUnite) : '', it.notes].filter(Boolean).join(' · '))}</p>` : ''}
+      ${it.type === 'vente'
+        ? `<div class="btns"><button class="btn ghost" data-action="mj-vers-marche" data-i="${i}">Envoyer au marché</button></div>`
+        : `<div class="row donner"><select id="cible-${it.id}" aria-label="Donner à">${cibles.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
+          <button class="btn ghost" data-action="mj-donner" data-i="${i}">Donner</button></div>`}
+    </div>`;
+  };
   return `<section class="card"><h3>Objets en attente</h3>
-    <p class="hint">Prépare des objets à l'avance ou récupère le butin des PNJ morts, puis donne-les à un personnage : ils arrivent directement dans son inventaire.</p>
-    <div class="objets">${objets.map((it, i) => state.mjEdit === 'obj:' + it.id ? `<div class="objet en-edition">
-        <div class="row"><input type="text" data-mjbind="objets.${i}.nom" value="${esc(it.nom)}" placeholder="Objet">
-          <select data-mjbind="objets.${i}.cat">${Object.entries(CATS_OBJET).map(([k, l]) => `<option value="${k}" ${(it.cat || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-        <div class="row"><input type="text" class="s" data-mjbind="objets.${i}.qte" value="${esc(it.qte)}" placeholder="Qté"><input type="text" class="s" data-mjbind="objets.${i}.valeur" value="${esc(it.valeur)}" placeholder="Valeur (po)"><input type="text" class="s" data-mjbind="objets.${i}.poids" value="${esc(it.poids)}" placeholder="Poids"></div>
-        <input type="text" data-mjbind="objets.${i}.notes" value="${esc(it.notes)}" placeholder="Description, effet, commentaire">
-        <div class="btns"><button class="btn" data-action="mj-edit-fin">Terminé</button><button class="btn danger" data-action="mj-obj-suppr" data-i="${i}">Supprimer</button></div>
-      </div>` : `<div class="objet-vue">
-        <div class="objet-vue-tete"><b>${esc(it.nom || 'Objet')}</b>${num(it.qte) > 1 ? ` <span class="qte">× ${esc(it.qte)}</span>` : ''}${it.cat ? `<span class="tag-cat cat-${it.cat}">${CATS_OBJET[it.cat]}</span>` : ''}${it.source ? `<span class="tag-cat">${esc(it.source)}</span>` : ''}
-          <button class="lien objet-modif" data-action="mj-edit" data-cle="obj:${it.id}">Modifier</button></div>
-        ${it.notes || num(it.valeur) ? `<p class="objet-det">${esc([num(it.valeur) ? `${it.valeur} po` : '', it.notes].filter(Boolean).join(' · '))}</p>` : ''}
-        <div class="row donner"><select id="cible-${it.id}" aria-label="Donner à">${cibles.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
-          <button class="btn ghost" data-action="mj-donner" data-i="${i}">Donner</button></div>
-      </div>`).join('') || '<p class="empty">Aucun objet en attente.</p>'}</div>
-    <button class="btn ghost" data-action="mj-obj-ajout">+ Préparer un objet</button>
+    <p class="hint">Butin et cadeaux se <b>donnent</b> directement à un personnage. Les objets <b>à vendre</b> partent au Marché, où les joueurs les achètent. Classés par PNJ détenteur.</p>
+    ${groupes.map(g => `<h4 class="groupe-inv">${esc(g || 'Sans PNJ')} <small>${objets.filter(it => (it.detenteur || '') === g).length}</small></h4>
+      <div class="objets">${objets.filter(it => (it.detenteur || '') === g).map(ligne).join('')}</div>`).join('') || '<p class="empty">Aucun objet en attente.</p>'}
+    <div class="btns" style="margin-top:.6rem"><button class="btn ghost" data-action="mj-obj-ajout">+ Préparer un objet</button><button class="btn ghost" data-action="mj-obj-ajout" data-type="vente">+ Préparer un objet à vendre</button></div>
+  </section>
+  <section class="card"><h3>Donner des pièces</h3>
+    <label class="f"><span>À</span><select id="argent-cible"><option value="__commune__">La bourse commune</option>${cibles.filter(x => !x.pnjMJ).map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select></label>
+    ${champsPieces('mjp')}
+    <button class="btn" data-action="mj-argent">Donner</button>
+    <p class="hint">Un nombre négatif retire des pièces.</p>
   </section>`;
 }
 
@@ -1897,6 +1932,131 @@ function pageMJ2() {
   const tete = `<div class="pagehead"><div><h1>Espace MJ</h1><p class="sub">Jour ${esc(db.jour || 1)} de l'aventure${state.persosCharges ? `, mis à jour à ${new Date(state.persosCharges).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}</p></div>
     <button class="btn danger" data-action="mj-sortir">Quitter le mode MJ</button></div>`;
   return `${tete}<nav class="tabs mj-onglets" aria-label="Espace MJ">${onglets.map(([k, l]) => `<a href="#/mj" data-action="mj-onglet" data-o="${k}" class="${o === k ? 'active' : ''}">${l}</a>`).join('')}</nav>${corps}`;
+}
+
+/* ===== Monnaies ===== */
+const UNITES = [['po', 'po (or)'], ['pa', 'pa (argent)'], ['pc', 'pc (cuivre)'], ['pp', 'pp (platine)']];
+const MULT_PC = { pp: 1000, po: 100, pa: 10, pc: 1 };
+const nombre = v => num(String(v ?? '').replace(',', '.'));
+const enPo = (v, u) => nombre(v) * (MULT_PC[u || 'po'] || 100) / 100;
+const prixTxt = (v, u) => `${String(v ?? '').replace('.', ',')} ${u || 'po'}`;
+const selUnite = (attr, cur) => `<select ${attr} class="unite" aria-label="Monnaie">${UNITES.map(([k, l]) => `<option value="${k}" ${(cur || 'po') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+const bourseEnPc = b => ['pp', 'po', 'pa', 'pc'].reduce((t, k) => t + nombre((b || {})[k]) * MULT_PC[k], 0);
+function bourseDepuisPc(n, ppAvant = 0) {
+  const pp = Math.min(Math.max(0, ppAvant), Math.floor(n / 1000));
+  n -= pp * 1000;
+  return { pp: String(pp), po: String(Math.floor(n / 100)), pa: String(Math.floor((n % 100) / 10)), pc: String(n % 10) };
+}
+/* Ajout d'un delta en pièces, avec rendu de monnaie si besoin (même règle que la base) */
+function bourseLocalePlus(b, d) {
+  const r = {};
+  let negatif = false;
+  for (const k of ['pp', 'po', 'pa', 'pc']) { r[k] = nombre((b || {})[k]) + nombre((d || {})[k]); if (r[k] < 0) negatif = true; }
+  if (bourseEnPc(r) < 0) throw new Error('Pas assez d\'argent');
+  return negatif ? bourseDepuisPc(bourseEnPc(r), r.pp) : Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v)]));
+}
+const piecesTxt = b => [['pp', 'pp'], ['po', 'po'], ['pa', 'pa'], ['pc', 'pc']].filter(([k]) => nombre((b || {})[k])).map(([k, l]) => `${nombre(b[k])} ${l}`).join(', ') || 'vide';
+const champsPieces = prefixe => `<div class="pieces">${[['po', 'Or'], ['pa', 'Argent'], ['pc', 'Cuivre']].map(([k, l]) =>
+  `<label class="f"><span>${l}</span><input type="text" inputmode="numeric" id="${prefixe}-${k}" placeholder="0"></label>`).join('')}</div>`;
+const lirePieces = prefixe => Object.fromEntries(['po', 'pa', 'pc'].map(k => [k, String(Math.round(nombre($(`#${prefixe}-${k}`)?.value)))]));
+
+/* ===== Bourse commune ===== */
+const bc = () => (db.bourseCommune = { bourse: {}, porteur_id: '', journal: [], ...(db.bourseCommune || {}) });
+function carteBourseCommune() {
+  const b = bc();
+  const porteur = findPerso(b.porteur_id);
+  const mes = db.personnages.filter(x => !x._public && !x.pnjMJ && (enLigne() ? !!(db.cles || {})[x.id] || estMJ() : true));
+  const tous = db.personnages.filter(x => !x.pnjMJ && (!enLigne() || x.publie));
+  return `<section class="card bourse-commune"><h3>Bourse commune</h3>
+    <p class="bc-total"><b>${esc(piecesTxt(b.bourse))}</b>${bourseEnPc(b.bourse) ? ` <small>(${prixTxt(Math.round(bourseEnPc(b.bourse)) / 100, 'po')} au total)</small>` : ''}</p>
+    <p class="hint">${porteur ? `<b>${esc(porteur.nom)}</b> porte le coffre commun. Cet argent ne s'ajoute pas à sa bourse personnelle.` : 'Personne ne porte le coffre commun pour l\'instant.'}</p>
+    ${mes.length ? `<details class="effet" ${state.bcOuvert ? 'open' : ''}><summary>Déposer, prendre, changer de porteur</summary>
+      <label class="f"><span>Avec la bourse de</span><select id="bc-perso">${mes.map(x => `<option value="${x.id}">${esc(x.nom)} (${esc(piecesTxt(x.argent))})</option>`).join('')}</select></label>
+      ${champsPieces('bc')}
+      <div class="btns"><button class="btn" data-action="bc-deposer">Déposer dans le coffre</button><button class="btn ghost" data-action="bc-prendre">Prendre dans le coffre</button></div>
+      <div class="row" style="margin-top:.6rem"><select id="bc-porteur" aria-label="Porteur du coffre"><option value="">— Personne —</option>${tous.map(x => `<option value="${x.id}" ${b.porteur_id === x.id ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select>
+        <button class="btn ghost" data-action="bc-porteur">Confier le coffre</button></div>
+    </details>` : '<p class="hint">Associe ton personnage à cet appareil pour déposer ou prendre de l\'argent.</p>'}
+    ${(b.journal || []).length ? `<details class="effet"><summary>Derniers mouvements</summary><ul class="journal">${b.journal.slice(0, 12).map(j => `<li><small>${new Date(num(j.quand)).toLocaleDateString('fr-FR')}</small> <b>${esc(j.qui)}</b> ${esc(j.quoi)} : ${esc(Object.entries(j.delta || {}).filter(([, v]) => num(v)).map(([k, v]) => `${num(v) > 0 ? '+' : ''}${num(v)} ${k}`).join(', '))}</li>`).join('')}</ul></details>` : ''}
+  </section>`;
+}
+function journalLocal(qui, quoi, delta) {
+  const b = bc();
+  b.journal = [{ quand: Date.now(), qui, quoi, delta }, ...(b.journal || [])].slice(0, 50);
+}
+
+/* ===== Marché ===== */
+async function chargerMarche() {
+  if (!enLigne()) return;
+  try {
+    const l = await api('marche?select=id,data');
+    db.marche = (l || []).map(x => ({ ...x.data, id: x.id }));
+    saveNow();
+  } catch (e) { console.warn('Marché indisponible (base pas encore en v7 ?)', e); }
+}
+const marcheTimers = {};
+function sauverArticle(a) {
+  saveNow();
+  if (!enLigne() || !estMJ()) return;
+  clearTimeout(marcheTimers[a.id]);
+  marcheTimers[a.id] = setTimeout(() => rpc('mj_marche_sauver', { p_code: db.codeMJ, p_id: a.id, p_data: a }).catch(e => statutSync('Marché non enregistré : ' + e.message, true)), 700);
+}
+function pageMarche() {
+  const mj = estMJ();
+  const articles = (db.marche || []).filter(a => mj || a.aVendre);
+  const mes = db.personnages.filter(x => !x._public && !x.pnjMJ && (enLigne() ? !!(db.cles || {})[x.id] || mj : true));
+  const vendeurs = [...new Set(articles.map(a => a.vendeur || 'Marchand ambulant'))];
+  const carte = a => {
+    const i = db.marche.indexOf(a);
+    const epuise = num(a.stock) <= 0;
+    return `<div class="article ${a.aVendre ? '' : 'retire'} ${epuise ? 'epuise' : ''}">
+      <div class="objet-vue-tete"><b>${esc(a.nom || 'Article')}</b>${a.cat ? `<span class="tag-cat cat-${a.cat}">${CATS_OBJET[a.cat] || ''}</span>` : ''}${a.focalisateur ? '<span class="tag-cat focal">✦ focalisateur</span>' : ''}</div>
+      ${a.notes ? `<p class="objet-det">${esc(a.notes)}</p>` : ''}
+      ${(a.bonus || []).filter(x => x.cible && num(x.val)).length ? `<p class="objet-bonus">${a.bonus.filter(x => x.cible && num(x.val)).map(x => `<span class="bonus-objet">${R.signe(num(x.val))} ${esc(NOM_CIBLE[x.cible] || x.cible)}</span>`).join('')}</p>` : ''}
+      <p class="prix"><b>${esc(prixTxt(a.prix, a.unite))}</b> <span>${epuise ? 'épuisé' : `stock : ${esc(a.stock)}`}</span></p>
+      ${mj ? `<div class="row mj-article">
+          <input type="text" inputmode="decimal" class="s" data-marche="${i}.prix" value="${esc(a.prix)}" aria-label="Prix">
+          ${selUnite(`data-marche="${i}.unite"`, a.unite)}
+          <input type="text" inputmode="numeric" class="s" data-marche="${i}.stock" value="${esc(a.stock)}" aria-label="Stock">
+          <label class="check"><input type="checkbox" data-marche="${i}.aVendre" ${a.aVendre ? 'checked' : ''}> À vendre</label>
+          <button class="lien" data-action="marche-retirer" data-id="${a.id}">Retirer du marché</button>
+        </div>` : ''}
+      ${!epuise && a.aVendre && mes.length ? `<div class="row achat">
+          <input type="text" inputmode="numeric" class="s" id="qte-${a.id}" value="1" aria-label="Quantité">
+          <select id="payeur-${a.id}" aria-label="Payer avec">${mes.map(x => `<option value="${x.id}|0">Bourse de ${esc(x.nom)}</option><option value="${x.id}|1">Bourse commune (achat par ${esc(x.nom)})</option>`).join('')}</select>
+          <button class="btn" data-action="acheter" data-id="${a.id}">Acheter</button>
+        </div>` : ''}
+    </div>`;
+  };
+  return `<div class="pagehead"><div><h1>Marché</h1><p class="sub">Ce que les marchands proposent</p></div></div>
+    ${!mes.length && !mj ? '<p class="hint">Associe ton personnage à cet appareil (sur sa fiche) pour pouvoir acheter.</p>' : ''}
+    ${mes.length ? `<p class="hint">Ta bourse : ${mes.map(x => `${esc(x.nom)} ${esc(piecesTxt(x.argent))}`).join(' · ')}. Bourse commune : ${esc(piecesTxt(bc().bourse))}.</p>` : ''}
+    ${vendeurs.map(v => `<section class="card"><h3>${esc(v)}</h3><div class="articles">${articles.filter(a => (a.vendeur || 'Marchand ambulant') === v).map(carte).join('')}</div></section>`).join('')
+      || `<section class="card intro"><p class="empty">Aucun article en vente pour l'instant.${mj ? ' Prépare des objets « À vendre » dans l\'espace MJ, onglet Objets, puis envoie-les au marché.' : ''}</p></section>`}`;
+}
+
+/* Achat hors ligne (sans base) : même logique que la fonction de la base */
+function acheterLocal(a, p, qte, commune) {
+  const prix = Math.round(nombre(a.prix) * (MULT_PC[a.unite || 'po'] || 100)) * qte;
+  if (num(a.stock) < qte) throw new Error(`Stock insuffisant (il en reste ${num(a.stock)})`);
+  if (commune) { bc().bourse = bourseLocalePlus(bc().bourse, { pc: -prix }); journalLocal(p.nom, `achat : ${a.nom} × ${qte}`, { pc: -prix }); }
+  else p.argent = bourseLocalePlus(p.argent, { pc: -prix });
+  const { aVendre, stock, prix: px, unite, vendeur, type, ...obj } = a;
+  p.equipement = [...(p.equipement || []), { ...obj, id: uid(), qte: String(qte), valeur: px, valeurUnite: unite || 'po' }];
+  a.stock = String(num(a.stock) - qte);
+}
+
+/* ===== Focalisateur ===== */
+function carteFocalisateur(p) {
+  const f = (p.equipement || []).filter(it => it.focalisateur);
+  if (!f.length) return '';
+  return f.map(it => `<section class="card focalisateur-carte">
+    <p class="recit-num">✦ Focalisateur</p>
+    <h2 class="baguette-nom">${esc(it.nom || 'Focalisateur')}</h2>
+    ${it.notes ? `<p>${esc(it.notes)}</p>` : ''}
+    ${(it.bonus || []).filter(b => b.cible && num(b.val)).length ? `<p class="objet-bonus">${it.bonus.filter(b => b.cible && num(b.val)).map(b => `<span class="bonus-objet">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`).join('')}</p>` : ''}
+    ${it.equipe === false ? '<p class="hint">Rangé dans le sac : ses bonus ne comptent pas.</p>' : ''}
+  </section>`).join('');
 }
 
 function ficheCompetences(p, e) {
@@ -2346,8 +2506,12 @@ async function chargerInfos() {
   if (!enLigne()) return;
   try {
     let l;
-    try { l = await api('campagne_info?select=conteur_id,conteur_nom,session,jour'); }
-    catch (e) { l = await api('campagne_info?select=conteur_id,conteur_nom,session'); }
+    try { l = await api('campagne_info?select=conteur_id,conteur_nom,session,jour,bourse,porteur_id,bourse_journal'); }
+    catch (e) {
+      try { l = await api('campagne_info?select=conteur_id,conteur_nom,session,jour'); }
+      catch (e2) { l = await api('campagne_info?select=conteur_id,conteur_nom,session'); }
+    }
+    if (l && l[0] && l[0].bourse) db.bourseCommune = { bourse: l[0].bourse, porteur_id: l[0].porteur_id || '', journal: l[0].bourse_journal || [] };
     db.conteur = (l && l[0]) || null;
     if (l && l[0] && l[0].jour) db.jour = l[0].jour;
     saveNow();
@@ -3048,8 +3212,8 @@ function migrerSessions(liste) {
 /* Hors ligne (pas de config.js), tout reste local et tout est modifiable, comme avant. */
 const estAdmin = () => !enLigne() || !!db.codeCampagne;
 const estAMoi = p => !enLigne() || !!(db.cles || {})[p.id];
-const peutModifier = p => !!p && (p.pnjMJ ? (estMJ() && !p._public) : (estAMoi(p) || (enLigne() && !!db.codeCampagne) || (enLigne() && !p.publie)));
-const codePour = p => p.pnjMJ ? (db.codeMJ || '') : ((db.cles || {})[p.id] || db.codeCampagne || '');
+const peutModifier = p => !!p && (p.pnjMJ ? (estMJ() && !p._public) : (estAMoi(p) || (enLigne() && (!!db.codeCampagne || estMJ())) || (enLigne() && !p.publie)));
+const codePour = p => p.pnjMJ ? (db.codeMJ || '') : ((db.cles || {})[p.id] || db.codeCampagne || db.codeMJ || '');
 const mesPersos = () => db.personnages.filter(p => enLigne() ? !!(db.cles || {})[p.id] : true);
 
 function statutSync(txt, persistant = false) {
@@ -3397,6 +3561,7 @@ function render(garderScroll = true) {
     case 'session': html = pageSession(id); break;
     case 'nouveau': html = pageNouveauPerso(); break;
     case 'mj': html = pageMJ2(); break;
+    case 'marche': html = pageMarche(); break;
     case 'donnees': html = pageDonnees(); break;
     default: html = pagePersos();
   }
@@ -3446,6 +3611,14 @@ document.addEventListener('input', ev => {
     return;
   }
   if (t.id === 'carnet') { state.carnet = t.value; render(); return; }
+  if (t.dataset.marche) {
+    const [i, champ] = t.dataset.marche.split('.');
+    const a = db.marche[Number(i)];
+    a[champ] = t.type === 'checkbox' ? t.checked : t.value;
+    sauverArticle(a);
+    if (t.type === 'checkbox') render();
+    return;
+  }
   if (t.dataset.mjbind) {
     setP(mjd(), t.dataset.mjbind, t.type === 'checkbox' ? t.checked : t.value);
     saveMJ(t.dataset.mjbind.split('.')[0]);
@@ -3540,7 +3713,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -4203,7 +4376,7 @@ document.addEventListener('click', ev => {
       break;
     }
     case 'mj-obj-ajout': {
-      const it = { id: uid(), nom: '', cat: '', qte: '1', valeur: '', poids: '', notes: '' }; mjd().objets.push(it); state.mjEdit = 'obj:' + it.id; saveMJ('objets'); render();
+      const it = { id: uid(), nom: '', cat: '', qte: '1', valeur: '', valeurUnite: 'po', poids: '', notes: '', type: b.dataset.type || '' }; mjd().objets.push(it); state.mjEdit = 'obj:' + it.id; saveMJ('objets'); render();
       break;
     }
     case 'mj-obj-suppr':
@@ -4213,7 +4386,7 @@ document.addEventListener('click', ev => {
       const i = Number(b.dataset.i), obj = mjd().objets[i];
       const cible = findPerso($('#cible-' + obj.id).value);
       if (!cible) break;
-      const { source, ...propre } = obj;
+      const { source, type, detenteur, ...propre } = obj;
       const item = { ...propre, id: uid() };
       const fini = () => {
         cible.equipement = [...(cible.equipement || []), { ...item, donMJ: Date.now() }];
@@ -4223,6 +4396,85 @@ document.addEventListener('click', ev => {
       };
       if (enLigne() && !cible.pnjMJ) rpc('mj_donner_objet', { p_code: db.codeMJ, p_id: cible.id, p_objet: item }).then(fini).catch(e => alert('Impossible : ' + e.message));
       else { fini(); if (cible.pnjMJ) persoModifie(cible); }
+      break;
+    }
+    case 'bc-deposer':
+    case 'bc-prendre': {
+      state.bcOuvert = true;
+      const x = findPerso($('#bc-perso').value);
+      const pieces = lirePieces('bc');
+      if (!bourseEnPc(pieces)) { toast('Indique un montant'); break; }
+      const delta = a === 'bc-deposer' ? pieces : Object.fromEntries(Object.entries(pieces).map(([k, v]) => [k, String(-num(v))]));
+      if (enLigne()) {
+        rpc('bourse_transfert', { p_id: x.id, p_code: codePour(x), p_delta: delta })
+          .then(() => { toast(a === 'bc-deposer' ? 'Déposé dans le coffre commun' : 'Pris dans le coffre commun'); return actualiser(); })
+          .catch(e => alert('Impossible : ' + e.message));
+      } else {
+        try {
+          const moins = Object.fromEntries(Object.entries(delta).map(([k, v]) => [k, String(-num(v))]));
+          x.argent = bourseLocalePlus(x.argent, moins); bc().bourse = bourseLocalePlus(bc().bourse, delta);
+          journalLocal(x.nom, a === 'bc-deposer' ? 'dépôt' : 'retrait', delta); saveNow(); render();
+        } catch (e) { alert(e.message); }
+      }
+      break;
+    }
+    case 'bc-porteur': {
+      state.bcOuvert = true;
+      const porteur = $('#bc-porteur').value, x = findPerso($('#bc-perso').value);
+      if (enLigne()) rpc('bourse_porteur', { p_id: x.id, p_code: codePour(x), p_porteur: porteur }).then(() => { bc().porteur_id = porteur; saveNow(); render(); toast('Coffre confié'); }).catch(e => alert('Impossible : ' + e.message));
+      else { bc().porteur_id = porteur; saveNow(); render(); }
+      break;
+    }
+    case 'mj-argent': {
+      const cible = $('#argent-cible').value, pieces = lirePieces('mjp');
+      if (!Object.values(pieces).some(v => num(v))) { toast('Indique un montant'); break; }
+      const fini = () => { toast('Pièces données'); actualiser(); render(); };
+      if (enLigne()) {
+        (cible === '__commune__' ? rpc('bourse_modifier', { p_code: db.codeMJ, p_delta: pieces, p_motif: 'don du MJ' }) : rpc('mj_donner_argent', { p_code: db.codeMJ, p_id: cible, p_delta: pieces }))
+          .then(fini).catch(e => alert('Impossible : ' + e.message));
+      } else {
+        try {
+          if (cible === '__commune__') { bc().bourse = bourseLocalePlus(bc().bourse, pieces); journalLocal('MJ', 'don du MJ', pieces); }
+          else { const x = findPerso(cible); x.argent = bourseLocalePlus(x.argent, pieces); }
+          saveNow(); fini();
+        } catch (e) { alert(e.message); }
+      }
+      break;
+    }
+    case 'mj-vers-marche': {
+      const i = Number(b.dataset.i), obj = mjd().objets[i];
+      const { type, source, qte, valeur, valeurUnite, detenteur, ...reste } = obj;
+      const article = { ...reste, id: uid(), prix: valeur || '0', unite: valeurUnite || 'po', stock: qte || '1', vendeur: detenteur || '', aVendre: false };
+      const fini = () => { db.marche = [...(db.marche || []), article]; mjd().objets.splice(i, 1); saveMJ('objets'); render(); toast('Envoyé au marché : coche « À vendre » quand tu veux l\'ouvrir aux joueurs'); };
+      if (enLigne()) rpc('mj_marche_sauver', { p_code: db.codeMJ, p_id: article.id, p_data: article }).then(fini).catch(e => alert('Impossible : ' + e.message));
+      else fini();
+      break;
+    }
+    case 'marche-retirer': {
+      const art = (db.marche || []).find(x => x.id === b.dataset.id);
+      if (!art || !confirm(`Retirer « ${art.nom} » du marché ? Il revient dans tes objets en attente.`)) break;
+      const { aVendre, stock, prix, unite, vendeur, ...reste } = art;
+      const fini = () => { db.marche = db.marche.filter(x => x.id !== art.id); mjd().objets.push({ ...reste, id: uid(), type: 'vente', qte: stock, valeur: prix, valeurUnite: unite, detenteur: vendeur }); saveMJ('objets'); render(); };
+      if (enLigne()) rpc('mj_marche_suppr', { p_code: db.codeMJ, p_id: art.id }).then(fini).catch(e => alert('Impossible : ' + e.message));
+      else fini();
+      break;
+    }
+    case 'acheter': {
+      const art = (db.marche || []).find(x => x.id === b.dataset.id);
+      const qte = Math.max(1, Math.round(num($('#qte-' + art.id).value)));
+      const [pid, commune] = $('#payeur-' + art.id).value.split('|');
+      const x = findPerso(pid);
+      const total = Math.round(nombre(art.prix) * (MULT_PC[art.unite || 'po'] || 100)) * qte;
+      if (!confirm(`Acheter ${qte} × ${art.nom} pour ${prixTxt(total / 100, 'po')} avec ${commune === '1' ? 'la bourse commune' : 'la bourse de ' + x.nom} ?`)) break;
+      b.disabled = true;
+      if (enLigne()) {
+        rpc('acheter', { p_id: x.id, p_code: codePour(x), p_article: art.id, p_qte: qte, p_commune: commune === '1' })
+          .then(() => { toast(`${art.nom} acheté !`); return actualiser(); })
+          .catch(e => { b.disabled = false; alert('Achat impossible : ' + e.message); });
+      } else {
+        try { acheterLocal(art, x, qte, commune === '1'); saveNow(); render(); toast(`${art.nom} acheté !`); }
+        catch (e) { b.disabled = false; alert('Achat impossible : ' + e.message); }
+      }
       break;
     }
     case 'replis-tout': {
@@ -4398,6 +4650,7 @@ async function actualiser(manuel = false) {
     await Promise.all([chargerPersos(), chargerRecaps(), chargerFiches(), chargerInfos()]);
     await chargerPersosMJ();
     await chargerMJ();
+    await chargerMarche();
     if (manuel) statutSync(state.syncErreur ? 'Hors ligne' : 'À jour');
     /* On ne redessine pas sous les doigts de quelqu'un qui est en train d'écrire */
     if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette && !state.mjEdit) render();
@@ -4424,6 +4677,7 @@ setInterval(() => {
   await Promise.all([initSorts(), chargerRecaps(), chargerPersos(), chargerInfos(), chargerFiches()]);
   await chargerPersosMJ();
   await chargerMJ();
+  await chargerMarche();
   render();
   if (enLigne()) {
     await envoyerPersos();
