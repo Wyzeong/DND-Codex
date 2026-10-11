@@ -1,5 +1,5 @@
 // Change ce numéro à chaque mise à jour de l'appli pour forcer le rafraîchissement du cache.
-const CACHE = 'codex-v18';
+const CACHE = 'codex-v19';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './regles.js', './spells.json', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-512-maskable.png',

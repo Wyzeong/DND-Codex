@@ -540,10 +540,10 @@ function blocImages(p) {
 
 /* Transforme les sections titrées de la fiche en blocs repliables (état mémorisé sur l'appareil) */
 function repliable(html) {
-  return html.replace(/<section class="card"><h3>(.*?)<\/h3>([\s\S]*?)<\/section>/g, (m, titre, corps) => {
+  return html.replace(/<section class="card([^"]*)"><h3>(.*?)<\/h3>([\s\S]*?)<\/section>/g, (m, classes, titre, corps) => {
     const id = slug(titre.replace(/<[^>]+>/g, ''));
     const ferme = (db.replis || {})[id];
-    return `<details class="card repli" data-section="${id}"${ferme ? '' : ' open'}><summary><h3>${titre}</h3></summary>${corps}</details>`;
+    return `<details class="card repli${classes}" data-section="${id}"${ferme ? '' : ' open'}><summary><h3>${titre}</h3></summary>${corps}</details>`;
   });
 }
 const outilsReplis = () => `<div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
