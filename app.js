@@ -179,8 +179,8 @@ const LIST_TEMPLATES = {
   capacites: () => ({ nom: '', description: '' }),
   equipement: () => ({ nom: '', qte: '', poids: '', notes: '' }),
 };
-function nouveauNiveau(n) {
-  return { niveau: n, classe: '', atteint: false, don: '', donRace: '', donsBonus: [], augment: '', pv: '', choix: {}, notes: '' };
+function nouveauNiveau(n, classe = '') {
+  return { niveau: n, classe, atteint: false, don: '', donRace: '', donsBonus: [], augment: '', pv: '', choix: {}, notes: '' };
 }
 
 /* Reprend les fiches créées avec la première version */
@@ -447,6 +447,7 @@ function pagePersos() {
       <p class="devise">Il existe encore des secrets que le monde a oubliés…</p>
     </header>
     <div class="ornement" aria-hidden="true"><span></span></div>
+    ${carteConteur(false)}
     <div class="pagehead">
       <div><h1>Personnages</h1><p class="sub">La compagnie</p></div>
       <div class="btns">
@@ -493,7 +494,7 @@ function pagePerso(id, tab) {
 function recap(p, e) {
   if (!e.niveau && !e.race) return '';
   const s = stats(p, e);
-  const pv = p.pvMax !== '' && p.pvMax != null ? p.pvMax : (s.pvComplets ? s.pvCalc : '—');
+  const pv = p.pvMax !== '' && p.pvMax != null ? p.pvMax : '—';
   return `<div class="recap"><span>PV<b>${esc(pv)}</b></span><span>CA<b>${s.ca}</b></span><span>Initiative<b>${R.signe(s.init)}</b></span><span>Vitesse<b>${s.vitesse} m</b></span><span>BBA<b>${R.attTxt(s.att)}</b></span></div>`;
 }
 
@@ -578,7 +579,7 @@ function ongletFicheBrut(p, e) {
     ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
     <div class="grid" style="margin-top:.8rem">
       ${fi(p, 'pvMax', 'Points de vie max', { type: 'number' })}
-      <div class="f"><span>D'après les dés notés en progression</span><b class="calc">${s.pvComplets ? s.pvCalc + ' PV' : 'Dés de vie incomplets'}</b></div>
+      <p class="hint" style="align-self:end">Fixés par le MJ : mets ce total à jour à chaque niveau.</p>
     </div>
     <details class="ajustements"><summary>Équipement et bonus divers (armure, objets, sorts…)</summary>
       <div class="aj-grid">
@@ -708,6 +709,26 @@ function tableSorts(sp) {
   </table></div>`;
 }
 
+function resultatsDons(champ) {
+  const p = state.ctx, q = norm(champ.value).trim();
+  const zone = champ.parentElement.querySelector(`.don-resultats[data-pour="${champ.dataset.path}"]`);
+  if (!zone) return;
+  if (!q) { zone.innerHTML = ''; return; }
+  const n = Number(champ.dataset.n);
+  const e = etat(p, n, true, { niveau: n, champ: champ.dataset.champ });
+  const ids = champ.dataset.liste ? champ.dataset.liste.split(',') : null;
+  const dons = (ids ? ids.map(id => R.DON[id]) : R.DONS).filter(Boolean)
+    .filter(d => norm(d.nom).includes(q) || norm(d.vo).includes(q) || norm(d.texte).includes(q))
+    .sort((a, b) => (norm(b.nom).startsWith(q) - norm(a.nom).startsWith(q)) || a.nom.localeCompare(b.nom, 'fr'))
+    .slice(0, 12);
+  zone.innerHTML = dons.length ? dons.map(d => {
+    const ok = champ.dataset.libre || prerequis(d, e, p).ok;
+    return `<button class="don-choix ${ok ? '' : 'ko'}" data-action="choisir-don" data-path="${champ.dataset.path}" data-id="${d.id}">
+      <b>${esc(d.nom)}</b> <span class="type-don">${R.TYPES_DONS[d.type]}${ok ? '' : ', prérequis manquants'}</span>
+      <small>${esc(d.texte)}</small></button>`;
+  }).join('') : '<p class="empty">Aucun don ne correspond.</p>';
+}
+
 function optionsDons(e, p, cur, filtre = () => true, liste = null, sansPrerequis = false) {
   const dons = (liste ? liste.map(id => R.DON[id]) : R.DONS).filter(Boolean).filter(filtre);
   const groupes = {};
@@ -793,7 +814,7 @@ function carteNiveau(p, l, i, estProchain) {
         ${estProchain ? '<span class="nextbadge">Prochain niveau</span>' : ''}${l.atteint ? '<span class="atteint-badge">Atteint</span>' : ''}
       </summary>
       <div class="levelhead">
-        <label class="f"><span>Classe prise à ce niveau</span>
+        <label class="f"><span>Classe de ce niveau${n > 1 ? ' (la même qu\'avant, sauf multiclassage)' : ''}</span>
           <select data-bind="progression.${i}.classe" data-rerender>
             <option value="">— Choisir —</option>
             ${classeOpts.map(([v, t]) => `<option value="${v}" ${l.classe === v ? 'selected' : ''}>${t}</option>`).join('')}
@@ -811,7 +832,6 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
   const n = l.niveau;
   const g = [];
   const delta = (a, b) => a === b ? R.signe(b) : `${R.signe(a)} → <b>${R.signe(b)}</b>`;
-  g.push(['Dé de vie', `d${cl.dv}${n === 1 ? ' (maximum au niveau 1)' : ''}, + mod Con (${R.signe(apres.mods.con)})`]);
   g.push(['Bonus de base à l\'attaque', avant.bba === apres.bba ? `${R.attTxt(R.attaques(apres.bba))} (inchangé)` : `${R.attTxt(R.attaques(avant.bba))} → <b>${R.attTxt(R.attaques(apres.bba))}</b>`]);
   g.push(['Jets de sauvegarde de base', `Vig ${delta(avant.js.vig, apres.js.vig)}, Réf ${delta(avant.js.ref, apres.js.ref)}, Vol ${delta(avant.js.vol, apres.js.vol)}`]);
   let pc = Math.max(1, cl.pc + apres.mods.int) + (apres.race?.pcBonus ? 1 : 0);
@@ -825,8 +845,11 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
     const path = champ.startsWith('bonus') ? `progression.${i}.donsBonus.${champ.slice(5)}` : `progression.${i}.${champ}`;
     const cur = champ.startsWith('bonus') ? (l.donsBonus || [])[Number(champ.slice(5))] : l[champ];
     const d = cur && R.DON[cur];
+    const nb = (liste || R.DONS).length;
     return `<div class="choix-don"><label class="f"><span>${label}</span>
-      <select data-bind="${path}" data-rerender>${optionsDons(e, p, cur || '', () => true, liste, sansPrerequis)}</select></label>
+      ${nb > 6 ? `<input type="search" class="don-recherche" data-path="${path}" data-n="${n}" data-champ="${champ}" data-liste="${liste ? liste.join(',') : ''}" data-libre="${sansPrerequis ? 1 : ''}" placeholder="Chercher un don : nom, effet (ex. esquive, CA, lutte)…" aria-label="Chercher un don">
+      <div class="don-resultats" data-pour="${path}"></div>` : ''}
+      <select data-bind="${path}" data-rerender aria-label="${esc(label)}">${optionsDons(e, p, cur || '', () => true, liste, sansPrerequis)}</select></label>
       ${d ? carteDon(d, apres, p, '', sansPrerequis) : ''}</div>`;
   };
   if (n === 1 && apres.race?.donBonus) choix.push(selDon('donRace', 'Don supplémentaire (humain)'));
@@ -853,8 +876,7 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
       <option value="">— Choisir —</option>${R.CARACS.map(x => `<option value="${x.k}" ${l.augment === x.k ? 'selected' : ''}>${x.n}</option>`).join('')}</select></label>
       <p class="hint">Une fois le niveau atteint, pense à ajouter ce +1 à la valeur sur la fiche.</p>`);
   }
-  choix.push(`<label class="f pv-niveau"><span>Points de vie obtenus (jet du dé de vie, sans la Con)</span>
-    <input type="text" inputmode="numeric" data-bind="progression.${i}.pv" value="${esc(l.pv)}" placeholder="${n === 1 ? cl.dv : '1 à ' + cl.dv}"></label>`);
+  choix.push('<p class="hint">Points de vie : c\'est le MJ qui les fixe. Mets simplement à jour « Points de vie max » sur la fiche.</p>');
 
   /* Nouvelles aptitudes et valeurs qui évoluent */
   const apt = cl.aptitudes.filter(a => a.niv === k);
@@ -939,7 +961,20 @@ function indexMentions() {
 /* ===== Récapitulatifs communs =====
    La version publiée vient de recaps.json, à la racine du site (identique pour tout le monde).
    Les créations et modifications restent locales tant qu'elles ne sont pas publiées. */
-const champsRecap = r => JSON.stringify(['numero', 'date', 'titre', 'auteur', 'texte'].map(k => String(r[k] ?? '')));
+const champsRecap = r => JSON.stringify(['numero', 'date', 'titre', 'auteur', 'texte', 'photoType', 'photoMaj'].map(k => String(r[k] ?? (k === 'photoMaj' ? 0 : ''))));
+const TYPES_PHOTO = { repas: 'Le repas', apero: 'L\'apéro', illustration: 'Illustration', groupe: 'Photo de groupe' };
+/* Les photos ne sont pas gardées dans le stockage de l'appareil (trop lourdes) : cache en mémoire */
+const photoRecap = r => r.photo !== undefined ? r.photo : (state.photos || {})[r.id];
+async function chargerPhoto(id) {
+  state.photos = state.photos || {};
+  if (id in state.photos || !enLigne()) return;
+  state.photos[id] = '';
+  try {
+    const l = await api(`recaps?id=eq.${encodeURIComponent(id)}&select=photo`);
+    state.photos[id] = (l && l[0] && l[0].photo) || '';
+    if (location.hash.includes(id)) render();
+  } catch (e) { delete state.photos[id]; }
+}
 const recapsPublies = () => db.recapsPublies || [];
 function recapsTous() {
   const supprimes = new Set(db.recapsSupprimes || []);
@@ -979,12 +1014,19 @@ async function chargerRecaps() {
   try {
     let pub;
     if (enLigne()) {
-      const lignes = await api('recaps?select=id,numero,date,titre,auteur,texte,maj&order=numero.desc');
-      pub = (lignes || []).map(r => ({ ...r, date: r.date || '', titre: r.titre || '', auteur: r.auteur || '', texte: r.texte || '' }));
+      let lignes;
+      try {
+        lignes = await api('recaps?select=id,numero,date,titre,auteur,texte,maj,photo_type,photo_maj&order=numero.desc');
+      } catch (e) {
+        lignes = await api('recaps?select=id,numero,date,titre,auteur,texte,maj&order=numero.desc'); // base pas encore en v3
+      }
+      pub = (lignes || []).map(({ photo_type, photo_maj, ...r }) => ({ ...r, date: r.date || '', titre: r.titre || '', auteur: r.auteur || '', texte: r.texte || '', photoType: photo_type || '', photoMaj: Number(photo_maj) || 0 }));
     } else {
       const res = await fetch('recaps.json', { cache: 'no-store' });
       if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status);
       pub = res.ok ? ((await res.json()).recaps || []) : [];
+      state.photos = state.photos || {};
+      pub = pub.map(({ photo, ...r }) => { if (photo) state.photos[r.id] = photo; return r; });
     }
     db.recapsPublies = pub;
     /* Ce qui est désormais publié à l'identique n'a plus besoin d'être gardé en local */
@@ -1001,16 +1043,50 @@ async function chargerRecaps() {
   }
 }
 
+/* Conteur désigné pour la prochaine session */
+async function chargerInfos() {
+  if (!enLigne()) return;
+  try {
+    const l = await api('campagne_info?select=conteur_id,conteur_nom,session');
+    db.conteur = (l && l[0]) || null;
+    saveNow();
+  } catch (e) { console.warn('Infos de campagne indisponibles (base pas encore en v3 ?)', e); }
+}
+function carteConteur(admin) {
+  const c = db.conteur;
+  const moi = c && c.conteur_id && (enLigne() ? !!(db.cles || {})[c.conteur_id] : false);
+  const prochaine = recapsTous().reduce((m, r) => Math.max(m, num(r.numero)), 0) + 1;
+  const options = db.personnages.filter(x => !enLigne() || x.publie).map(x => [x.id, x.joueur ? `${x.joueur} (${x.nom})` : x.nom]);
+  if (!c?.conteur_nom && !admin) return '';
+  return `<section class="card conteur ${moi ? 'moi' : ''}"><h3>Prochain récit</h3>
+    ${c?.conteur_nom
+      ? `<p class="conteur-nom">${c.session ? `Session ${esc(c.session)} : ` : ''}<b>${esc(c.conteur_nom)}</b></p>
+         <p class="hint">${moi ? 'C\'est toi qui racontes la prochaine session ! ' : ''}Le conteur prépare le récit et une photo : le repas, l'apéro, une illustration ou une photo de groupe.</p>`
+      : '<p class="empty">Personne n\'est encore désigné.</p>'}
+    ${admin ? `<details class="admin"><summary>Désigner le conteur</summary>
+      <div class="grid">
+        <label class="f span2"><span>Joueur</span><select id="conteur-choix"><option value="">— Choisir —</option>${options.map(([v, l]) => `<option value="${v}" ${c?.conteur_id === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+        <label class="f"><span>Pour la session</span><input type="number" id="conteur-session" value="${esc(c?.session && num(c.session) >= prochaine ? c.session : prochaine)}"></label>
+      </div>
+      <button class="btn" data-action="definir-conteur">Désigner</button>
+    </details>` : ''}
+  </section>`;
+}
+
 /* Envoie en ligne tout ce qui n'est pas encore publié */
 async function publierTout() {
   if (!db.codeCampagne) { toast('Saisis d\'abord le code de campagne'); return; }
   const aEnvoyer = recapsTous().filter(r => statutRecap(r) !== 'publie');
+  const sansPhoto = aEnvoyer.filter(r => !photoRecap(r) && !r.photoMaj);
+  if (sansPhoto.length && !confirm(`${sansPhoto.map(r => 'Session ' + r.numero).join(', ')} : pas de photo. Publier quand même ?`)) return;
   try {
     for (const r of aEnvoyer) {
       await rpc('publier_recap', {
         p_code: db.codeCampagne, p_id: r.id, p_numero: Math.round(num(r.numero)), p_date: r.date || null,
         p_titre: r.titre || '', p_auteur: r.auteur || '', p_texte: r.texte || '',
+        p_photo: r.photo === undefined ? null : r.photo, p_photo_type: r.photoType || '', p_photo_maj: r.photoMaj || 0,
       });
+      if (r.photo !== undefined) { state.photos = state.photos || {}; state.photos[r.id] = r.photo; }
     }
     for (const id of db.recapsSupprimes || []) await rpc('supprimer_recap', { p_code: db.codeCampagne, p_id: id });
     await chargerRecaps();
@@ -1037,7 +1113,8 @@ function nouveauRecap(depuis) {
   const numero = depuis ? depuis.numero : recapsTous().reduce((m, r) => Math.max(m, num(r.numero)), 0) + 1;
   return {
     id: uid(), numero, date: depuis ? depuis.date : new Date().toISOString().slice(0, 10),
-    titre: depuis ? depuis.titre : '', auteur: '', texte: depuis ? brouillonRecap(depuis) : '', maj: Date.now(),
+    titre: depuis ? depuis.titre : '', auteur: (db.conteur && db.conteur.conteur_nom) || '', texte: depuis ? brouillonRecap(depuis) : '', maj: Date.now(),
+    photoType: '', photoMaj: 0, photo: '',
   };
 }
 
@@ -1078,6 +1155,7 @@ function pageRecaps() {
     <div><h1>Récapitulatifs</h1><p class="sub">Le récit lu en début de session, commun à toute la compagnie</p></div>
     ${estAdmin() ? '<button class="btn" data-action="new-recap">Nouveau récapitulatif</button>' : ''}
   </div>
+  ${carteConteur(estAdmin())}
   ${estAdmin() ? bandeauPublication() : ''}
   <section class="card"><h3>Les sessions racontées</h3>
     ${joueurs ? `<div class="sessions">${joueurs}</div>` : '<p class="empty">Aucun récapitulatif publié pour l\'instant.</p>'}
@@ -1106,12 +1184,24 @@ function pageRecap(id) {
         <datalist id="liste-auteurs">${noms.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
       </div>
       ${ta(loc, 'texte', 'Récit', { rows: 16, ph: 'La dernière fois, la compagnie…' })}
+      <div class="photo-recap">
+        <h4>Photo de la session</h4>
+        ${photoRecap(loc) ? `<img class="photo-apercu" src="${photoRecap(loc)}" alt="Photo de la session">` : '<p class="alerte-photo">Pas encore de photo : le conteur doit en fournir une.</p>'}
+        <div class="grid">
+          ${sel(loc, 'photoType', 'Ce que montre la photo', Object.entries(TYPES_PHOTO))}
+        </div>
+        <div class="btns">
+          <button class="btn ghost" data-action="photo-recap">${photoRecap(loc) ? 'Changer la photo' : 'Ajouter une photo'}</button>
+          ${photoRecap(loc) ? '<button class="btn danger" data-action="photo-recap-retirer">Retirer la photo</button>' : ''}
+        </div>
+      </div>
       <div class="btns">
         ${enLigne() ? '<button class="btn" data-action="recap-publier">Enregistrer et publier</button><button class="btn ghost" data-action="recap-fin">Enregistrer sans publier</button>' : '<button class="btn" data-action="recap-fin">Terminé</button>'}
         <button class="btn danger" data-action="del-recap" data-id="${r.id}">Supprimer</button>
       </div>
     </section>`;
   }
+  if (r.photoMaj && photoRecap(r) === undefined) chargerPhoto(r.id);
   const paragraphes = sansMentions(r.texte).split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
   return `${sousNav('recaps')}
   <p><a href="#/recaps">← Récapitulatifs</a></p>
@@ -1119,6 +1209,7 @@ function pageRecap(id) {
     <p class="recit-num">Session ${esc(r.numero)}</p>
     <h1>${esc(r.titre || 'Sans titre')}</h1>
     <p class="sub">${esc([r.auteur ? 'Raconté par ' + r.auteur : '', dateFr(r.date)].filter(Boolean).join(', '))}</p>
+    ${photoRecap(r) ? `<figure class="photo-recit"><img src="${photoRecap(r)}" alt="${esc(TYPES_PHOTO[r.photoType] || 'Photo de la session')}">${r.photoType ? `<figcaption>${esc(TYPES_PHOTO[r.photoType])}</figcaption>` : ''}</figure>` : ''}
     <div class="ornement" aria-hidden="true"><span></span></div>
     <div class="recit-texte">${paragraphes || '<p class="empty">Le récit n\'est pas encore écrit.</p>'}</div>
   </article>
@@ -1653,6 +1744,7 @@ window.addEventListener('hashchange', () => {
     chargerPersos().then(ok => { if (ok && ['persos', 'perso', ''].includes(location.hash.replace(/^#\/?/, '').split('/')[0]) && !document.activeElement?.dataset?.bind) render(); });
   }
   if (['journal', 'recaps', 'recap'].includes(page) && Date.now() - (state.recapsCharges || 0) > 30000 && !state.editRecap) {
+    chargerInfos();
     chargerRecaps().then(ok => { if (ok && ['journal', 'recaps', 'recap'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); });
   }
 });
@@ -1677,6 +1769,7 @@ document.addEventListener('input', ev => {
     return;
   }
   if (t.id === 'carnet') { state.carnet = t.value; render(); return; }
+  if (t.classList.contains('don-recherche')) { resultatsDons(t); return; }
   const path = t.dataset.bind;
   if (!path || !state.ctx) return;
   if (db.personnages.includes(state.ctx) && !peutModifier(state.ctx)) return;
@@ -1825,14 +1918,20 @@ document.addEventListener('click', ev => {
       if (!max || max < 1 || max > 40) break;
       p.progression = p.progression || [];
       const have = new Set(p.progression.map(l => l.niveau));
-      for (let n = 1; n <= max; n++) if (!have.has(n)) p.progression.push(nouveauNiveau(n));
+      for (let n = 1; n <= max; n++) {
+        if (have.has(n)) continue;
+        /* Même classe que le niveau précédent : on ne change que pour multiclasser */
+        const prec = [...p.progression].filter(l => l.niveau < n && l.classe).sort((a, b) => b.niveau - a.niveau)[0];
+        p.progression.push(nouveauNiveau(n, prec ? prec.classe : ''));
+      }
       save(); render();
       break;
     }
     case 'add-level': {
       p.progression = p.progression || [];
       const n = p.progression.reduce((m, l) => Math.max(m, l.niveau), 0) + 1;
-      p.progression.push(nouveauNiveau(n)); state.ouverts.add(n); save(); render();
+      const prec = [...p.progression].filter(l => l.classe).sort((a, b) => b.niveau - a.niveau)[0];
+      p.progression.push(nouveauNiveau(n, prec ? prec.classe : '')); state.ouverts.add(n); save(); render();
       break;
     }
     case 'del-level':
@@ -1985,7 +2084,7 @@ document.addEventListener('click', ev => {
     }
     case 'export-recaps':
       download('recaps.json', { type: 'recaps', version: 1, maj: Date.now(),
-        recaps: recapsTous().map(({ id, numero, date, titre, auteur, texte, maj }) => ({ id, numero, date, titre, auteur, texte, maj })) });
+        recaps: recapsTous().map(r => ({ id: r.id, numero: r.numero, date: r.date, titre: r.titre, auteur: r.auteur, texte: r.texte, maj: r.maj, photoType: r.photoType || '', photoMaj: r.photoMaj || 0, photo: photoRecap(r) || '' })) });
       break;
     case 'jq-effacer':
       state.jq = ''; go('#/notes');
@@ -1995,6 +2094,31 @@ document.addEventListener('click', ev => {
       try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* */ }
       render();
       break;
+    case 'choisir-don':
+      setP(p, b.dataset.path, b.dataset.id);
+      save(); render();
+      toast(`${R.DON[b.dataset.id].nom} sélectionné`);
+      break;
+    case 'photo-recap':
+      if (!estAdmin()) break;
+      state.imgType = 'recap';
+      $('#imginput').value = '';
+      $('#imginput').click();
+      break;
+    case 'photo-recap-retirer':
+      if (!estAdmin() || !confirm('Retirer la photo de ce récapitulatif ?')) break;
+      p.photo = ''; p.photoMaj = Date.now(); saveNow(); render();
+      break;
+    case 'definir-conteur': {
+      if (!estAdmin()) break;
+      const id = $('#conteur-choix').value, session = Math.round(num($('#conteur-session').value)) || null;
+      const x = findPerso(id);
+      const nom = x ? (x.joueur ? `${x.joueur} (${x.nom})` : x.nom) : '';
+      const fini = () => { db.conteur = { conteur_id: id, conteur_nom: nom, session }; saveNow(); render(); toast(nom ? `${nom} racontera la session ${session || ''}` : 'Conteur retiré'); };
+      if (enLigne()) rpc('definir_conteur', { p_code: db.codeCampagne, p_id: id, p_nom: nom, p_session: session }).then(fini).catch(e => alert('Impossible : ' + e.message));
+      else fini();
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -2117,6 +2241,12 @@ $('#imginput').addEventListener('change', async ev => {
   const p = state.ctx;
   if (!file || !p || !state.imgType) return;
   try {
+    if (state.imgType === 'recap') {
+      p.photo = await reduireImage(file, 1280, 'image/jpeg');
+      p.photoMaj = Date.now();
+      saveNow(); render(); toast('Photo ajoutée au récapitulatif');
+      return;
+    }
     const portrait = state.imgType === 'portrait';
     p[state.imgType] = await reduireImage(file, portrait ? 640 : 256, portrait ? 'image/jpeg' : 'image/webp');
     p.maj = Date.now();
@@ -2133,7 +2263,7 @@ $('#imginput').addEventListener('change', async ev => {
   db.personnages.forEach(migrer);
   migrerSessions(db.sessions);
   render();
-  await Promise.all([initSorts(), chargerRecaps(), chargerPersos()]);
+  await Promise.all([initSorts(), chargerRecaps(), chargerPersos(), chargerInfos()]);
   render();
   if (enLigne()) {
     await envoyerPersos();

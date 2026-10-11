@@ -545,3 +545,28 @@ fieldset.lecture .image-cadre { cursor: default; }
 .comp-car { font-size: .66rem; line-height: 1.15; color: var(--muted); text-align: center; min-width: 1.9rem; }
 .comp-total { min-width: 2rem; }
 .comp-libelle { flex: 0 1 auto; }
+
+/* ---------- Recherche de dons ---------- */
+.don-recherche { margin-bottom: .35rem; }
+.don-resultats { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .45rem; max-height: 360px; overflow-y: auto; }
+.don-resultats:empty { display: none; }
+.don-choix {
+  font: inherit; text-align: left; cursor: pointer; color: var(--ink);
+  background: var(--inset); border: 1px solid var(--line); border-left: 3px solid var(--bronze);
+  border-radius: var(--radius-s); padding: .4rem .6rem;
+}
+.don-choix:hover { border-color: var(--bronze); }
+.don-choix.ko { border-left-color: var(--rouge); }
+.don-choix b { font-family: var(--font-titre); font-weight: 600; }
+.don-choix small { display: block; color: var(--muted); font-size: .78rem; margin-top: .1rem; }
+
+/* ---------- Photo des récapitulatifs et conteur ---------- */
+.photo-recap { border-top: 1px solid var(--line); padding-top: .4rem; margin: .8rem 0 1rem; }
+.photo-apercu { display: block; max-width: 100%; max-height: 320px; border-radius: var(--radius-s); border: 1px solid var(--bronze); margin: .3rem 0 .7rem; }
+.alerte-photo { color: var(--rouge-clair); margin: .3rem 0 .6rem; }
+.photo-recit { margin: 1rem 0 0; }
+.photo-recit img { display: block; width: 100%; max-height: 440px; object-fit: cover; border-radius: var(--radius-m); border: 1px solid var(--bronze); }
+.photo-recit figcaption { font-size: .8rem; color: var(--muted); margin-top: .35rem; text-align: right; font-style: italic; }
+.conteur .conteur-nom { font-size: 1.1rem; margin: 0 0 .3rem; }
+.conteur .conteur-nom b { font-family: var(--font-titre); color: var(--bronze-clair); letter-spacing: .03em; }
+.conteur.moi { border-color: var(--bronze); box-shadow: 0 0 0 3px rgba(183, 147, 90, .12), inset 0 1px 0 rgba(183, 147, 90, .2); }
