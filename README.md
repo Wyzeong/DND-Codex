@@ -24,3 +24,8 @@ Si `config.js` existe à la racine du site avec l'URL du projet Supabase et sa c
 - Récapitulatifs : lecture pour tous, écriture avec le code administrateur.
 - Personnages : lecture pour tous, modification avec le code personnel du personnage (ou le code administrateur).
 - Notes de session : rattachées à un personnage, lisibles et modifiables uniquement avec son code personnel.
+
+### Espace MJ (script supabase-v5.sql)
+- Code MJ distinct du code administrateur, stocké dans la base.
+- Le MJ ajuste les PV des joueurs, consomme une ration pour tout le groupe et passe au jour suivant (PV, dés de vie, sorts et capacités rechargés).
+- Personnages du MJ : version complète privée (table persos_mj), version publique filtrée selon ses réglages de visibilité (table persos).

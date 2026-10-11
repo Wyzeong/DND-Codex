@@ -492,7 +492,7 @@ function pagePersos() {
         <h2>${esc(p.nom || 'Sans nom')}</h2>
         <p>${esc([raceNom(p), classesTxt(e)].filter(Boolean).join(', ') || 'À compléter')}</p>
         ${(p.etats || []).some(x => x.actif !== false) ? `<p class="banniere-etat">⚠ ${esc((p.etats || []).filter(x => x.actif !== false).map(x => x.nom).join(', '))}</p>` : ''}
-        ${p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
+        ${p.pnjMJ ? '<p class="tag-pnj">Personnage du MJ</p>' : p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
         ${p.embleme ? `<img class="embleme-banniere" src="${p.embleme}" alt="">` : '<span class="losange" aria-hidden="true"></span>'}
       </div>
     </a>`;
@@ -518,6 +518,7 @@ function pagePersos() {
 function pagePerso(id, tab) {
   const p = findPerso(id);
   if (!p) return `<p>Personnage introuvable. <a href="#/persos">Retour à la liste</a></p>`;
+  if (p.pnjMJ && !peutModifier(p)) { state.ctx = null; return pagePersoPublic(p); }
   state.ctx = p;
   tab = tab || 'fiche';
   const e = etat(p);
@@ -548,7 +549,7 @@ function pagePerso(id, tab) {
 function recap(p, e) {
   if (!e.niveau && !e.race) return '';
   const s = stats(p, e);
-  const pv = p.pvMax !== '' && p.pvMax != null ? p.pvMax : '—';
+  const pv = num(p.pvMax) ? `${pvActuels(p)}/${num(p.pvMax)}` : '—';
   return `<div class="recap"><span>PV<b>${esc(pv)}</b></span><span>CA<b>${s.ca}</b></span><span>Initiative<b>${R.signe(s.init)}</b></span><span>Vitesse<b>${s.vitesse} m</b></span><span>BBA<b>${R.attTxt(s.att)}</b></span></div>`;
 }
 
@@ -592,6 +593,8 @@ function ongletFicheBrut(p, e) {
   const valsClasses = Object.entries(e.classes).map(([id, k]) => ({ id, k, vals: valeursClasse(id, k, e) })).filter(x => x.vals.length);
   const deluge = valsClasses.find(x => x.id === 'moine')?.vals.find(v => v[0] === 'Déluge de coups');
   return `
+  ${p.pnjMJ && peutModifier(p) ? carteVisibilite(p) : ''}
+  ${carteVitalite(p)}
   <div class="fiche-haut">
   <section class="card carte-identite">
     <div class="identite">
@@ -646,8 +649,7 @@ function ongletFicheBrut(p, e) {
     ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets et états inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
     ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
     <div class="grid" style="margin-top:.8rem">
-      ${fi(p, 'pvMax', 'Points de vie max', { type: 'number' })}
-      <p class="hint" style="align-self:end">Fixés par le MJ : mets ce total à jour à chaque niveau.</p>
+      <p class="hint" style="grid-column:1/-1">Points de vie et dés de vie : voir la section Vitalité en haut de la fiche.</p>
     </div>
     <details class="ajustements"><summary>Équipement et bonus divers (armure, objets, sorts…)</summary>
       <div class="aj-grid">
@@ -678,6 +680,7 @@ const GROUPES_INV = [
   ['Armes', ['arme']],
   ['Armures et boucliers', ['armure', 'bouclier']],
   ['Munitions', ['munition']],
+  ['Rations', ['ration']],
   ['Consommables', ['consommable']],
   ['Objets', ['']],
 ];
@@ -806,6 +809,9 @@ function ligneObjetVue(it, i, items, modifiable) {
     <div class="objet-vue-tete">
       <b>${esc(it.nom || 'Objet sans nom')}</b>${num(it.qte) > 1 || it.cat === 'munition' || it.cat === 'consommable' ? ` <span class="qte">× ${esc(it.qte || 0)}</span>` : ''}
       ${it.cat ? `<span class="tag-cat cat-${it.cat}">${CATS_OBJET[it.cat]}</span>` : ''}
+      ${it.cat === 'ration' && state.ctx && rationDefaut(state.ctx)?.id === it.id ? '<span class="tag-cat defaut">★ par défaut</span>' : ''}
+      ${it.visibleJoueurs && state.ctx?.pnjMJ && peutModifier(state.ctx) ? '<span class="tag-cat">visible des joueurs</span>' : ''}
+      ${modifiable && it.cat === 'ration' && rationDefaut(state.ctx)?.id !== it.id ? `<button class="lien" data-action="ration-defaut" data-id="${it.id}">Consommer par défaut</button>` : ''}
       ${modifiable ? `<button class="lien objet-modif" data-action="objet-edit" data-id="${it.id}">Modifier</button>` : ''}
     </div>
     ${det ? `<p class="objet-det">${esc(det)}</p>` : ''}
@@ -902,6 +908,8 @@ function ligneObjetEdition(p, it, i) {
         <input type="text" data-bind="equipement.${i}.notes" value="${esc(it.notes)}" placeholder="Notes" aria-label="Notes" class="objet-notes">
       </div>
       ${champCat}
+      ${it.cat === 'ration' ? '<p class="hint">Indique le type dans le nom (ration de voyage, de survie…) et la quantité. Le MJ en retire une à chaque « Ration consommée ».</p>' : ''}
+      ${p.pnjMJ ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.visibleJoueurs" data-rerender ${it.visibleJoueurs ? 'checked' : ''}> Visible des joueurs</label>` : ''}
       ${bonus.map((b, j) => `<div class="bonus-ligne">
         <select data-bind="equipement.${i}.bonus.${j}.cible" data-rerender aria-label="Ce que l'objet améliore"><option value="">— Ce que l'objet améliore —</option>${opts(b.cible)}</select>
         <input type="text" inputmode="numeric" class="bonus-val" data-bind="equipement.${i}.bonus.${j}.val" data-recalc value="${esc(b.val)}" aria-label="Valeur du bonus">
@@ -979,7 +987,7 @@ function usagesSort(s) {
 const tagsUsages = s => usagesSort(s).map(k => `<span class="usage usage-${k}">${USAGES_SORT[k]}</span>`).join('');
 
 /* ===== En combat : actions, armes, sorts et capacités avec compteurs ===== */
-const CATS_OBJET = { '': 'Objet', arme: 'Arme', armure: 'Armure', bouclier: 'Bouclier', munition: 'Munition', consommable: 'Consommable' };
+const CATS_OBJET = { '': 'Objet', arme: 'Arme', armure: 'Armure', bouclier: 'Bouclier', munition: 'Munition', consommable: 'Consommable', ration: 'Ration' };
 
 function infosMainsNues(p, e, st) {
   const moine = e.classes.moine || 0;
@@ -1134,7 +1142,7 @@ function ficheCombat(p, e) {
         </ul>
         <p class="hint">Initiative ${R.signe(st.init)} : c'est ce que tu ajoutes au d20 au début du combat pour savoir quand tu joues.</p>
       </details>
-      <button class="btn nuit" data-action="nuit" title="Tout récupérer après une nuit de repos">☾ Nuit</button>
+
     </div>
 
     <h4>Attaquer</h4>
@@ -1276,7 +1284,7 @@ const DEMO_MJ = {
 const XP_NIVEAU = n => n * (n - 1) / 2 * 1000;
 
 function pageMJ() {
-  if (!db.mj) {
+  if (false) {
     return `<div class="pagehead"><div><h1>Espace MJ</h1><p class="sub">Réservé au maître du jeu</p></div></div>
     <section class="card intro"><h3>Accès MJ</h3>
       <p>Saisis le code MJ pour accéder au tableau de bord : statistiques de tous les personnages, initiative, rencontres, notes secrètes.</p>
@@ -1394,6 +1402,222 @@ function carteBaguette(p) {
     ${vide ? '<p class="empty">Décris ici ta baguette : son nom, sa photo, sa taille, son histoire.</p>' : ''}
     ${mod ? '<button class="btn ghost" data-action="baguette-edit">Modifier la baguette</button>' : ''}
   </section>`;
+}
+
+/* ===== Vitalité : PV actuels, dés de vie, rations ===== */
+/* « 2d8 » ou « 1d8+2d10 » → nombre de dés */
+const nbDesVie = txt => (String(txt || '').match(/(\d+)\s*d\s*\d+/gi) || []).reduce((t, m) => t + parseInt(m, 10), 0);
+const pvActuels = p => (p.pvActuels === '' || p.pvActuels == null) ? num(p.pvMax) : num(p.pvActuels);
+const rationDefaut = p => (p.equipement || []).find(it => it.id === p.rationDefaut && it.cat === 'ration')
+  || (p.equipement || []).find(it => it.cat === 'ration');
+const nbRations = p => (p.equipement || []).filter(it => it.cat === 'ration').reduce((t, it) => t + num(it.qte), 0);
+
+function barrePV(p) {
+  const max = num(p.pvMax), act = pvActuels(p);
+  const pct = max ? Math.max(0, Math.min(100, Math.round(act / max * 100))) : 0;
+  const etat = act <= 0 ? 'ko' : pct <= 25 ? 'critique' : pct <= 50 ? 'blesse' : 'ok';
+  return { max, act, pct, etat };
+}
+
+function carteVitalite(p) {
+  const mod = peutModifier(p);
+  const { max, act, pct, etat } = barrePV(p);
+  const nbDv = nbDesVie(p.dv), dvRestants = Math.max(0, nbDv - num(p.dvUtilises));
+  const r = rationDefaut(p), total = nbRations(p);
+  return `<section class="card vitalite"><h3>Vitalité</h3>
+    ${!p.dv ? `<p class="alerte-obligatoire">À remplir : tes <b>dés de vie</b> (ex. 2d8 pour un moine de niveau 2).</p>` : ''}
+    ${!max ? '<p class="alerte-obligatoire">À remplir : tes <b>points de vie max</b>, donnés par le MJ.</p>' : ''}
+    <div class="pv-bloc pv-${etat}">
+      ${mod ? '<button class="pv-btn" data-action="pv-delta" data-d="-1" aria-label="Perdre 1 PV">−</button>' : ''}
+      <button class="pv-val" ${mod ? 'data-action="pv-saisir"' : 'disabled'} aria-label="Points de vie actuels">
+        <b>${max || act ? act : '—'}</b><span>/ ${max || '—'} PV</span>
+      </button>
+      ${mod ? '<button class="pv-btn" data-action="pv-delta" data-d="1" aria-label="Récupérer 1 PV">+</button>' : ''}
+    </div>
+    <div class="pv-barre"><span style="width:${pct}%"></span></div>
+    ${act <= 0 && max ? `<p class="alerte-obligatoire">${act <= -10 ? 'Mort.' : act < 0 ? 'Mourant : perd 1 PV par round tant qu\'il n\'est pas stabilisé.' : 'Hors de combat : une seule action par tour.'}</p>` : ''}
+    <div class="vit-grille">
+      ${fi(p, 'pvMax', 'PV max', { type: 'number', recalc: true })}
+      ${fi(p, 'dv', 'Dés de vie', { ph: '2d8', recalc: true })}
+      <div class="f"><span>Dés de vie disponibles</span>
+        <div class="dv-ligne"><b>${nbDv ? `${dvRestants} / ${nbDv}` : '—'}</b>
+        ${mod && dvRestants ? '<button class="btn ghost" data-action="dv-utiliser">Utiliser un dé</button>' : ''}</div></div>
+      <div class="f"><span>Rations</span>
+        <div class="dv-ligne"><b>${total}</b><small>${r ? `par défaut : ${esc(r.nom || 'ration')}` : 'aucune : ajoute-les dans l\'Inventaire'}</small></div></div>
+    </div>
+    <p class="hint">Les PV et les dés de vie sont rechargés par le MJ avec « Jour suivant ». Il voit tes PV en direct et peut les ajuster.</p>
+  </section>`;
+}
+
+/* ===== Personnages du MJ : version publique filtrée ===== */
+const VISIBILITE_SECTIONS = [
+  ['portrait', 'Portrait et emblème'], ['classes', 'Race, classe et niveau'], ['apparence', 'Apparence et historique'],
+  ['etats', 'États et blessures'], ['pv', 'Points de vie'], ['caracs', 'Caractéristiques'], ['combat', 'Défense et attaques'],
+  ['competences', 'Compétences'], ['dons', 'Dons et capacités'], ['sorts', 'Sorts'], ['baguette', 'Baguette'],
+  ['langues', 'Langues'], ['bourse', 'Bourse'],
+];
+function projectionPublique(p) {
+  const v = p.visibilite || {};
+  const pub = { id: p.id, nom: p.nom, pnjMJ: true, visibilite: v, joueur: 'MJ', publie: true, schema: 2, maj: p.maj };
+  if (v.portrait !== false) { pub.portrait = p.portrait; pub.embleme = p.embleme; }
+  if (v.classes) { pub.race = p.race; pub.raceAutre = p.raceAutre; pub.progression = p.progression; pub.alignement = p.alignement; }
+  if (v.apparence) pub.apparence = p.apparence;
+  if (v.etats) pub.etats = p.etats;
+  if (v.pv) { pub.pvMax = p.pvMax; pub.pvActuels = p.pvActuels; }
+  if (v.caracs || v.combat || v.competences) pub.caracs = p.caracs;
+  if (v.combat) { pub.ajust = p.ajust; pub.progression = p.progression; pub.race = p.race; }
+  if (v.competences) { pub.comp = p.comp; pub.compPerso = p.compPerso; }
+  if (v.dons) { pub.progression = p.progression; pub.donsSupp = p.donsSupp; pub.dons = p.dons; pub.capacites = p.capacites; }
+  if (v.sorts) pub.sorts = p.sorts;
+  if (v.baguette) pub.baguette = p.baguette;
+  if (v.langues) pub.langues = p.langues;
+  if (v.bourse) pub.argent = p.argent;
+  pub.equipement = (p.equipement || []).filter(it => it.visibleJoueurs);
+  return pub;
+}
+
+function carteVisibilite(p) {
+  const v = p.visibilite || {};
+  return `<section class="card visibilite"><h3>Visible des joueurs</h3>
+    <p class="hint">Personnage du MJ : les joueurs ne voient que ce qui est coché ici, plus les objets marqués « visible » dans l'inventaire. Le reste n'est jamais envoyé à leurs appareils.</p>
+    <div class="vis-grille">${VISIBILITE_SECTIONS.map(([k, l]) => `<label class="check"><input type="checkbox" data-bind="visibilite.${k}" data-rerender ${(k === 'portrait' ? v[k] !== false : v[k]) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
+  </section>`;
+}
+
+/* Ce que voit un joueur d'un personnage du MJ */
+function pagePersoPublic(p) {
+  const v = p.visibilite || {};
+  const e = etat(p), st = stats(p, e);
+  const items = p.equipement || [];
+  const sorts = (p.sorts || []).map(x => findSort(x.id)).filter(Boolean);
+  const bloc = (titre, html) => html ? `<section class="card"><h3>${titre}</h3>${html}</section>` : '';
+  return `
+    <div class="pagehead"><div class="titre-perso">
+      <div class="avatar">${p.portrait ? `<img src="${p.portrait}" alt="Portrait">` : '<span class="vide"></span>'}${p.embleme ? `<img class="embleme-avatar" src="${p.embleme}" alt="">` : ''}</div>
+      <div><h1>${esc(p.nom || 'Inconnu')}</h1><p class="sub">${esc([v.classes ? raceNom(p) : '', v.classes ? classesTxt(e) : ''].filter(Boolean).join(', ') || 'Personnage du MJ')}</p></div>
+    </div></div>
+    ${v.etats ? puceEtats(p) : ''}
+    <p class="hint confidentiel">Fiche confidentielle : le MJ ne montre qu'une partie des informations.</p>
+    ${v.pv ? (b => `<section class="card"><h3>Points de vie</h3><p class="pv-public pv-${b.etat}"><b>${b.act}</b> / ${b.max || '—'} PV</p><div class="pv-barre"><span style="width:${b.pct}%"></span></div></section>`)(barrePV(p)) : ''}
+    ${bloc('Apparence et historique', v.apparence && p.apparence ? `<div class="recit-texte">${formaterRecit(p.apparence)}</div>` : '')}
+    ${v.caracs ? bloc('Caractéristiques', `<div class="caracs">${R.CARACS.map(c => `<div class="carac"><b>${c.l}</b><span class="val-pub">${e.car[c.k] ?? '—'}</span><span class="mod">${e.car[c.k] == null ? '—' : R.signe(e.mods[c.k])}</span></div>`).join('')}</div>`) : ''}
+    ${v.combat ? bloc('Défense et attaques', `<div class="stats">${[['CA', st.ca], ['Contact', st.contact], ['Pris au dépourvu', st.depourvu], ['Initiative', R.signe(st.init)], ['Vigueur', R.signe(st.js.vig)], ['Réflexes', R.signe(st.js.ref)], ['Volonté', R.signe(st.js.vol)], ['BBA', R.attTxt(st.att)]].map(([l, x]) => `<div class="stat"><span>${l}</span><b>${x}</b></div>`).join('')}</div>`) : ''}
+    ${v.etats && (p.etats || []).length ? bloc('États et blessures', (p.etats || []).filter(x => x.actif !== false).map(x => `<div class="etat ${gravite(x)}"><div class="etat-tete"><b>${esc(x.nom)}</b></div>${x.description ? `<p>${esc(x.description)}</p>` : ''}</div>`).join('')) : ''}
+    ${v.baguette && p.baguette ? bloc('Baguette', `<p class="baguette-nom">${esc(p.baguette.nom || '')}</p>${p.baguette.photo ? `<img class="photo-apercu" src="${p.baguette.photo}" alt="">` : ''}${p.baguette.description ? `<div class="recit-texte">${formaterRecit(p.baguette.description)}</div>` : ''}`) : ''}
+    ${v.sorts && sorts.length ? bloc('Sorts connus', `<ul class="changes">${sorts.map(s => `<li><a href="#/sort/${s.id}">${esc(s.nom)}</a></li>`).join('')}</ul>`) : ''}
+    ${v.dons ? bloc('Dons', e.donsListe.map(x => `<p><b>${esc(R.DON[x.id].nom)}</b></p>`).join('') || '<p class="empty">Aucun.</p>') : ''}
+    ${v.langues && (p.langues || []).length ? bloc('Langues', `<p>${esc(p.langues.join(', '))}</p>`) : ''}
+    ${bloc('Ce que l\'on voit de son équipement', items.length ? `<div class="objets">${items.map((it, i) => ligneObjetVue(it, i, items, false)).join('')}</div>` : '<p class="empty">Rien de visible.</p>')}
+    ${v.bourse ? bloc('Bourse', `<p>${esc(bourseTxt(p))}</p>`) : ''}`;
+}
+
+/* ===== Espace MJ réel ===== */
+const estMJ = () => !!db.codeMJ;
+
+async function chargerPersosMJ() {
+  if (!enLigne() || !estMJ()) return;
+  try {
+    const liste = await rpc('lire_persos_mj', { p_code: db.codeMJ }) || [];
+    const attente = new Set(db.enAttente || []);
+    for (const d of liste) {
+      if (attente.has(d.id)) continue;
+      const i = db.personnages.findIndex(x => x.id === d.id);
+      const complet = { ...d, pnjMJ: true, publie: true };
+      if (i >= 0) db.personnages[i] = Object.assign(db.personnages[i], complet); else db.personnages.push(complet);
+    }
+    saveNow();
+  } catch (e) {
+    console.warn('Personnages du MJ indisponibles', e);
+  }
+}
+
+/* Repport des valeurs changées par le MJ (PV, rations, jour suivant) dans une fiche modifiée localement */
+function fusionMJ(local, srv) {
+  local.pvActuels = srv.pvActuels;
+  local.dvUtilises = srv.dvUtilises;
+  local.compteurs = srv.compteurs || {};
+  for (const s of local.sorts || []) {
+    const t = (srv.sorts || []).find(x => x.id === s.id);
+    if (t) s.utilises = t.utilises;
+  }
+  for (const it of local.equipement || []) {
+    if (it.cat !== 'ration') continue;
+    const t = (srv.equipement || []).find(x => x.id === it.id);
+    if (t) it.qte = t.qte;
+  }
+  local.mjMaj = srv.mjMaj;
+}
+
+function majLocaleJourSuivant(p) {
+  p.compteurs = {};
+  (p.sorts || []).forEach(x => { x.utilises = 0; });
+  p.pvActuels = p.pvMax;
+  p.dvUtilises = 0;
+}
+function majLocaleRation(p) {
+  const r = rationDefaut(p);
+  if (r && num(r.qte) > 0) { r.qte = String(num(r.qte) - 1); return true; }
+  return false;
+}
+
+function pageMJReelle() {
+  if (!estMJ()) {
+    return `<div class="pagehead"><div><h1>Espace MJ</h1><p class="sub">Réservé au maître du jeu</p></div></div>
+    <section class="card intro"><h3>Accès MJ</h3>
+      <p>Saisis le code MJ pour accéder au tableau de bord : points de vie et statistiques de tous les personnages, rations, jour suivant, personnages du MJ.</p>
+      <div class="row"><input type="password" id="code-mj" autocomplete="off" placeholder="Code MJ" aria-label="Code MJ"><button class="btn" data-action="mj-entrer">Entrer</button></div>
+    </section>`;
+  }
+  const joueurs = db.personnages.filter(x => !x.pnjMJ && (!enLigne() || x.publie));
+  const pnj = db.personnages.filter(x => x.pnjMJ && !x._public);
+  const cartes = joueurs.map(x => {
+    const e = etat(x), st = stats(x, e), b = barrePV(x);
+    const comp = id => { const c = R.COMPETENCES.find(y => y.id === id); const v = x.comp?.[id] || {}; return num(v.rangs) + (c.car ? e.mods[c.car] : 0) + bonusComp(id, e) + num(v.divers); };
+    const r = rationDefaut(x), nbDv = nbDesVie(x.dv);
+    return `<div class="mj-perso">
+      <div class="mj-perso-tete">${x.portrait ? `<img src="${x.portrait}" alt="">` : '<span class="vide"></span>'}
+        <div><b>${esc(x.nom)}</b><small>${esc([x.joueur, raceNom(x), classesTxt(e)].filter(Boolean).join(', '))}</small></div></div>
+      <div class="mj-pv pv-${b.etat}">
+        <button class="pv-btn" data-action="mj-pvj" data-id="${x.id}" data-d="-5" aria-label="−5 PV">−5</button>
+        <button class="pv-btn" data-action="mj-pvj" data-id="${x.id}" data-d="-1" aria-label="−1 PV">−1</button>
+        <span class="mj-pv-val"><b>${b.max || b.act ? b.act : '—'}</b> / ${b.max || '—'} PV</span>
+        <button class="pv-btn" data-action="mj-pvj" data-id="${x.id}" data-d="1" aria-label="+1 PV">+1</button>
+        <button class="pv-btn" data-action="mj-pvj" data-id="${x.id}" data-d="5" aria-label="+5 PV">+5</button>
+      </div>
+      <div class="pv-barre"><span style="width:${b.pct}%"></span></div>
+      <div class="mj-stats">
+        <span>CA<b>${st.ca}</b></span><span>Contact<b>${st.contact}</b></span><span>Dépourvu<b>${st.depourvu}</b></span><span>Init<b>${R.signe(st.init)}</b></span>
+        <span>Vig<b>${R.signe(st.js.vig)}</b></span><span>Réf<b>${R.signe(st.js.ref)}</b></span><span>Vol<b>${R.signe(st.js.vol)}</b></span><span>Vitesse<b>${st.vitesse} m</b></span>
+        <span>Détection<b>${R.signe(comp('detection'))}</b></span><span>Perception<b>${R.signe(comp('perception'))}</b></span><span>Psychologie<b>${R.signe(comp('psychologie'))}</b></span>
+        <span>Dés de vie<b>${nbDv ? `${Math.max(0, nbDv - num(x.dvUtilises))}/${nbDv}` : '<i class="manque">?</i>'}</b></span>
+      </div>
+      <p class="hint mj-rations">Rations : <b>${nbRations(x)}</b>${r ? ` (par défaut : ${esc(r.nom || 'ration')} × ${esc(r.qte || 0)})` : ' <span class="manque">aucune ration par défaut</span>'}</p>
+      ${(x.etats || []).filter(et => et.actif !== false).length ? `<div class="mj-etats">${(x.etats || []).filter(et => et.actif !== false).map(et => `<div class="mj-etat ${gravite(et)}"><b>${esc(et.nom)}</b>${et.duree === 'permanent' ? ' <small>permanent</small>' : ''}${et.description ? `<p>${esc(et.description)}</p>` : ''}</div>`).join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div class="pagehead"><div><h1>Espace MJ</h1><p class="sub">Jour ${esc(db.jour || 1)} de l'aventure${state.persosCharges ? `, mis à jour à ${new Date(state.persosCharges).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}</p></div>
+    <button class="btn danger" data-action="mj-sortir">Quitter le mode MJ</button></div>
+
+  <section class="card mj-actions"><h3>Actions de groupe</h3>
+    <div class="btns">
+      <button class="btn" data-action="mj-ration">🍞 Ration consommée</button>
+      <button class="btn" data-action="mj-jour">☀ Jour suivant</button>
+    </div>
+    <p class="hint"><b>Ration consommée</b> retire une ration (celle choisie par défaut) à chaque joueur. <b>Jour suivant</b> rend à tous leurs PV max, leurs dés de vie, leurs sorts et leurs capacités du jour.</p>
+  </section>
+
+  <section class="card"><h3>Le groupe</h3>
+    <p class="hint">Points de vie en direct (actualisés toutes les 15 secondes). Les boutons modifient la fiche du joueur.</p>
+    <div class="mj-persos">${cartes || '<p class="empty">Aucun personnage joueur.</p>'}</div>
+  </section>
+
+  <section class="card"><h3>Personnages du MJ</h3>
+    <p class="hint">Visibles dans « Personnages », mais confidentiels : tu choisis sur chaque fiche ce que les joueurs peuvent voir.</p>
+    ${pnj.length ? `<div class="fiches">${pnj.map(x => { const b = barrePV(x); return `<a class="fiche-carte" href="#/perso/${x.id}/fiche"><span class="fiche-carte-tete"><b>${esc(x.nom)}</b><span class="statut-fiche">${b.max ? `${b.act}/${b.max} PV` : 'PNJ'}</span></span><small>${esc([raceNom(x), classesTxt(etat(x))].filter(Boolean).join(', ') || 'À compléter')}</small></a>`; }).join('')}</div>` : '<p class="empty">Aucun pour l\'instant.</p>'}
+    <button class="btn ghost" data-action="mj-nouveau-perso" style="margin-top:.6rem">+ Créer un personnage MJ</button>
+  </section>
+
+  ${pageMJ().split('<section class="card"><h3>Combat en cours')[1] ? '<section class="card"><h3>Combat en cours' + pageMJ().split('<section class="card"><h3>Combat en cours')[1] : ''}`;
 }
 
 function ficheCompetences(p, e) {
@@ -1842,8 +2066,11 @@ async function chargerRecaps() {
 async function chargerInfos() {
   if (!enLigne()) return;
   try {
-    const l = await api('campagne_info?select=conteur_id,conteur_nom,session');
+    let l;
+    try { l = await api('campagne_info?select=conteur_id,conteur_nom,session,jour'); }
+    catch (e) { l = await api('campagne_info?select=conteur_id,conteur_nom,session'); }
     db.conteur = (l && l[0]) || null;
+    if (l && l[0] && l[0].jour) db.jour = l[0].jour;
     saveNow();
   } catch (e) { console.warn('Infos de campagne indisponibles (base pas encore en v3 ?)', e); }
 }
@@ -2542,8 +2769,8 @@ function migrerSessions(liste) {
 /* Hors ligne (pas de config.js), tout reste local et tout est modifiable, comme avant. */
 const estAdmin = () => !enLigne() || !!db.codeCampagne;
 const estAMoi = p => !enLigne() || !!(db.cles || {})[p.id];
-const peutModifier = p => !!p && (estAMoi(p) || (enLigne() && !!db.codeCampagne) || (enLigne() && !p.publie));
-const codePour = p => (db.cles || {})[p.id] || db.codeCampagne || '';
+const peutModifier = p => !!p && (p.pnjMJ ? (estMJ() && !p._public) : (estAMoi(p) || (enLigne() && !!db.codeCampagne) || (enLigne() && !p.publie)));
+const codePour = p => p.pnjMJ ? (db.codeMJ || '') : ((db.cles || {})[p.id] || db.codeCampagne || '');
 const mesPersos = () => db.personnages.filter(p => enLigne() ? !!(db.cles || {})[p.id] : true);
 
 function statutSync(txt, persistant = false) {
@@ -2566,7 +2793,9 @@ async function chargerPersos() {
     for (const l of lignes) {
       const local = findPerso(l.id);
       if (local && attente.has(l.id)) { res.push(local); continue; }
-      const data = { ...l.data, id: l.id, publie: true };
+      /* Personnage du MJ : le MJ garde sa version complète, les autres reçoivent la version publique */
+      if (l.data.pnjMJ && local && local.pnjMJ && !local._public && estMJ()) { res.push(local); continue; }
+      const data = { ...l.data, id: l.id, publie: true, _public: !!l.data.pnjMJ };
       migrer(data);
       if (local) { for (const k of Object.keys(local)) delete local[k]; Object.assign(local, data); res.push(local); }
       else res.push(data);
@@ -2598,7 +2827,16 @@ async function envoyerPersos() {
     const p = findPerso(id);
     if (!p || !codePour(p)) { db.enAttente = db.enAttente.filter(x => x !== id); continue; }
     try {
-      await rpc('sauver_perso', { p_id: id, p_code: codePour(p), p_data: { ...p, publie: true } });
+      if (p.pnjMJ) {
+        await rpc('sauver_perso', { p_id: id, p_code: codePour(p), p_data: projectionPublique(p) });
+        await rpc('sauver_perso_mj', { p_code: codePour(p), p_id: id, p_data: { ...p, publie: true } });
+      } else {
+        /* Le MJ a pu changer les PV, les rations ou recharger la journée entre-temps : on reprend ses valeurs */
+        const srv = await api(`persos?id=eq.${encodeURIComponent(id)}&select=data`).catch(() => null);
+        const d = srv && srv[0] && srv[0].data;
+        if (d && num(d.mjMaj) > num(p.mjMaj)) fusionMJ(p, d);
+        await rpc('sauver_perso', { p_id: id, p_code: codePour(p), p_data: { ...p, publie: true } });
+      }
       db.enAttente = db.enAttente.filter(x => x !== id);
       state.syncErreur = '';
       statutSync('Synchronisé');
@@ -2879,7 +3117,7 @@ function render(garderScroll = true) {
     case 'fiche': html = pageFiche(id); break;
     case 'session': html = pageSession(id); break;
     case 'nouveau': html = pageNouveauPerso(); break;
-    case 'mj': html = pageMJ(); break;
+    case 'mj': html = pageMJReelle(); break;
     case 'donnees': html = pageDonnees(); break;
     default: html = pagePersos();
   }
@@ -3010,7 +3248,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -3470,12 +3708,16 @@ document.addEventListener('click', ev => {
       break;
     case 'mj-entrer': {
       const code = $('#code-mj').value.trim();
-      if (code === (CFG.codeMJ || CODE_MJ_DEMO)) { db.mj = true; saveNow(); render(); toast('Bienvenue, maître du jeu'); }
-      else toast('Code MJ incorrect');
+      const ok = () => { db.codeMJ = code; saveNow(); toast('Bienvenue, maître du jeu'); chargerPersosMJ().then(render); };
+      if (enLigne()) rpc('verifier_mj', { p_code: code }).then(v => v ? ok() : toast('Code MJ incorrect')).catch(e => alert('Vérification impossible (la base est-elle en v5 ?) : ' + e.message));
+      else if (code === CODE_MJ_DEMO) ok(); else toast('Code MJ incorrect');
       break;
     }
     case 'mj-sortir':
-      db.mj = false; saveNow(); go('#/persos');
+      db.codeMJ = '';
+      /* les versions complètes des personnages du MJ ne restent pas sur l'appareil */
+      if (enLigne()) db.personnages = db.personnages.filter(x => !x.pnjMJ);
+      saveNow(); go('#/persos'); actualiser();
       break;
     case 'mj-suivant':
       state.mjTour = (state.mjTour || 0) + 1; render();
@@ -3523,6 +3765,59 @@ document.addEventListener('click', ev => {
     case 'etat-del-bonus':
       p.etats[idx].bonus.splice(Number(b.dataset.j), 1); save(); render();
       break;
+    case 'pv-delta': {
+      const m = num(p.pvMax);
+      p.pvActuels = String(Math.max(-10, Math.min(m || 9999, pvActuels(p) + Number(b.dataset.d))));
+      save(); render();
+      break;
+    }
+    case 'pv-saisir': {
+      const v = prompt('Points de vie actuels :', String(pvActuels(p)));
+      if (v === null || v.trim() === '' || isNaN(Number(v))) break;
+      p.pvActuels = String(Math.max(-10, Number(v))); save(); render();
+      break;
+    }
+    case 'dv-utiliser': {
+      const v = prompt('Résultat du dé de vie (bonus de Constitution compris) :', '');
+      if (v === null || v.trim() === '' || isNaN(Number(v))) break;
+      p.dvUtilises = num(p.dvUtilises) + 1;
+      p.pvActuels = String(Math.min(num(p.pvMax) || 9999, pvActuels(p) + Math.max(0, Number(v))));
+      save(); render(); toast(`+${Math.max(0, Number(v))} PV`);
+      break;
+    }
+    case 'ration-defaut':
+      p.rationDefaut = b.dataset.id; save(); render();
+      break;
+    case 'mj-pvj': {
+      const x = findPerso(b.dataset.id);
+      if (!x) break;
+      const m = num(x.pvMax);
+      const nv = Math.max(-10, Math.min(m || 9999, pvActuels(x) + Number(b.dataset.d)));
+      const fini = () => { x.pvActuels = String(nv); x.mjMaj = Date.now(); saveNow(); render(); };
+      if (enLigne() && !x.pnjMJ) rpc('mj_pv', { p_code: db.codeMJ, p_id: x.id, p_pv: nv }).then(fini).catch(e => alert('Impossible : ' + e.message));
+      else { fini(); if (x.pnjMJ) persoModifie(x); }
+      break;
+    }
+    case 'mj-ration': {
+      if (!confirm('Chaque joueur consomme une ration (celle choisie par défaut). Continuer ?')) break;
+      if (enLigne()) rpc('mj_ration', { p_code: db.codeMJ }).then(n => { toast(`${n} ration(s) consommée(s)`); actualiser(); }).catch(e => alert('Impossible : ' + e.message));
+      else { const n = db.personnages.filter(x => !x.pnjMJ).filter(majLocaleRation).length; saveNow(); render(); toast(`${n} ration(s) consommée(s)`); }
+      break;
+    }
+    case 'mj-jour': {
+      if (!confirm('Jour suivant : tout le monde récupère ses PV max, ses dés de vie, ses sorts et ses capacités du jour. Continuer ?')) break;
+      const locaux = () => db.personnages.filter(x => x.pnjMJ && !x._public).forEach(x => { majLocaleJourSuivant(x); persoModifie(x); });
+      if (enLigne()) rpc('mj_jour_suivant', { p_code: db.codeMJ }).then(() => { locaux(); db.jour = num(db.jour || 1) + 1; toast('☀ Un nouveau jour se lève'); actualiser(); }).catch(e => alert('Impossible : ' + e.message));
+      else { db.personnages.forEach(majLocaleJourSuivant); db.jour = num(db.jour || 1) + 1; saveNow(); render(); toast('☀ Un nouveau jour se lève'); }
+      break;
+    }
+    case 'mj-nouveau-perso': {
+      const np = nouveauPerso();
+      Object.assign(np, { nom: 'Personnage du MJ', pnjMJ: true, joueur: 'MJ', visibilite: { portrait: true }, publie: enLigne() });
+      db.personnages.push(np); saveNow(); persoModifie(np);
+      go(`#/perso/${np.id}/fiche`);
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -3694,6 +3989,7 @@ async function actualiser(manuel = false) {
   try {
     await envoyerPersos();
     await Promise.all([chargerPersos(), chargerRecaps(), chargerFiches(), chargerInfos()]);
+    await chargerPersosMJ();
     if (manuel) statutSync(state.syncErreur ? 'Hors ligne' : 'À jour');
     /* On ne redessine pas sous les doigts de quelqu'un qui est en train d'écrire */
     if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette) render();
@@ -3702,7 +3998,14 @@ async function actualiser(manuel = false) {
   }
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') actualiser(); });
-setInterval(() => { if (document.visibilityState === 'visible') actualiser(); }, 60000);
+/* Toutes les 15 s dans l'espace MJ, 30 s sur une fiche, 60 s ailleurs */
+let tic = 0;
+setInterval(() => {
+  if (document.visibilityState !== 'visible') return;
+  tic++;
+  const page = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'persos';
+  if (page === 'mj' || (page === 'perso' && tic % 2 === 0) || tic % 4 === 0) actualiser();
+}, 15000);
 
 /* ---------- Démarrage ---------- */
 (async function start() {
@@ -3711,6 +4014,7 @@ setInterval(() => { if (document.visibilityState === 'visible') actualiser(); },
   migrerSessions(db.sessions);
   render();
   await Promise.all([initSorts(), chargerRecaps(), chargerPersos(), chargerInfos(), chargerFiches()]);
+  await chargerPersosMJ();
   render();
   if (enLigne()) {
     await envoyerPersos();

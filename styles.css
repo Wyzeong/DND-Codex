@@ -934,3 +934,44 @@ button.banniere { border: none; cursor: pointer; font: inherit; width: 100%; }
 .mj-etat { border: 1px solid var(--rouge); border-left: 3px solid var(--rouge-clair); border-radius: 4px; padding: .3rem .5rem; background: rgba(139, 74, 61, .12); font-size: .85rem; }
 .mj-etat b { color: #FFD8CE; }
 .mj-etat p { margin: .15rem 0 0; color: #CBD3D3; }
+
+/* ---------- Vitalité ---------- */
+.vitalite { border-color: var(--line-bronze); }
+.alerte-obligatoire { color: #FFD8CE; background: rgba(139, 74, 61, .25); border: 1px solid var(--rouge); border-radius: var(--radius-s); padding: .4rem .6rem; margin: 0 0 .6rem; font-size: .9rem; }
+.pv-bloc { display: flex; align-items: center; justify-content: center; gap: .8rem; margin: .2rem 0 .5rem; }
+.pv-btn {
+  font: inherit; font-weight: 700; font-size: 1.2rem; min-width: 2.8rem; height: 2.8rem; border-radius: 50%; cursor: pointer;
+  background: var(--inset); color: var(--ivoire); border: 1px solid var(--line-bronze);
+}
+.pv-btn:hover { border-color: var(--bronze); }
+.pv-val { font: inherit; background: none; border: none; color: var(--ivoire); cursor: pointer; display: flex; align-items: baseline; gap: .35rem; }
+.pv-val b { font-family: var(--font-titre); font-size: 2.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.pv-val span { color: var(--muted); font-size: 1rem; }
+.pv-barre { height: .55rem; border-radius: 99px; background: var(--inset); border: 1px solid var(--line); overflow: hidden; margin-bottom: .7rem; }
+.pv-barre span { display: block; height: 100%; background: linear-gradient(90deg, var(--emeraude), #3E9C84); transition: width .3s; }
+.pv-blesse + .pv-barre span, .mj-pv.pv-blesse + .pv-barre span { background: linear-gradient(90deg, #8A7A2E, var(--bronze)); }
+.pv-critique + .pv-barre span, .mj-pv.pv-critique + .pv-barre span, .pv-ko + .pv-barre span, .mj-pv.pv-ko + .pv-barre span { background: linear-gradient(90deg, var(--rouge), var(--rouge-clair)); }
+.pv-critique .pv-val b, .pv-ko .pv-val b, .pv-critique b, .pv-ko b { color: var(--rouge-clair); }
+.vit-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .6rem .9rem; }
+.dv-ligne { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; min-height: 2.3rem; }
+.dv-ligne b { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.dv-ligne small { color: var(--muted); }
+.cat-ration { border-color: #8A7A2E; color: #DCCB86; }
+.tag-cat.defaut { border-color: var(--bronze); color: var(--bronze-clair); }
+.tag-pnj { color: var(--bronze-clair) !important; font-style: italic; }
+.visibilite { border-color: var(--bronze); }
+.vis-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .3rem .8rem; }
+.vis-grille .check { padding-bottom: 0; color: var(--ink); }
+.confidentiel { text-align: center; border: 1px dashed var(--line-bronze); border-radius: var(--radius-s); padding: .4rem; }
+.pv-public b { font-family: var(--font-titre); font-size: 2rem; }
+.val-pub { display: block; font-size: 1.35rem; font-weight: 600; }
+
+/* ---------- Espace MJ réel ---------- */
+.mj-actions .btn { font-size: 1rem; padding: .6rem 1.1rem; }
+.mj-pv { display: flex; align-items: center; justify-content: center; gap: .35rem; margin: .2rem 0 .4rem; }
+.mj-pv .pv-btn { min-width: 2.4rem; height: 2.4rem; font-size: .9rem; }
+.mj-pv-val { min-width: 6.5rem; text-align: center; color: var(--muted); }
+.mj-pv-val b { font-family: var(--font-titre); font-size: 1.5rem; color: var(--ivoire); }
+.mj-pv.pv-critique .mj-pv-val b, .mj-pv.pv-ko .mj-pv-val b { color: var(--rouge-clair); }
+.mj-rations { margin: .4rem 0 0; }
+.manque { color: var(--rouge-clair); font-style: normal; }
