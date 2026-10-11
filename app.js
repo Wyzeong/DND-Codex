@@ -672,6 +672,19 @@ function groupesInventaire(items) {
   return GROUPES_INV.map(([titre, cats]) => [titre, items.map((it, i) => ({ it, i })).filter(({ it }) => cats.includes(it.cat || ''))])
     .filter(([, l]) => l.length);
 }
+/* Poids saisi librement : « 500 g », « 2 kg », « 1,5kg », « 3 lb ». Sans unité, on compte en kg. */
+function poidsKg(txt) {
+  const t = String(txt || '').toLowerCase().replace(',', '.').trim();
+  const m = t.match(/(\d+(?:\.\d+)?)\s*(kg|kilo|g\b|gr|gramme|lb|livre)?/);
+  if (!m) return 0;
+  const v = parseFloat(m[1]);
+  const u = m[2] || 'kg';
+  if (u.startsWith('kg') || u.startsWith('kilo')) return v;
+  if (u.startsWith('g')) return v / 1000;
+  if (u.startsWith('lb') || u.startsWith('livre')) return v * 0.4536;
+  return v;
+}
+const poidsTxt = kg => kg < 1 ? `${Math.round(kg * 1000)} g` : `${String(Math.round(kg * 100) / 100).replace('.', ',')} kg`;
 const valeurObjet = it => num(String(it.valeur || '').replace(',', '.')) * (num(it.qte) || 1);
 const poTxt = v => `${String(Math.round(v * 100) / 100).replace('.', ',')} po`;
 
@@ -718,7 +731,7 @@ function resumeEquipement(p) {
 function ongletInventaire(p, e) {
   const items = p.equipement || [];
   for (const it of items) if (!it.id) it.id = uid();
-  const poids = items.reduce((t, it) => t + (parseFloat(String(it.poids || '').replace(',', '.')) || 0) * (num(it.qte) || 1), 0);
+  const poids = items.reduce((t, it) => t + poidsKg(it.poids) * (num(it.qte) || 1), 0);
   const mod = peutModifier(p);
   const valeur = items.reduce((t, it) => t + valeurObjet(it), 0);
   const lignes = groupesInventaire(items).map(([titre, l]) => `<h4 class="groupe-inv">${titre} <small>${l.length}</small>${l.some(({ it }) => valeurObjet(it)) ? `<span class="valeur-groupe">${poTxt(l.reduce((t, { it }) => t + valeurObjet(it), 0))}</span>` : ''}</h4>
@@ -726,7 +739,7 @@ function ongletInventaire(p, e) {
   return `<section class="card"><h3>Inventaire et équipement</h3>
     <div class="inv-resume">
       <span>Objets<b>${items.length}</b></span>
-      ${poids ? `<span>Poids total<b>${String(Math.round(poids * 10) / 10).replace('.', ',')}</b></span>` : ''}
+      ${poids ? `<span>Poids total<b>${poidsTxt(poids)}</b></span>` : ''}
       <span>Valeur totale<b>${poTxt(valeur)}</b></span>
       <span>Bourse<b>${esc(bourseTxt(p))}</b></span>
     </div>
@@ -787,7 +800,7 @@ function ligneObjetEdition(p, it, i) {
       <div class="row">
         <input type="text" data-bind="equipement.${i}.nom" value="${esc(it.nom)}" placeholder="Objet" aria-label="Objet">
         <input type="text" class="s" data-bind="equipement.${i}.qte" value="${esc(it.qte)}" placeholder="Qté" aria-label="Quantité">
-        <input type="text" class="s" data-bind="equipement.${i}.poids" value="${esc(it.poids)}" placeholder="Poids" aria-label="Poids">
+        <input type="text" class="s" data-bind="equipement.${i}.poids" value="${esc(it.poids)}" placeholder="Poids (500 g, 2 kg)" aria-label="Poids, en g ou en kg">
         <input type="text" inputmode="decimal" class="s" data-bind="equipement.${i}.valeur" value="${esc(it.valeur)}" placeholder="Valeur (po)" aria-label="Valeur à l'unité, en pièces d'or">
         <button class="icon" data-action="del-item" data-list="equipement" data-idx="${i}" aria-label="Supprimer l'objet">✕</button>
       </div>
