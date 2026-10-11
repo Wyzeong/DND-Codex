@@ -548,3 +548,58 @@ R.DONS = [
 R.DON = Object.fromEntries(R.DONS.map(d => [d.id, d]));
 R.TYPES_DONS = { G: 'Général', C: 'Combat', M: 'Métamagie', O: 'Création d\'objets' };
 R.NIVEAUX_DONS = [1, 3, 6, 9, 12, 15, 18];
+
+/* ---------- Armes (SRD 3.5) ----------
+   cat : courante, guerre, exotique · prise : legere, une, deux, double, distance
+   moine : arme spéciale de moine (déluge de coups possible) · finesse : utilisable avec Attaque en finesse
+   lancer : arme de jet (la Force s'ajoute aux dégâts) */
+const AR = (id, nom, cat, prise, deg, crit, portee = '', opts = {}) => ({ id, nom, cat, prise, deg, crit, portee, ...opts });
+R.ARMES = [
+  AR('dague', 'Dague', 'courante', 'legere', '1d4', '19-20/×2', '3 m', { lancer: true }),
+  AR('gourdin', 'Gourdin', 'courante', 'une', '1d6', '×2', '3 m', { lancer: true }),
+  AR('masse-legere', 'Masse d\'armes légère', 'courante', 'legere', '1d6', '×2'),
+  AR('masse-lourde', 'Masse d\'armes lourde', 'courante', 'une', '1d8', '×2'),
+  AR('morgenstern', 'Morgenstern', 'courante', 'une', '1d8', '×2'),
+  AR('faucille', 'Faucille', 'courante', 'legere', '1d6', '×2'),
+  AR('epieu', 'Épieu', 'courante', 'une', '1d6', '×2', '6 m', { lancer: true }),
+  AR('lance', 'Lance', 'courante', 'deux', '1d8', '×3', '6 m', { lancer: true }),
+  AR('pique', 'Pique', 'courante', 'deux', '1d8', '×3', '', { allonge: true }),
+  AR('baton', 'Bâton', 'courante', 'double', '1d6', '×2', '', { moine: true, second: '1d6' }),
+  AR('arbalete-legere', 'Arbalète légère', 'courante', 'distance', '1d8', '19-20/×2', '24 m'),
+  AR('arbalete-lourde', 'Arbalète lourde', 'courante', 'distance', '1d10', '19-20/×2', '36 m'),
+  AR('flechette', 'Fléchette', 'courante', 'distance', '1d4', '×2', '6 m', { lancer: true }),
+  AR('fronde', 'Fronde', 'courante', 'distance', '1d4', '×2', '15 m', { lancer: true }),
+  AR('javeline', 'Javeline', 'courante', 'distance', '1d6', '×2', '9 m', { lancer: true }),
+  AR('hachette', 'Hachette', 'guerre', 'legere', '1d6', '×3', '3 m', { lancer: true }),
+  AR('marteau-leger', 'Marteau léger', 'guerre', 'legere', '1d4', '×2', '6 m', { lancer: true }),
+  AR('epee-courte', 'Épée courte', 'guerre', 'legere', '1d6', '19-20/×2'),
+  AR('epee-longue', 'Épée longue', 'guerre', 'une', '1d8', '19-20/×2'),
+  AR('rapiere', 'Rapière', 'guerre', 'une', '1d6', '18-20/×2', '', { finesse: true }),
+  AR('cimeterre', 'Cimeterre', 'guerre', 'une', '1d6', '18-20/×2'),
+  AR('hache-armes', 'Hache d\'armes', 'guerre', 'une', '1d8', '×3'),
+  AR('marteau-guerre', 'Marteau de guerre', 'guerre', 'une', '1d8', '×3'),
+  AR('fleau', 'Fléau d\'armes', 'guerre', 'une', '1d8', '×2'),
+  AR('trident', 'Trident', 'guerre', 'une', '1d8', '×2', '3 m', { lancer: true }),
+  AR('epee-deux-mains', 'Épée à deux mains', 'guerre', 'deux', '2d6', '19-20/×2'),
+  AR('grande-hache', 'Grande hache', 'guerre', 'deux', '1d12', '×3'),
+  AR('hallebarde', 'Hallebarde', 'guerre', 'deux', '1d10', '×3'),
+  AR('coutille', 'Coutille', 'guerre', 'deux', '1d10', '×3', '', { allonge: true }),
+  AR('cimeterre-deux-mains', 'Cimeterre à deux mains', 'guerre', 'deux', '2d4', '18-20/×2'),
+  AR('arc-court', 'Arc court', 'guerre', 'distance', '1d6', '×3', '18 m'),
+  AR('arc-long', 'Arc long', 'guerre', 'distance', '1d8', '×3', '30 m'),
+  AR('kama', 'Kama', 'exotique', 'legere', '1d6', '×2', '', { moine: true }),
+  AR('nunchaku', 'Nunchaku', 'exotique', 'legere', '1d6', '×2', '', { moine: true }),
+  AR('sai', 'Saï', 'exotique', 'legere', '1d4', '×2', '3 m', { moine: true, lancer: true }),
+  AR('siangham', 'Siangham', 'exotique', 'legere', '1d6', '×2', '', { moine: true }),
+  AR('shuriken', 'Shuriken', 'exotique', 'distance', '1d2', '×2', '3 m', { moine: true, lancer: true }),
+  AR('hache-naine', 'Hache de guerre naine', 'exotique', 'une', '1d10', '×3'),
+  AR('ourgrosh', 'Ourgrosh nain', 'exotique', 'double', '1d8', '×3', '', { second: '1d6' }),
+  AR('chaine-cloutee', 'Chaîne cloutée', 'exotique', 'deux', '2d4', '×2', '', { finesse: true, allonge: true }),
+  AR('arbalete-poing', 'Arbalète de poing', 'exotique', 'distance', '1d4', '19-20/×2', '9 m'),
+  AR('fouet', 'Fouet', 'exotique', 'une', '1d3', '×2', '', { finesse: true }),
+];
+R.ARME = Object.fromEntries(R.ARMES.map(a => [a.id, a]));
+R.CATS_ARMES = { courante: 'Armes courantes', guerre: 'Armes de guerre', exotique: 'Armes exotiques' };
+R.PRISES = { legere: 'Légère', une: 'À une main', deux: 'À deux mains', double: 'Arme double', distance: 'À distance' };
+/* Dégâts pour une créature de taille P */
+R.DEGATS_P = { '1d2': '1', '1d3': '1d2', '1d4': '1d3', '1d6': '1d4', '1d8': '1d6', '1d10': '1d8', '1d12': '1d10', '2d4': '1d6', '2d6': '1d10' };

@@ -566,7 +566,6 @@ function ongletFicheBrut(p, e) {
   const deluge = valsClasses.find(x => x.id === 'moine')?.vals.find(v => v[0] === 'Déluge de coups');
   return `
   <div class="fiche-haut">
-  ${carteBaguette(p)}
   <section class="card carte-identite">
     <div class="identite">
       ${blocImages(p)}
@@ -586,6 +585,7 @@ function ongletFicheBrut(p, e) {
     ${blocLangues(p)}
     ${ta(p, 'apparence', 'Apparence et historique')}
   </section>
+  ${carteBaguette(p)}
   </div>
 
   <section class="card"><h3>Caractéristiques</h3>
@@ -648,7 +648,7 @@ function bourseTxt(p) {
 }
 function detailsObjet(it, items) {
   const bits = [];
-  if (it.cat === 'arme') bits.push([it.mode === 'distance' ? 'Distance' : 'Corps à corps', it.degats && `dégâts ${it.degats}`, it.critique && `critique ${it.critique}`, it.portee && `portée ${it.portee}`].filter(Boolean).join(', '));
+  if (it.cat === 'arme') bits.push([R.ARME[it.armeType] && R.ARME[it.armeType].nom !== it.nom ? R.ARME[it.armeType].nom : '', it.mode === 'distance' ? 'Distance' : 'Corps à corps', R.ARME[it.armeType]?.moine ? 'arme de moine' : '', it.degats && `dégâts ${it.degats}`, it.critique && `critique ${it.critique}`, it.portee && `portée ${it.portee}`].filter(Boolean).join(', '));
   if (it.cat === 'munition') { const a = items.find(x => x.id === it.lien); bits.push([a && `pour ${a.nom}`, it.effet].filter(Boolean).join(' : ')); }
   if (it.cat === 'consommable' && it.effet) bits.push(it.effet);
   return bits.filter(Boolean).join(' ; ');
@@ -699,11 +699,20 @@ function ligneObjetEdition(p, it, i) {
   const armes = items.filter(x => x.cat === 'arme');
   {
     const bonus = it.bonus || [];
+    const ref = R.ARME[it.armeType];
+    const e = etat(p);
     const champCat = it.cat === 'arme' ? `<div class="objet-cat">
+        <label class="f arme-type"><span>Type d'arme</span><select data-bind="equipement.${i}.armeType" data-rerender aria-label="Type d'arme">
+          <option value="">Autre (à remplir à la main)</option>
+          ${Object.entries(R.CATS_ARMES).map(([c, l]) => `<optgroup label="${l}">${R.ARMES.filter(a => a.cat === c).map(a => `<option value="${a.id}" ${it.armeType === a.id ? 'selected' : ''}>${esc(a.nom)}${a.moine ? ' (moine)' : ''}</option>`).join('')}</optgroup>`).join('')}
+        </select></label>
+        ${ref ? `<p class="hint arme-ref">${R.PRISES[ref.prise]}, ${({ courante: 'arme courante', guerre: 'arme de guerre', exotique: 'arme exotique' })[ref.cat]}${ref.moine ? ', <b>arme spéciale de moine</b> : déluge de coups possible' : ''}${ref.finesse || ref.prise === 'legere' ? ', compatible Attaque en finesse' : ''}.</p>` : ''}
         <select data-bind="equipement.${i}.mode" data-rerender aria-label="Type d'attaque"><option value="">Corps à corps</option><option value="distance" ${it.mode === 'distance' ? 'selected' : ''}>Distance</option></select>
         <input type="text" data-bind="equipement.${i}.degats" data-recalc value="${esc(it.degats)}" placeholder="Dégâts (1d8)" aria-label="Dégâts">
         <input type="text" data-bind="equipement.${i}.critique" value="${esc(it.critique)}" placeholder="Critique (19-20/×2)" aria-label="Critique">
         <input type="text" data-bind="equipement.${i}.portee" value="${esc(it.portee)}" placeholder="Portée (24 m)" aria-label="Portée">
+        ${e.dons.has('arme-predilection') ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.predilection" data-rerender ${it.predilection ? 'checked' : ''}> Arme de prédilection</label>` : ''}
+        ${e.dons.has('specialisation-martiale') ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.specialisation" data-rerender ${it.specialisation ? 'checked' : ''}> Spécialisation martiale</label>` : ''}
       </div>` : it.cat === 'munition' ? `<div class="objet-cat">
         <select data-bind="equipement.${i}.lien" data-rerender aria-label="Arme associée"><option value="">— Pour quelle arme ? —</option>${armes.map(a => `<option value="${a.id}" ${it.lien === a.id ? 'selected' : ''}>${esc(a.nom || 'Arme')}</option>`).join('')}</select>
         <input type="text" data-bind="equipement.${i}.effet" value="${esc(it.effet)}" placeholder="Effet (ex. +1d6 de feu)" aria-label="Effet">
@@ -879,6 +888,58 @@ function compteur(p, r) {
   </div>`;
 }
 
+/* Une arme dans « En combat » : jets calculés et capacités qui s'y appliquent */
+function carteArmeCombat(p, e, st, it, munitions) {
+  const ref = R.ARME[it.armeType] || null;
+  const prise = ref ? ref.prise : (it.mode === 'distance' ? 'distance' : 'une');
+  const dist = it.mode === 'distance' || prise === 'distance';
+  const taille = R.TAILLES[e.taille]?.ca || 0;
+  const finessable = !dist && (prise === 'legere' || ref?.finesse);
+  const finesse = finessable && e.dons.has('attaque-finesse') && e.mods.dex > e.mods.for;
+  const carAtt = dist || finesse ? 'dex' : 'for';
+  const predi = it.predilection && e.dons.has('arme-predilection') ? 1 + (e.dons.has('arme-predilection-superieure') ? 1 : 0) : 0;
+  const spe = it.specialisation && e.dons.has('specialisation-martiale') ? 2 + (e.dons.has('specialisation-superieure') ? 2 : 0) : 0;
+  const tou = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods[carAtt] + taille + predi);
+  /* Force aux dégâts : ×1,5 à deux mains, normale au corps à corps et pour les armes de jet */
+  const fo = e.mods.for;
+  const bonusFo = dist && !ref?.lancer ? Math.min(0, fo) : (prise === 'deux' || prise === 'double') && fo > 0 ? Math.floor(fo * 1.5) : fo;
+  const bonusDeg = bonusFo + spe;
+  const de = it.degats || ref?.deg || '?';
+  const deg = `${de}${bonusDeg ? R.signe(bonusDeg) : ''}`;
+  const moine = e.classes.moine || 0;
+  const liees = [];
+  if (moine && ref?.moine && !dist) {
+    const pen = moine < 5 ? -2 : moine < 9 ? -1 : 0;
+    const base = tou.map(x => x + pen);
+    const liste = [base[0], ...base];
+    if (moine >= 11) liste.unshift(base[0]);
+    liees.push(`<div class="deluge"><b>Déluge de coups</b> : ${liste.length} attaques à <span class="gros">${R.attTxt(liste)}</span>, ${esc(deg)} chacune.
+      <small>${esc(ref.nom)} est une arme spéciale de moine. Prend tout ton tour ; le malus de ${R.signe(pen)} est déjà inclus${pen ? '' : ' (disparu à ton niveau)'}.</small></div>`);
+  }
+  if (finesse) liees.push(`<p class="liee"><b>Attaque en finesse</b> : ta Dextérité (${R.signe(e.mods.dex)}) remplace ta Force pour toucher.</p>`);
+  if (dist && e.dons.has('tir-bout-portant')) liees.push('<p class="liee"><b>Tir à bout portant</b> : +1 pour toucher et aux dégâts si la cible est à 9 m ou moins.</p>');
+  if (dist && e.dons.has('tir-rapide')) liees.push(`<p class="liee"><b>Tir rapide</b> : en attaque à outrance, une attaque de plus, toutes à −2 : ${R.attTxt([tou[0] - 2, ...tou.map(x => x - 2)])}.</p>`);
+  if (!dist && e.dons.has('attaque-puissance')) liees.push(`<p class="liee"><b>Attaque en puissance</b> : retire jusqu'à ${st.bba} à ton jet pour toucher et ajoute-le aux dégâts${prise === 'deux' ? ' (le double avec cette arme à deux mains)' : ''}.</p>`);
+  if (prise === 'double') liees.push(`<p class="liee"><b>Arme double</b> : tu peux frapper avec les deux extrémités (${esc(ref?.second || de)} pour la seconde), comme avec deux armes${e.dons.has('combat-deux-armes') ? ' : −2/−2 grâce à Combat à deux armes' : ' : −4/−8 sans le don Combat à deux armes'}.</p>`);
+  if (predi) liees.push(`<p class="liee"><b>Arme de prédilection</b> : +${predi} pour toucher, déjà inclus.</p>`);
+  if (spe) liees.push(`<p class="liee"><b>Spécialisation martiale</b> : +${spe} aux dégâts, déjà inclus.</p>`);
+  if (ref?.allonge) liees.push('<p class="liee"><b>Allonge</b> : tu frappes à 3 m, mais pas un ennemi collé à toi.</p>');
+  const mun = munitions.filter(m => m.it.lien === it.id);
+  return `<div class="arme">
+    <div class="arme-tete"><b>${esc(it.nom || ref?.nom || 'Arme')}</b><span class="tag-mode">${dist ? 'Distance' : R.PRISES[prise] || 'Corps à corps'}${ref?.moine ? ' · moine' : ''}</span></div>
+    <dl class="arme-stats">
+      <dt>Pour toucher</dt><dd><span class="gros">${R.signe(tou[0])}</span>${tou.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(tou)})</small>` : ''}</dd>
+      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${it.critique || ref?.crit ? ` <small>critique ${esc(it.critique || ref.crit)}</small>` : ''}</dd>
+      ${it.portee || (dist && ref?.portee) ? `<dt>Portée</dt><dd>${esc(it.portee || ref.portee)}</dd>` : ''}
+    </dl>
+    ${liees.join('')}
+    ${mun.map(({ it: m, i }) => `<div class="munition">
+      <span><b>${esc(m.nom || 'Munition')}</b> <small>× ${esc(m.qte || 0)}</small>${m.effet ? `<br><small>${esc(m.effet)}</small>` : ''}</span>
+      <button class="btn ghost" data-action="objet-use" data-idx="${i}" ${num(m.qte) > 0 ? '' : 'disabled'}>Tirer</button>
+    </div>`).join('')}
+  </div>`;
+}
+
 function ficheCombat(p, e) {
   const st = stats(p, e);
   const mn = infosMainsNues(p, e, st);
@@ -888,25 +949,7 @@ function ficheCombat(p, e) {
   const res = ressources(p, e);
   const taille = R.TAILLES[e.taille]?.ca || 0;
 
-  const carteArme = it => {
-    const dist = it.mode === 'distance';
-    const mod = dist ? e.mods.dex : e.mods.for;
-    const tou = R.attaques(Math.max(0, st.bba)).map(x => x + mod + taille);
-    const deg = `${it.degats || '?'}${!dist && e.mods.for ? R.signe(e.mods.for) : ''}`;
-    const mun = munitions.filter(m => m.it.lien === it.id);
-    return `<div class="arme">
-      <div class="arme-tete"><b>${esc(it.nom || 'Arme')}</b><span class="tag-mode">${dist ? 'Distance' : 'Corps à corps'}</span></div>
-      <dl class="arme-stats">
-        <dt>Pour toucher</dt><dd><span class="gros">${R.signe(tou[0])}</span>${tou.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(tou)})</small>` : ''}</dd>
-        <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${it.critique ? ` <small>critique ${esc(it.critique)}</small>` : ''}</dd>
-        ${it.portee ? `<dt>Portée</dt><dd>${esc(it.portee)}</dd>` : ''}
-      </dl>
-      ${mun.map(({ it: m, i }) => `<div class="munition">
-        <span><b>${esc(m.nom || 'Munition')}</b> <small>× ${esc(m.qte || 0)}</small>${m.effet ? `<br><small>${esc(m.effet)}</small>` : ''}</span>
-        <button class="btn ghost" data-action="objet-use" data-idx="${i}" ${num(m.qte) > 0 ? '' : 'disabled'}>Tirer</button>
-      </div>`).join('')}
-    </div>`;
-  };
+  const carteArme = it => carteArmeCombat(p, e, st, it, munitions);
 
   const sorts = (p.sorts || []).map((x, i) => ({ x, i, s: findSort(x.id) })).filter(o => o.s);
   return `<section class="card combat"><h3>En combat</h3>
@@ -932,6 +975,7 @@ function ficheCombat(p, e) {
         </dl>
         ${mn.deluge ? `<div class="deluge"><b>Déluge de coups</b> : ${mn.deluge.liste.length} attaques à <span class="gros">${R.attTxt(mn.deluge.liste)}</span>, ${esc(mn.degats)} chacune.
           <small>Prend tout ton tour. Le malus de ${R.signe(mn.deluge.pen)} est déjà inclus${mn.deluge.pen ? '' : ' (il a disparu à ton niveau)'}.</small></div>` : ''}
+        ${res.some(r => r.id === 'coup-etourdissant') ? (r => `<p class="liee"><b>Coup étourdissant</b> : uniquement à mains nues. Il t'en reste ${Math.max(0, r.max - num((p.compteurs || {})[r.id]))} sur ${r.max} (compteur plus bas).</p>`)(res.find(r => r.id === 'coup-etourdissant')) : ''}
       </div>` : ''}
       ${armes.map(carteArme).join('')}
       ${!mn && !armes.length ? '<p class="empty">Aucune arme. Dans l\'onglet Inventaire, choisis le type « Arme » pour un objet.</p>' : ''}
@@ -2711,6 +2755,16 @@ document.addEventListener('input', ev => {
     return;
   }
   if (t.id === 'carnet') { state.carnet = t.value; render(); return; }
+  const mArme = (t.dataset.bind || '').match(/^equipement\.(\d+)\.armeType$/);
+  if (mArme && state.ctx && peutModifier(state.ctx)) {
+    const it = state.ctx.equipement[Number(mArme[1])], ref = R.ARME[t.value];
+    if (ref) {
+      const petit = etat(state.ctx).taille === 'P';
+      Object.assign(it, { armeType: ref.id, degats: petit ? (R.DEGATS_P[ref.deg] || ref.deg) : ref.deg, critique: ref.crit, portee: ref.portee, mode: ref.prise === 'distance' ? 'distance' : '' });
+      if (!it.nom) it.nom = ref.nom;
+    } else it.armeType = '';
+    save(); render(); return;
+  }
   if (t.classList.contains('don-recherche')) { resultatsDons(t); return; }
   if (t.id === 'zone-recit' && $('#apercu-recit')) $('#apercu-recit').innerHTML = formaterRecit(t.value) || '<p class="empty">Le récit apparaîtra ici, mis en forme.</p>';
   const path = t.dataset.bind;
