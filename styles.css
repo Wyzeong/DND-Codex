@@ -901,3 +901,7 @@ button.banniere { border: none; cursor: pointer; font: inherit; width: 100%; }
 .baguette .baguette-meta dd { margin: 0; font-weight: 600; }
 .baguette-sort { text-align: center; }
 .actualiser { text-align: center; margin: -.4rem 0 .8rem; } .actualiser small { color: var(--muted); }
+.cl-auto.neg { color: var(--rouge-clair); } .cat-armure, .cat-bouclier { border-color: var(--brume); color: #9FD4F0; } .objet-cat .aj { flex: 1 1 140px; }
+.objet-cat .aj input { flex: none; max-width: 8rem; }
+.objet-cat .check { display: flex; align-items: center; gap: .45rem; flex: 1 1 100%; }
+.objet-cat .check input { flex: none; width: 1.15rem; height: 1.15rem; }

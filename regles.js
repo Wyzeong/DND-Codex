@@ -603,3 +603,27 @@ R.CATS_ARMES = { courante: 'Armes courantes', guerre: 'Armes de guerre', exotiqu
 R.PRISES = { legere: 'Légère', une: 'À une main', deux: 'À deux mains', double: 'Arme double', distance: 'À distance' };
 /* Dégâts pour une créature de taille P */
 R.DEGATS_P = { '1d2': '1', '1d3': '1d2', '1d4': '1d3', '1d6': '1d4', '1d8': '1d6', '1d10': '1d8', '1d12': '1d10', '2d4': '1d6', '2d6': '1d10' };
+
+/* ---------- Armures et boucliers (SRD 3.5) ----------
+   ca : bonus d'armure ou de bouclier · dex : bonus de Dextérité maximal · malus : malus d'armure aux tests · echec : échec des sorts profanes */
+const ARM = (id, nom, type, ca, dex, malus, echec) => ({ id, nom, type, ca, dex, malus, echec });
+R.ARMURES = [
+  ARM('matelassee', 'Armure matelassée', 'legere', 1, 8, 0, 5),
+  ARM('cuir', 'Armure de cuir', 'legere', 2, 6, 0, 10),
+  ARM('cuir-cloute', 'Armure de cuir clouté', 'legere', 3, 5, -1, 15),
+  ARM('chemise-mailles', 'Chemise de mailles', 'legere', 4, 4, -2, 20),
+  ARM('peau', 'Armure de peau', 'intermediaire', 3, 4, -3, 20),
+  ARM('ecailles', 'Armure d\'écailles', 'intermediaire', 4, 3, -4, 25),
+  ARM('cotte-mailles', 'Cotte de mailles', 'intermediaire', 5, 2, -5, 30),
+  ARM('cuirasse', 'Cuirasse', 'intermediaire', 5, 3, -4, 25),
+  ARM('clibanion', 'Clibanion', 'lourde', 6, 0, -7, 40),
+  ARM('bandes', 'Armure à bandes', 'lourde', 6, 1, -6, 35),
+  ARM('demi-plate', 'Demi-plate', 'lourde', 7, 0, -7, 40),
+  ARM('harnois', 'Harnois', 'lourde', 8, 1, -6, 35),
+  ARM('targe', 'Targe', 'bouclier', 1, null, -1, 5),
+  ARM('ecu-leger', 'Écu léger', 'bouclier', 1, null, -1, 5),
+  ARM('ecu-lourd', 'Écu lourd', 'bouclier', 2, null, -2, 15),
+  ARM('pavois', 'Pavois', 'bouclier', 4, 2, -10, 50),
+];
+R.ARMURE = Object.fromEntries(R.ARMURES.map(a => [a.id, a]));
+R.TYPES_ARMURES = { legere: 'Armures légères', intermediaire: 'Armures intermédiaires', lourde: 'Armures lourdes' };

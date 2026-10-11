@@ -188,8 +188,22 @@ const NOM_CIBLE = Object.fromEntries(CIBLES_BONUS.flatMap(([, l]) => l));
 /* Somme des bonus des objets équipés, par cible, avec le détail des objets */
 function bonusObjets(p) {
   const tot = {}, detail = {};
+  let maxDex = null, acp = 0, echec = 0;
   for (const it of p.equipement || []) {
     if (it.equipe === false) continue;
+    if (it.cat === 'armure' || it.cat === 'bouclier') {
+      const ref = R.ARMURE[it.armureType];
+      const ca = (ref ? ref.ca : num(it.caBase)) + num(it.alteration);
+      if (ca) {
+        tot.caArmure = (tot.caArmure || 0) + ca;
+        (detail.caArmure = detail.caArmure || []).push(`${it.nom || ref?.nom || 'Armure'} ${R.signe(ca)}`);
+      }
+      const dexMax = ref ? ref.dex : (it.dexMax === '' || it.dexMax == null ? null : num(it.dexMax));
+      if (dexMax != null) maxDex = maxDex == null ? dexMax : Math.min(maxDex, dexMax);
+      /* une armure de maître réduit le malus de 1 */
+      acp += Math.min(0, (ref ? ref.malus : num(it.malus)) + (it.maitre ? 1 : 0));
+      echec += ref ? ref.echec : num(it.echec);
+    }
     for (const b of it.bonus || []) {
       const v = num(b.val);
       if (!b.cible || !v) continue;
@@ -197,7 +211,7 @@ function bonusObjets(p) {
       (detail[b.cible] = detail[b.cible] || []).push(`${it.nom || 'Objet'} ${R.signe(v)}`);
     }
   }
-  return { tot, detail };
+  return { tot, detail, maxDex, acp, echec };
 }
 
 const LIST_TEMPLATES = {
@@ -392,10 +406,11 @@ function stats(p, e) {
   for (const s of ['vig', 'ref', 'vol']) js[s] += num(a[s]) + (ob[s] || 0) + (ob.js || 0);
   const bonusMoine = moine ? Math.max(0, e.mods.sag) + Math.floor(moine / 5) : 0;
   const armure = num(a.armure), bouclier = num(a.bouclier), nat = num(a.naturelle), parade = num(a.parade), div = num(a.caDivers);
-  const ca = 10 + e.mods.dex + t.ca + armure + bouclier + nat + parade + div + bonusMoine + (ob.caArmure || 0) + (ob.caParade || 0);
-  const contact = 10 + e.mods.dex + t.ca + parade + div + bonusMoine + (ob.caParade || 0);
+  const dexCA = e.objets.maxDex == null ? e.mods.dex : Math.min(e.mods.dex, e.objets.maxDex);
+  const ca = 10 + dexCA + t.ca + armure + bouclier + nat + parade + div + bonusMoine + (ob.caArmure || 0) + (ob.caParade || 0);
+  const contact = 10 + dexCA + t.ca + parade + div + bonusMoine + (ob.caParade || 0);
   const esquiveInst = (e.classes.barbare || 0) >= 2 || (e.classes.roublard || 0) >= 4;
-  const depourvu = esquiveInst ? ca : ca - Math.max(0, e.mods.dex);
+  const depourvu = esquiveInst ? ca : ca - Math.max(0, dexCA);
   let vitesse = e.race ? e.race.vitesse : 9;
   const notesVit = [];
   if (moine >= 3) { vitesse += 3 * Math.floor(moine / 3); notesVit.push('déplacement accéléré du moine inclus'); }
@@ -614,6 +629,8 @@ function ongletFicheBrut(p, e) {
       ${s.rm ? stat('Résistance à la magie', s.rm) : ''}${s.rd.length ? stat('Réduction des dégâts', s.rd.join(', ')) : ''}
     </div>
 
+    ${e.objets.maxDex != null && e.mods.dex > e.objets.maxDex ? `<p class="hint">Ton armure limite ta Dextérité à ${R.signe(e.objets.maxDex)} pour la CA.</p>` : ''}
+    ${e.objets.acp ? `<p class="hint">Malus d'armure ${e.objets.acp} appliqué aux compétences marquées ◘.</p>` : ''}
     ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
     ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
     <div class="grid" style="margin-top:.8rem">
@@ -652,6 +669,13 @@ function detailsObjet(it, items) {
   if (it.cat === 'arme') bits.push([R.ARME[it.armeType] && R.ARME[it.armeType].nom !== it.nom ? R.ARME[it.armeType].nom : '', it.mode === 'distance' ? 'Distance' : 'Corps à corps', R.ARME[it.armeType]?.moine ? 'arme de moine' : '', it.degats && `dégâts ${it.degats}`, it.critique && `critique ${it.critique}`, it.portee && `portée ${it.portee}`].filter(Boolean).join(', '));
   if (it.cat === 'munition') { const a = items.find(x => x.id === it.lien); bits.push([a && `pour ${a.nom}`, it.effet].filter(Boolean).join(' : ')); }
   if (it.cat === 'consommable' && it.effet) bits.push(it.effet);
+  if (it.cat === 'armure' || it.cat === 'bouclier') {
+    const a = R.ARMURE[it.armureType];
+    const ca = (a ? a.ca : num(it.caBase)) + num(it.alteration);
+    bits.push([a && a.nom !== it.nom ? a.nom : '', `CA ${R.signe(ca)}${num(it.alteration) ? ` (dont +${num(it.alteration)} d'altération)` : ''}`,
+      (a ? a.dex : it.dexMax) != null && (a ? a.dex : it.dexMax) !== '' ? `Dex max +${a ? a.dex : it.dexMax}` : '',
+      `malus ${R.signe(Math.min(0, (a ? a.malus : num(it.malus)) + (it.maitre ? 1 : 0)))}`, it.equipe === false ? 'pas portée' : 'portée'].filter(Boolean).join(', '));
+  }
   return bits.filter(Boolean).join(' ; ');
 }
 function ligneObjetVue(it, i, items, modifiable) {
@@ -685,7 +709,7 @@ function ongletInventaire(p, e) {
     <p class="hint">${items.length} objet${items.length > 1 ? 's' : ''}${poids ? `, ${String(Math.round(poids * 10) / 10).replace('.', ',')} au total (poids)` : ''}.</p>
     <div class="objets">${lignes || '<p class="empty">Aucun objet.</p>'}</div>
     ${mod ? '<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>' : ''}
-    <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
+    <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Armure » et « Bouclier » : la CA, la Dextérité maximale et le malus aux compétences se calculent seuls. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
   </section>
   <section class="card"><h3>Bourse</h3>
     <div class="grid">
@@ -714,7 +738,23 @@ function ligneObjetEdition(p, it, i) {
         <input type="text" data-bind="equipement.${i}.portee" value="${esc(it.portee)}" placeholder="Portée (24 m)" aria-label="Portée">
         ${e.dons.has('arme-predilection') ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.predilection" data-rerender ${it.predilection ? 'checked' : ''}> Arme de prédilection</label>` : ''}
         ${e.dons.has('specialisation-martiale') ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.specialisation" data-rerender ${it.specialisation ? 'checked' : ''}> Spécialisation martiale</label>` : ''}
-      </div>` : it.cat === 'munition' ? `<div class="objet-cat">
+      </div>` : it.cat === 'armure' || it.cat === 'bouclier' ? (() => {
+        const refA = R.ARMURE[it.armureType];
+        const liste = it.cat === 'bouclier'
+          ? `<optgroup label="Boucliers">${R.ARMURES.filter(a => a.type === 'bouclier').map(a => `<option value="${a.id}" ${it.armureType === a.id ? 'selected' : ''}>${esc(a.nom)} (CA +${a.ca})</option>`).join('')}</optgroup>`
+          : Object.entries(R.TYPES_ARMURES).map(([t, l]) => `<optgroup label="${l}">${R.ARMURES.filter(a => a.type === t).map(a => `<option value="${a.id}" ${it.armureType === a.id ? 'selected' : ''}>${esc(a.nom)} (CA +${a.ca})</option>`).join('')}</optgroup>`).join('');
+        return `<div class="objet-cat">
+        <label class="f arme-type"><span>Type ${it.cat === 'bouclier' ? 'de bouclier' : 'd\'armure'}</span><select data-bind="equipement.${i}.armureType" data-rerender>
+          <option value="">Autre (à remplir à la main)</option>${liste}</select></label>
+        ${refA ? `<p class="hint arme-ref">CA +${refA.ca}${refA.dex != null ? `, Dextérité max +${refA.dex}` : ''}, malus aux tests ${R.signe(refA.malus)}${it.maitre ? ' (−1 de moins : de maître)' : ''}, échec des sorts profanes ${refA.echec} %.</p>`
+          : `<input type="text" inputmode="numeric" data-bind="equipement.${i}.caBase" data-recalc value="${esc(it.caBase)}" placeholder="Bonus de CA" aria-label="Bonus de CA">
+             <input type="text" inputmode="numeric" data-bind="equipement.${i}.dexMax" data-recalc value="${esc(it.dexMax)}" placeholder="Dex max" aria-label="Dextérité maximale">
+             <input type="text" inputmode="numeric" data-bind="equipement.${i}.malus" data-recalc value="${esc(it.malus)}" placeholder="Malus (−2)" aria-label="Malus d'armure">`}
+        <label class="f aj"><span>Altération (+1, +2…)</span><input type="text" inputmode="numeric" data-bind="equipement.${i}.alteration" data-recalc value="${esc(it.alteration)}" placeholder="0"></label>
+        <label class="check"><input type="checkbox" data-bind="equipement.${i}.maitre" data-rerender ${it.maitre ? 'checked' : ''}> De maître (malus réduit de 1)</label>
+        <label class="check"><input type="checkbox" data-bind="equipement.${i}.equipe" data-rerender ${it.equipe === false ? '' : 'checked'}> Porté${it.cat === 'bouclier' ? ' au bras' : ''}</label>
+      </div>`;
+      })() : it.cat === 'munition' ? `<div class="objet-cat">
         <select data-bind="equipement.${i}.lien" data-rerender aria-label="Arme associée"><option value="">— Pour quelle arme ? —</option>${armes.map(a => `<option value="${a.id}" ${it.lien === a.id ? 'selected' : ''}>${esc(a.nom || 'Arme')}</option>`).join('')}</select>
         <input type="text" data-bind="equipement.${i}.effet" value="${esc(it.effet)}" placeholder="Effet (ex. +1d6 de feu)" aria-label="Effet">
       </div>` : it.cat === 'consommable' ? `<div class="objet-cat">
@@ -739,7 +779,7 @@ function ligneObjetEdition(p, it, i) {
       </div>`).join('')}
       <div class="objet-pied">
         <button class="lien" data-action="add-bonus" data-idx="${i}">+ Bonus de statistique</button>
-        ${bonus.length ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.equipe" data-rerender ${it.equipe === false ? '' : 'checked'}> Équipé</label>` : ''}
+        ${bonus.length && it.cat !== 'armure' && it.cat !== 'bouclier' ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.equipe" data-rerender ${it.equipe === false ? '' : 'checked'}> Équipé</label>` : ''}
       </div>
       <button class="btn" data-action="objet-fin">Terminé</button>
     </div>`;
@@ -754,7 +794,8 @@ function ligneComp(e, c, v, base, opts) {
   const { classe, deClasse, perso, i } = opts;
   const rangs = num(v.rangs);
   const mod = c.car ? e.mods[c.car] : 0;
-  const bonus = perso ? 0 : bonusComp(c.id, e);
+  const malusArm = !perso && MALUS_ARMURE.has(c.id) ? (e.objets.acp || 0) * (c.id === 'natation' ? 2 : 1) : 0;
+  const bonus = (perso ? 0 : bonusComp(c.id, e)) + malusArm;
   const total = rangs + mod + bonus + num(v.divers);
   const inutilisable = c.formation && rangs === 0;
   const spe = !perso && ['artisanat', 'profession', 'representation', 'langue'].includes(c.id);
@@ -775,7 +816,7 @@ function ligneComp(e, c, v, base, opts) {
       : `<small>${car ? car.l.charAt(0) + car.l.slice(1).toLowerCase() : '—'}</small>`}<b>${R.signe(mod)}</b></span>
     <span class="cl-div">
       <input type="text" inputmode="numeric" class="cl-in" data-bind="${cle}.divers" data-recalc value="${esc(v.divers)}" placeholder="0" aria-label="Bonus divers">
-      ${bonus ? `<small class="cl-auto" title="Bonus racial ou de don, déjà compté">${R.signe(bonus)}</small>` : ''}
+      ${bonus ? `<small class="cl-auto ${bonus < 0 ? 'neg' : ''}" title="${malusArm ? `Dont malus d'armure ${malusArm}. ` : ''}Bonus racial, de don ou d'armure, déjà compté">${R.signe(bonus)}</small>` : ''}
     </span>
     ${perso ? `<button class="icon cl-suppr" data-action="del-comp-perso" data-idx="${i}" aria-label="Supprimer cette compétence">✕</button>` : ''}
   </div>`;
@@ -808,7 +849,7 @@ function usagesSort(s) {
 const tagsUsages = s => usagesSort(s).map(k => `<span class="usage usage-${k}">${USAGES_SORT[k]}</span>`).join('');
 
 /* ===== En combat : actions, armes, sorts et capacités avec compteurs ===== */
-const CATS_OBJET = { '': 'Objet', arme: 'Arme', munition: 'Munition', consommable: 'Consommable' };
+const CATS_OBJET = { '': 'Objet', arme: 'Arme', armure: 'Armure', bouclier: 'Bouclier', munition: 'Munition', consommable: 'Consommable' };
 
 function infosMainsNues(p, e, st) {
   const moine = e.classes.moine || 0;
@@ -2757,6 +2798,14 @@ document.addEventListener('input', ev => {
     return;
   }
   if (t.id === 'carnet') { state.carnet = t.value; render(); return; }
+  const mArmure = (t.dataset.bind || '').match(/^equipement\.(\d+)\.armureType$/);
+  if (mArmure && state.ctx && peutModifier(state.ctx)) {
+    const it = state.ctx.equipement[Number(mArmure[1])], ref = R.ARMURE[t.value];
+    it.armureType = ref ? ref.id : '';
+    if (ref && !it.nom) it.nom = ref.nom;
+    if (it.equipe === undefined) it.equipe = true;
+    save(); render(); return;
+  }
   const mArme = (t.dataset.bind || '').match(/^equipement\.(\d+)\.armeType$/);
   if (mArme && state.ctx && peutModifier(state.ctx)) {
     const it = state.ctx.equipement[Number(mArme[1])], ref = R.ARME[t.value];
