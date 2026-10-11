@@ -660,6 +660,21 @@ function ongletFicheBrut(p, e) {
   </section>`;
 }
 
+/* Ordre d'affichage des catégories dans l'inventaire */
+const GROUPES_INV = [
+  ['Armes', ['arme']],
+  ['Armures et boucliers', ['armure', 'bouclier']],
+  ['Munitions', ['munition']],
+  ['Consommables', ['consommable']],
+  ['Objets', ['']],
+];
+function groupesInventaire(items) {
+  return GROUPES_INV.map(([titre, cats]) => [titre, items.map((it, i) => ({ it, i })).filter(({ it }) => cats.includes(it.cat || ''))])
+    .filter(([, l]) => l.length);
+}
+const valeurObjet = it => num(String(it.valeur || '').replace(',', '.')) * (num(it.qte) || 1);
+const poTxt = v => `${String(Math.round(v * 100) / 100).replace('.', ',')} po`;
+
 function bourseTxt(p) {
   const a = p.argent || {};
   return [['pp', 'pp'], ['po', 'po'], ['pa', 'pa'], ['pc', 'pc']].filter(([k]) => num(a[k])).map(([k, l]) => `${num(a[k])} ${l}`).join(', ') || 'vide';
@@ -689,13 +704,14 @@ function ligneObjetVue(it, i, items, modifiable) {
     </div>
     ${det ? `<p class="objet-det">${esc(det)}</p>` : ''}
     ${bonus.length ? `<p class="objet-bonus">${bonus.map(b => `<span class="bonus-objet">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`).join('')}${it.equipe === false ? '<span class="range-tag">rangé</span>' : ''}</p>` : ''}
-    ${it.notes || it.poids ? `<p class="objet-det">${esc([it.poids && `${it.poids}`, it.notes].filter(Boolean).join(' · '))}</p>` : ''}
+    ${it.notes || it.poids || valeurObjet(it) ? `<p class="objet-det">${esc([it.poids && `${it.poids}`, num(String(it.valeur || '').replace(',', '.')) ? `valeur ${poTxt(num(String(it.valeur).replace(',', '.')))}${num(it.qte) > 1 ? ' pièce' : ''}` : '', it.notes].filter(Boolean).join(' · '))}</p>` : ''}
   </div>`;
 }
 function resumeEquipement(p) {
   const items = p.equipement || [];
-  const lignes = items.map((it, i) => ligneObjetVue(it, i, items, false)).join('');
-  return `<div class="objets">${lignes || '<p class="empty">Aucun objet.</p>'}</div>
+  const lignes = groupesInventaire(items).map(([titre, l]) => `<h4 class="groupe-inv">${titre} <small>${l.length}</small></h4>
+    <div class="objets">${l.map(({ it, i }) => ligneObjetVue(it, i, items, false)).join('')}</div>`).join('');
+  return `${lignes || '<p class="empty">Aucun objet.</p>'}
     <p class="hint">Bourse : ${esc(bourseTxt(p))}.</p>
     ${peutModifier(p) ? `<a class="btn ghost" href="#/perso/${p.id}/inventaire">Gérer l'inventaire</a>` : ''}`;
 }
@@ -704,10 +720,17 @@ function ongletInventaire(p, e) {
   for (const it of items) if (!it.id) it.id = uid();
   const poids = items.reduce((t, it) => t + (parseFloat(String(it.poids || '').replace(',', '.')) || 0) * (num(it.qte) || 1), 0);
   const mod = peutModifier(p);
-  const lignes = items.map((it, i) => mod && state.editObjet === it.id ? ligneObjetEdition(p, it, i) : ligneObjetVue(it, i, items, mod)).join('');
+  const valeur = items.reduce((t, it) => t + valeurObjet(it), 0);
+  const lignes = groupesInventaire(items).map(([titre, l]) => `<h4 class="groupe-inv">${titre} <small>${l.length}</small>${l.some(({ it }) => valeurObjet(it)) ? `<span class="valeur-groupe">${poTxt(l.reduce((t, { it }) => t + valeurObjet(it), 0))}</span>` : ''}</h4>
+    <div class="objets">${l.map(({ it, i }) => mod && state.editObjet === it.id ? ligneObjetEdition(p, it, i) : ligneObjetVue(it, i, items, mod)).join('')}</div>`).join('');
   return `<section class="card"><h3>Inventaire et équipement</h3>
-    <p class="hint">${items.length} objet${items.length > 1 ? 's' : ''}${poids ? `, ${String(Math.round(poids * 10) / 10).replace('.', ',')} au total (poids)` : ''}.</p>
-    <div class="objets">${lignes || '<p class="empty">Aucun objet.</p>'}</div>
+    <div class="inv-resume">
+      <span>Objets<b>${items.length}</b></span>
+      ${poids ? `<span>Poids total<b>${String(Math.round(poids * 10) / 10).replace('.', ',')}</b></span>` : ''}
+      <span>Valeur totale<b>${poTxt(valeur)}</b></span>
+      <span>Bourse<b>${esc(bourseTxt(p))}</b></span>
+    </div>
+    ${lignes || '<p class="empty">Aucun objet.</p>'}
     ${mod ? '<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>' : ''}
     <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Armure » et « Bouclier » : la CA, la Dextérité maximale et le malus aux compétences se calculent seuls. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
   </section>
@@ -765,6 +788,7 @@ function ligneObjetEdition(p, it, i) {
         <input type="text" data-bind="equipement.${i}.nom" value="${esc(it.nom)}" placeholder="Objet" aria-label="Objet">
         <input type="text" class="s" data-bind="equipement.${i}.qte" value="${esc(it.qte)}" placeholder="Qté" aria-label="Quantité">
         <input type="text" class="s" data-bind="equipement.${i}.poids" value="${esc(it.poids)}" placeholder="Poids" aria-label="Poids">
+        <input type="text" inputmode="decimal" class="s" data-bind="equipement.${i}.valeur" value="${esc(it.valeur)}" placeholder="Valeur (po)" aria-label="Valeur à l'unité, en pièces d'or">
         <button class="icon" data-action="del-item" data-list="equipement" data-idx="${i}" aria-label="Supprimer l'objet">✕</button>
       </div>
       <div class="row objet-type">
