@@ -876,3 +876,28 @@ button.banniere { border: none; cursor: pointer; font: inherit; width: 100%; }
 .arme-ref { flex: 1 1 100%; margin: 0; }
 .objet-cat .check { flex: 1 1 100%; padding-bottom: 0; }
 .arme-type select { flex: none; }
+
+/* Baguette : nom stylisé, puis photo paysage pleine largeur */
+.baguette-titre { text-align: center; margin: .2rem 0 .7rem; }
+.baguette-titre .recit-num { margin: 0 0 .2rem; }
+.baguette .baguette-nom {
+  font-family: var(--font-titre); font-weight: 700; font-size: clamp(1.6rem, 6vw, 2.2rem); letter-spacing: .08em; line-height: 1.1;
+  margin: 0; background: linear-gradient(180deg, #F0DDB0 0%, var(--bronze-clair) 45%, var(--bronze) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: 0 0 18px rgba(183, 147, 90, .25);
+}
+.baguette-titre .ornement { margin: .5rem auto 0; max-width: 220px; }
+.baguette-photo.paysage { width: 100%; margin-bottom: .8rem; }
+.baguette-photo.paysage img, .baguette-photo.paysage .image-cadre, .baguette-photo.paysage .baguette-vide {
+  width: 100%; aspect-ratio: 16 / 9; object-fit: cover; object-position: center; display: block;
+  border: 1px solid var(--bronze); border-radius: var(--radius-m); background: var(--nuit-profonde);
+}
+.baguette-photo.paysage .image-cadre { display: grid; place-items: center; }
+.baguette-photo.paysage .baguette-vide svg { width: auto; height: 70%; }
+.baguette-photo.paysage .lien { display: block; margin: .3rem auto 0; }
+.baguette .baguette-meta { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: center; margin: 0 0 .5rem; }
+.baguette .baguette-meta > div { background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius-s); padding: .3rem .7rem; text-align: center; }
+.baguette .baguette-meta dt { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.baguette .baguette-meta dd { margin: 0; font-weight: 600; }
+.baguette-sort { text-align: center; }
+.actualiser { text-align: center; margin: -.4rem 0 .8rem; } .actualiser small { color: var(--muted); }

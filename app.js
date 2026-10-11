@@ -485,6 +485,7 @@ function pagePersos() {
     ${carteConteur(false)}
     <div class="ornement" aria-hidden="true"><span></span></div>
     <h2 class="titre-section">La compagnie</h2>
+    ${enLigne() ? `<p class="actualiser"><button class="lien" data-action="actualiser">↻ Actualiser</button>${state.persosCharges ? ` <small>mis à jour à ${new Date(state.persosCharges).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</small>` : ''}</p>` : ''}
     <div class="persos">${bannieres}${ajout}</div>
     <p class="hint centre">Pour importer une fiche reçue d'un autre joueur : onglet Partage.</p>`;
 }
@@ -1181,11 +1182,11 @@ function carteBaguette(p) {
     const options = (p.sorts || []).map(x => findSort(x.id)).filter(Boolean);
     const fe = ficheEncycloBaguette(p);
     return `<section class="card baguette en-edition"><h3>Baguette</h3>
-      <div class="baguette-corps">
-        <div class="baguette-photo">
-          <button class="image-cadre" data-action="img-choisir" data-type="baguette" aria-label="${b.photo ? 'Changer' : 'Ajouter'} la photo de la baguette">${b.photo ? `<img src="${b.photo}" alt="">` : '<span>Ajouter une photo</span>'}</button>
-          ${b.photo ? '<button class="lien" data-action="img-retirer" data-type="baguette">Retirer la photo</button>' : ''}
-        </div>
+      <div class="baguette-photo paysage">
+        <button class="image-cadre" data-action="img-choisir" data-type="baguette" aria-label="${b.photo ? 'Changer' : 'Ajouter'} la photo de la baguette">${b.photo ? `<img src="${b.photo}" alt="">` : '<span>Ajouter une photo (format paysage)</span>'}</button>
+        ${b.photo ? '<button class="lien" data-action="img-retirer" data-type="baguette">Retirer la photo</button>' : ''}
+      </div>
+      <div>
         <div class="grid">
           ${fi(p, 'baguette.nom', 'Nom de la baguette', { span: true, ph: 'Ex. : Brise-Roc' })}
           ${fi(p, 'baguette.longueur', 'Taille', { ph: '32 cm' })}${fi(p, 'baguette.poids', 'Poids', { ph: '120 g' })}
@@ -1206,15 +1207,16 @@ function carteBaguette(p) {
   const meta = [['Taille', b.longueur], ['Poids', b.poids], ['Bois', b.bois], ['Cœur', b.coeur]].filter(([, v]) => v);
   const vide = !b.nom && !b.description && !b.photo;
   return `<section class="card baguette"><h3>Baguette</h3>
-    <div class="baguette-corps">
-      <div class="baguette-photo">${b.photo ? `<img src="${b.photo}" alt="Baguette ${esc(b.nom || '')}">` : `<div class="baguette-vide">${BAGUETTE_SVG}</div>`}</div>
-      <div class="baguette-infos">
-        <p class="recit-num">Relique de l'ancien monde</p>
-        <h2 class="baguette-nom">${esc(b.nom || (vide ? 'Baguette sans nom' : ''))}</h2>
-        ${meta.length ? `<dl class="baguette-meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
-        ${sortA ? `<p class="baguette-sort">Sort ancré : <a href="#/sort/${sortA.id}">${esc(sortA.nom)}</a></p>` : ''}
-      </div>
+    <div class="baguette-titre">
+      <p class="recit-num">Relique de l'ancien monde</p>
+      <h2 class="baguette-nom">${esc(b.nom || (vide ? 'Baguette sans nom' : ''))}</h2>
+      <div class="ornement" aria-hidden="true"><span></span></div>
     </div>
+    <div class="baguette-photo paysage">${b.photo ? `<img src="${b.photo}" alt="Baguette ${esc(b.nom || '')}">` : `<div class="baguette-vide">${BAGUETTE_SVG}</div>`}</div>
+    ${meta.length || sortA ? `<div class="baguette-infos">
+      ${meta.length ? `<dl class="baguette-meta">${meta.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
+      ${sortA ? `<p class="baguette-sort">Sort ancré : <a href="#/sort/${sortA.id}">${esc(sortA.nom)}</a></p>` : ''}
+    </div>` : ''}
     ${b.description ? `<div class="recit-texte baguette-texte">${formaterRecit(b.description)}</div>` : ''}
     ${b.histoire ? `<details class="effet baguette-histoire" open><summary>Histoire et légende</summary><div class="recit-texte">${formaterRecit(b.histoire)}</div></details>` : ''}
     ${vide ? '<p class="empty">Décris ici ta baguette : son nom, sa photo, sa taille, son histoire.</p>' : ''}
@@ -2828,7 +2830,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -3303,6 +3305,9 @@ document.addEventListener('click', ev => {
       c.pv = Math.max(-10, Math.min(c.pvMax, c.pv + Number(b.dataset.d))); render();
       break;
     }
+    case 'actualiser':
+      actualiser(true);
+      break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -3438,7 +3443,7 @@ $('#imginput').addEventListener('change', async ev => {
   if (!file || !p || !state.imgType) return;
   try {
     if (state.imgType === 'baguette') {
-      p.baguette = { ...(p.baguette || {}), photo: await reduireImage(file, 900, 'image/jpeg') };
+      p.baguette = { ...(p.baguette || {}), photo: await reduireImage(file, 1280, 'image/jpeg') };
       p.maj = Date.now();
       saveNow(); persoModifie(p); render(); toast('Photo de la baguette ajoutée');
       return;
@@ -3458,6 +3463,31 @@ $('#imginput').addEventListener('change', async ev => {
     alert('Image impossible à charger : ' + e.message);
   }
 });
+
+/* ---------- Actualisation automatique (base en ligne) ----------
+   Les fiches, récits, fiches d'encyclopédie et le conteur sont relus :
+   au retour sur l'appli, toutes les minutes tant qu'elle est ouverte, et sur demande. */
+let actualisationEnCours = false;
+const enSaisie = () => {
+  const a = document.activeElement;
+  return a && (a.matches('input, textarea, select') || a.isContentEditable);
+};
+async function actualiser(manuel = false) {
+  if (!enLigne() || actualisationEnCours) return;
+  actualisationEnCours = true;
+  if (manuel) statutSync('Actualisation…', true);
+  try {
+    await envoyerPersos();
+    await Promise.all([chargerPersos(), chargerRecaps(), chargerFiches(), chargerInfos()]);
+    if (manuel) statutSync(state.syncErreur ? 'Hors ligne' : 'À jour');
+    /* On ne redessine pas sous les doigts de quelqu'un qui est en train d'écrire */
+    if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette) render();
+  } finally {
+    actualisationEnCours = false;
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') actualiser(); });
+setInterval(() => { if (document.visibilityState === 'visible') actualiser(); }, 60000);
 
 /* ---------- Démarrage ---------- */
 (async function start() {
