@@ -126,7 +126,7 @@ const findPerso = id => db.personnages.find(p => p.id === id);
 /* ---------- État d'affichage ---------- */
 const state = {
   ctx: null,             // objet en cours d'édition (personnage)
-  filtres: { q: '', ecole: '', classe: '', niveau: '' },
+  filtres: { q: '', ecole: '', classe: '', niveau: '', usage: '' },
   draft: null,           // sort en cours d'édition
   pickQ: '',
   ouverts: new Set(),    // niveaux dépliés dans la progression
@@ -495,9 +495,9 @@ function pagePerso(id, tab) {
   state.ctx = p;
   tab = tab || 'fiche';
   const e = etat(p);
-  const tabs = [['fiche', 'Fiche'], ['sorts', 'Sorts'], ['progression', 'Progression']]
+  const tabs = [['fiche', 'Fiche'], ['inventaire', 'Inventaire'], ['sorts', 'Sorts'], ['progression', 'Progression']]
     .map(([k, l]) => `<a href="#/perso/${p.id}/${k}" class="${tab === k ? 'active' : ''}">${l}</a>`).join('');
-  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : ongletFiche(p, e);
+  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : tab === 'inventaire' ? ongletInventaire(p, e) : ongletFiche(p, e);
   const lecture = !peutModifier(p);
   const body = lecture ? `<fieldset class="lecture" disabled>${contenu}</fieldset>` : contenu;
   return `
@@ -565,7 +565,9 @@ function ongletFicheBrut(p, e) {
   const valsClasses = Object.entries(e.classes).map(([id, k]) => ({ id, k, vals: valeursClasse(id, k, e) })).filter(x => x.vals.length);
   const deluge = valsClasses.find(x => x.id === 'moine')?.vals.find(v => v[0] === 'Déluge de coups');
   return `
-  <section class="card">
+  <div class="fiche-haut">
+  ${carteBaguette(p)}
+  <section class="card carte-identite">
     <div class="identite">
       ${blocImages(p)}
       <div class="grid">
@@ -584,6 +586,7 @@ function ongletFicheBrut(p, e) {
     ${blocLangues(p)}
     ${ta(p, 'apparence', 'Apparence et historique')}
   </section>
+  </div>
 
   <section class="card"><h3>Caractéristiques</h3>
     <div class="caracs">
@@ -631,11 +634,7 @@ function ongletFicheBrut(p, e) {
   ${ficheCapacitesLisible(p, e, valsClasses)}
 
   <section class="card"><h3>Équipement</h3>
-    ${ficheEquipement(p)}
-    <div class="grid" style="margin-top:1rem">
-      ${fi(p, 'argent.pp', 'Pièces de platine')}${fi(p, 'argent.po', 'Pièces d\'or')}
-      ${fi(p, 'argent.pa', 'Pièces d\'argent')}${fi(p, 'argent.pc', 'Pièces de cuivre')}
-    </div>
+    ${resumeEquipement(p)}
   </section>
 
   <section class="card"><h3>Notes</h3>
@@ -643,12 +642,62 @@ function ongletFicheBrut(p, e) {
   </section>`;
 }
 
-function ficheEquipement(p) {
+function bourseTxt(p) {
+  const a = p.argent || {};
+  return [['pp', 'pp'], ['po', 'po'], ['pa', 'pa'], ['pc', 'pc']].filter(([k]) => num(a[k])).map(([k, l]) => `${num(a[k])} ${l}`).join(', ') || 'vide';
+}
+function detailsObjet(it, items) {
+  const bits = [];
+  if (it.cat === 'arme') bits.push([it.mode === 'distance' ? 'Distance' : 'Corps à corps', it.degats && `dégâts ${it.degats}`, it.critique && `critique ${it.critique}`, it.portee && `portée ${it.portee}`].filter(Boolean).join(', '));
+  if (it.cat === 'munition') { const a = items.find(x => x.id === it.lien); bits.push([a && `pour ${a.nom}`, it.effet].filter(Boolean).join(' : ')); }
+  if (it.cat === 'consommable' && it.effet) bits.push(it.effet);
+  return bits.filter(Boolean).join(' ; ');
+}
+function ligneObjetVue(it, i, items, modifiable) {
+  const bonus = (it.bonus || []).filter(b => b.cible && num(b.val));
+  const det = detailsObjet(it, items);
+  return `<div class="objet-vue ${bonus.length && it.equipe === false ? 'range' : ''}">
+    <div class="objet-vue-tete">
+      <b>${esc(it.nom || 'Objet sans nom')}</b>${num(it.qte) > 1 || it.cat === 'munition' || it.cat === 'consommable' ? ` <span class="qte">× ${esc(it.qte || 0)}</span>` : ''}
+      ${it.cat ? `<span class="tag-cat cat-${it.cat}">${CATS_OBJET[it.cat]}</span>` : ''}
+      ${modifiable ? `<button class="lien objet-modif" data-action="objet-edit" data-id="${it.id}">Modifier</button>` : ''}
+    </div>
+    ${det ? `<p class="objet-det">${esc(det)}</p>` : ''}
+    ${bonus.length ? `<p class="objet-bonus">${bonus.map(b => `<span class="bonus-objet">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`).join('')}${it.equipe === false ? '<span class="range-tag">rangé</span>' : ''}</p>` : ''}
+    ${it.notes || it.poids ? `<p class="objet-det">${esc([it.poids && `${it.poids}`, it.notes].filter(Boolean).join(' · '))}</p>` : ''}
+  </div>`;
+}
+function resumeEquipement(p) {
+  const items = p.equipement || [];
+  const lignes = items.map((it, i) => ligneObjetVue(it, i, items, false)).join('');
+  return `<div class="objets">${lignes || '<p class="empty">Aucun objet.</p>'}</div>
+    <p class="hint">Bourse : ${esc(bourseTxt(p))}.</p>
+    ${peutModifier(p) ? `<a class="btn ghost" href="#/perso/${p.id}/inventaire">Gérer l'inventaire</a>` : ''}`;
+}
+function ongletInventaire(p, e) {
+  const items = p.equipement || [];
+  for (const it of items) if (!it.id) it.id = uid();
+  const poids = items.reduce((t, it) => t + (parseFloat(String(it.poids || '').replace(',', '.')) || 0) * (num(it.qte) || 1), 0);
+  const mod = peutModifier(p);
+  const lignes = items.map((it, i) => mod && state.editObjet === it.id ? ligneObjetEdition(p, it, i) : ligneObjetVue(it, i, items, mod)).join('');
+  return `<section class="card"><h3>Inventaire et équipement</h3>
+    <p class="hint">${items.length} objet${items.length > 1 ? 's' : ''}${poids ? `, ${String(Math.round(poids * 10) / 10).replace('.', ',')} au total (poids)` : ''}.</p>
+    <div class="objets">${lignes || '<p class="empty">Aucun objet.</p>'}</div>
+    ${mod ? '<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>' : ''}
+    <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
+  </section>
+  <section class="card"><h3>Bourse</h3>
+    <div class="grid">
+      ${fi(p, 'argent.pp', 'Pièces de platine', { type: 'number' })}${fi(p, 'argent.po', 'Pièces d\'or', { type: 'number' })}
+      ${fi(p, 'argent.pa', 'Pièces d\'argent', { type: 'number' })}${fi(p, 'argent.pc', 'Pièces de cuivre', { type: 'number' })}
+    </div>
+  </section>`;
+}
+function ligneObjetEdition(p, it, i) {
   const items = p.equipement || [];
   const opts = cur => CIBLES_BONUS.map(([g, l]) => `<optgroup label="${g}">${l.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
-  for (const it of items) if (!it.id) it.id = uid();
   const armes = items.filter(x => x.cat === 'arme');
-  const lignes = items.map((it, i) => {
+  {
     const bonus = it.bonus || [];
     const champCat = it.cat === 'arme' ? `<div class="objet-cat">
         <select data-bind="equipement.${i}.mode" data-rerender aria-label="Type d'attaque"><option value="">Corps à corps</option><option value="distance" ${it.mode === 'distance' ? 'selected' : ''}>Distance</option></select>
@@ -661,7 +710,7 @@ function ficheEquipement(p) {
       </div>` : it.cat === 'consommable' ? `<div class="objet-cat">
         <input type="text" data-bind="equipement.${i}.effet" value="${esc(it.effet)}" placeholder="Effet (ex. soigne 1d8+1 PV)" aria-label="Effet">
       </div>` : '';
-    return `<div class="objet ${bonus.length && it.equipe === false ? 'range' : ''}">
+    return `<div class="objet en-edition">
       <div class="row">
         <input type="text" data-bind="equipement.${i}.nom" value="${esc(it.nom)}" placeholder="Objet" aria-label="Objet">
         <input type="text" class="s" data-bind="equipement.${i}.qte" value="${esc(it.qte)}" placeholder="Qté" aria-label="Quantité">
@@ -682,11 +731,9 @@ function ficheEquipement(p) {
         <button class="lien" data-action="add-bonus" data-idx="${i}">+ Bonus de statistique</button>
         ${bonus.length ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.equipe" data-rerender ${it.equipe === false ? '' : 'checked'}> Équipé</label>` : ''}
       </div>
+      <button class="btn" data-action="objet-fin">Terminé</button>
     </div>`;
-  }).join('');
-  return `<div class="objets">${lignes || '<p class="empty">Aucun objet.</p>'}</div>
-    <button class="btn ghost" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>
-    <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac. Tous les bonus des objets équipés s'additionnent.</p>`;
+  }
 }
 
 /* Compétences soumises au malus d'armure (◘ sur la feuille papier) */
@@ -723,6 +770,32 @@ function ligneComp(e, c, v, base, opts) {
     ${perso ? `<button class="icon cl-suppr" data-action="del-comp-perso" data-idx="${i}" aria-label="Supprimer cette compétence">✕</button>` : ''}
   </div>`;
 }
+
+/* ===== Usage des sorts (pour choisir plus facilement) ===== */
+const USAGES_SORT = {
+  offensif: 'Offensif', controle: 'Contrôle', protection: 'Protection', soin: 'Soin', amelioration: 'Amélioration',
+  deplacement: 'Déplacement', information: 'Information', convocation: 'Convocation', utilitaire: 'Utilitaire',
+};
+function usagesSort(s) {
+  if (Array.isArray(s.usages) && s.usages.length) return s.usages;
+  if (s._usages) return s._usages;
+  const t = norm(`${s.nom} ${s.description}`), n = norm(s.nom), dsc = norm(s.description), u = [];
+  const a = (k, re, txt = t) => { if (re.test(txt) && !u.includes(k)) u.push(k); };
+  a('soin', /^(soins|guerison|restauration|rappel a la vie|resurrection|regeneration|delivrance|neutralisation|baies|festin|aide$|guerison)/, n);
+  a('soin', /^soigne/, dsc);
+  if (!u.includes('soin')) a('offensif', /inflige \d|\d+d\d+ (points de )?degats|degats d.(acide|electricite)|degats de (feu|froid|force|son)|\btue\b|desintegr|explose|\d+d\d+ par niveau/);
+  a('controle', /immobilise|paralys|plonge .*sommeil|sommeil magique|charme|considere le lanceur comme|controle|domin|confusion|hebete|etourdi|enchevetr|agripp|toiles|glissant|suggestion|est ralenti|sont ralenti|aveugle |nauseeu|fascine|paniqu|effraye|petrif|labyrinthe|emprisonne|cage de force|renvoie une|bannit|fou rire|danse frenetique|injonction|desespoir/);
+  a('protection', /classe d.armure|bonus d.armure|a la ca|protection contre|resistance de|resistance a la magie egale|bonus de resistance|bouclier|immunis|reduction des degats|camouflage|invisible|antidetection|globe|50 % d.echec/);
+  a('amelioration', /bonus d.alteration de \+\d en|bonus de moral|bonus d.aptitude|bonus d.intuition|gagne \+|gagnent \+|passe a la categorie de taille superieure|attaque supplementaire/);
+  a('deplacement', /se teleporte|teleporte instantanement|transporte instantanement|vitesse de base|vitesse de vol|peut voler|levitation|forme gazeuse|passe-muraille|ouvre un passage|voyage par|voyagent|escalade les murs|ralentit la chute|marche sur|liberte de mouvement|devient ethere|tests de saut|monte ou descend|transporte les cibles/);
+  if (s.ecole === 'Divination') u.push('information');
+  else a('information', /detecte|localisation|scrutation|identifi|comprehension|communication avec|mythes|revele les|connait|savoir/);
+  if (/Convocation/.test(s.sousEcole || '')) u.push('convocation');
+  if (!u.length) u.push('utilitaire');
+  s._usages = u;
+  return u;
+}
+const tagsUsages = s => usagesSort(s).map(k => `<span class="usage usage-${k}">${USAGES_SORT[k]}</span>`).join('');
 
 /* ===== En combat : actions, armes, sorts et capacités avec compteurs ===== */
 const CATS_OBJET = { '': 'Objet', arme: 'Arme', munition: 'Munition', consommable: 'Consommable' };
@@ -861,21 +934,23 @@ function ficheCombat(p, e) {
           <small>Prend tout ton tour. Le malus de ${R.signe(mn.deluge.pen)} est déjà inclus${mn.deluge.pen ? '' : ' (il a disparu à ton niveau)'}.</small></div>` : ''}
       </div>` : ''}
       ${armes.map(carteArme).join('')}
-      ${!mn && !armes.length ? '<p class="empty">Aucune arme. Dans l\'Équipement, choisis le type « Arme » pour un objet.</p>' : ''}
+      ${!mn && !armes.length ? '<p class="empty">Aucune arme. Dans l\'onglet Inventaire, choisis le type « Arme » pour un objet.</p>' : ''}
     </div>
 
     <h4>Lancer un sort</h4>
     ${sorts.length ? `<div class="sorts-combat">${sorts.map(({ x, i, s }) => {
-      const max = num(x.max), reste = Math.max(0, max - num(x.utilises));
+      const infini = !!x.illimite, max = infini ? 0 : num(x.max), reste = Math.max(0, max - num(x.utilises));
       return `<div class="sort-c ${ecoleClass(s.ecole)}">
         <div class="sort-c-tete"><b>${esc(s.nom)}</b>
-          ${max ? `<span class="reste">${reste} / ${max}</span>` : ''}</div>
+          ${infini ? '<span class="reste">∞ à volonté</span>' : max ? `<span class="reste">${reste} / ${max}</span>` : ''}</div>
+        <p class="usages">${tagsUsages(s)}</p>
         <details class="effet"><summary>${esc(s.ecole)}${s.portee ? ', ' + esc(s.portee.split(' (')[0]) : ''} : voir l'effet</summary>
           <p>${esc(s.description || '')}</p>
           <dl class="fiche-sort">${[['Temps', s.incantation], ['Portée', s.portee], ['Cible', s.cible], ['Durée', s.duree], ['Jet de sauvegarde', s.sauvegarde], ['Résistance à la magie', s.rm]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
         </details>
         <div class="sort-c-pied">
-          <label class="mini">Par jour <input type="text" inputmode="numeric" data-bind="sorts.${i}.max" data-recalc value="${esc(x.max)}" placeholder="—"></label>
+          ${infini ? '' : `<label class="mini">Par jour <input type="text" inputmode="numeric" data-bind="sorts.${i}.max" data-recalc value="${esc(x.max)}" placeholder="—"></label>`}
+          <button class="chip ${infini ? 'on' : ''}" data-action="sort-infini" data-idx="${i}" title="Utilisable sans limite" aria-pressed="${infini}">∞</button>
           ${max ? `<button class="btn" data-action="sort-use" data-idx="${i}" ${reste ? '' : 'disabled'}>Lancer</button>${num(x.utilises) ? `<button class="lien" data-action="sort-annuler" data-idx="${i}">Annuler</button>` : ''}` : ''}
         </div>
       </div>`;
@@ -1049,6 +1124,60 @@ function pageMJ() {
   </section>`;
 }
 
+/* ===== La baguette du personnage ===== */
+const BAGUETTE_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true"><line x1="18" y1="86" x2="74" y2="26" stroke="#6B4E2C" stroke-width="5" stroke-linecap="round"/><line x1="18" y1="86" x2="74" y2="26" stroke="#B7935A" stroke-width="1.4" stroke-dasharray="3 6" stroke-linecap="round"/><path d="M78 10 L84 24 L78 40 L72 24Z" fill="#5E9ED6" transform="rotate(42 78 25)"/><circle cx="78" cy="23" r="13" fill="#9FD4F0" opacity=".18"/></svg>`;
+function ficheEncycloBaguette(p) {
+  return fichesToutes().find(f => f.type === 'objet' && norm(f.role) === norm('Baguette de ' + p.nom));
+}
+function carteBaguette(p) {
+  const b = p.baguette || {};
+  const mod = peutModifier(p);
+  if (mod && state.editBaguette === p.id) {
+    state.ctx = p;
+    const options = (p.sorts || []).map(x => findSort(x.id)).filter(Boolean);
+    const fe = ficheEncycloBaguette(p);
+    return `<section class="card baguette en-edition"><h3>Baguette</h3>
+      <div class="baguette-corps">
+        <div class="baguette-photo">
+          <button class="image-cadre" data-action="img-choisir" data-type="baguette" aria-label="${b.photo ? 'Changer' : 'Ajouter'} la photo de la baguette">${b.photo ? `<img src="${b.photo}" alt="">` : '<span>Ajouter une photo</span>'}</button>
+          ${b.photo ? '<button class="lien" data-action="img-retirer" data-type="baguette">Retirer la photo</button>' : ''}
+        </div>
+        <div class="grid">
+          ${fi(p, 'baguette.nom', 'Nom de la baguette', { span: true, ph: 'Ex. : Brise-Roc' })}
+          ${fi(p, 'baguette.longueur', 'Taille', { ph: '32 cm' })}${fi(p, 'baguette.poids', 'Poids', { ph: '120 g' })}
+          ${fi(p, 'baguette.bois', 'Bois ou matière', { span: true, ph: 'Chaîne séculaire' })}
+          ${fi(p, 'baguette.coeur', 'Cœur', { span: true, ph: 'Crin de licorne…' })}
+          <label class="f span2"><span>Sort ancré en ce moment</span><select data-bind="baguette.sortAncre" data-rerender><option value="">— Aucun —</option>${options.map(s => `<option value="${s.id}" ${b.sortAncre === s.id ? 'selected' : ''}>${esc(s.nom)}</option>`).join('')}</select></label>
+        </div>
+      </div>
+      ${ta(p, 'baguette.description', 'Description', { rows: 4, ph: 'Aspect, couleur, sensations quand on la tient…' })}
+      ${ta(p, 'baguette.histoire', 'Histoire et légende', { rows: 5, ph: 'D\'où vient-elle ? Qui l\'a fabriquée ? Que raconte-t-on à son sujet ?' })}
+      <div class="btns">
+        <button class="btn" data-action="baguette-fin">Terminé</button>
+        ${fe ? `<button class="btn ghost" data-action="baguette-encyclo">Reprendre la fiche « ${esc(fe.nom)} » de l'encyclopédie</button>` : ''}
+      </div>
+    </section>`;
+  }
+  const sortA = b.sortAncre && findSort(b.sortAncre);
+  const meta = [['Taille', b.longueur], ['Poids', b.poids], ['Bois', b.bois], ['Cœur', b.coeur]].filter(([, v]) => v);
+  const vide = !b.nom && !b.description && !b.photo;
+  return `<section class="card baguette"><h3>Baguette</h3>
+    <div class="baguette-corps">
+      <div class="baguette-photo">${b.photo ? `<img src="${b.photo}" alt="Baguette ${esc(b.nom || '')}">` : `<div class="baguette-vide">${BAGUETTE_SVG}</div>`}</div>
+      <div class="baguette-infos">
+        <p class="recit-num">Relique de l'ancien monde</p>
+        <h2 class="baguette-nom">${esc(b.nom || (vide ? 'Baguette sans nom' : ''))}</h2>
+        ${meta.length ? `<dl class="baguette-meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+        ${sortA ? `<p class="baguette-sort">Sort ancré : <a href="#/sort/${sortA.id}">${esc(sortA.nom)}</a></p>` : ''}
+      </div>
+    </div>
+    ${b.description ? `<div class="recit-texte baguette-texte">${formaterRecit(b.description)}</div>` : ''}
+    ${b.histoire ? `<details class="effet baguette-histoire" open><summary>Histoire et légende</summary><div class="recit-texte">${formaterRecit(b.histoire)}</div></details>` : ''}
+    ${vide ? '<p class="empty">Décris ici ta baguette : son nom, sa photo, sa taille, son histoire.</p>' : ''}
+    ${mod ? '<button class="btn ghost" data-action="baguette-edit">Modifier la baguette</button>' : ''}
+  </section>`;
+}
+
 function ficheCompetences(p, e) {
   const deClasse = compDeClasse(e);
   const dispo = pointsComp(p, e);
@@ -1188,7 +1317,7 @@ function ongletSorts(p) {
     .sort((a, b) => String(a.s?.nom ?? '').localeCompare(String(b.s?.nom ?? ''), 'fr'));
   const linked = items.map(({ e, i, s }) => `
     <div class="item ${ecoleClass(s?.ecole)}">
-      <div>${s ? `<a href="#/sort/${s.id}">${esc(s.nom)}</a><span class="meta">${esc(s.ecole)}, ${esc(niveauxTxt(s))}</span>`
+      <div>${s ? `<a href="#/sort/${s.id}">${esc(s.nom)}</a><span class="meta">${esc(s.ecole)}, ${esc(niveauxTxt(s))}</span><span class="usages">${tagsUsages(s)}</span>`
         : '<em>Sort supprimé du grimoire</em>'}</div>
       <select data-bind="sorts.${i}.statut" aria-label="Statut">
         ${STATUTS.map(st => `<option ${e.statut === st ? 'selected' : ''}>${st}</option>`).join('')}
@@ -1202,6 +1331,7 @@ function ongletSorts(p) {
   </section>
   <section class="card"><h3>Ajouter un sort</h3>
     <input type="search" id="pickq" value="${esc(state.pickQ)}" placeholder="Chercher un sort par nom…" aria-label="Chercher un sort">
+    <div class="chips usages-filtre">${[['', 'Tous'], ...Object.entries(USAGES_SORT)].map(([k, l]) => `<button class="chip ${(state.pickUsage || '') === k ? 'on' : ''}" data-action="pick-usage" data-u="${k}">${l}</button>`).join('')}</div>
     <div class="pick" id="pickres">${pickResults(p)}</div>
     <p class="hint">Un sort manque ? <a href="#/sort-edit/new">Ajoute-le au grimoire</a>, puis reviens ici.</p>
   </section>`;
@@ -1210,11 +1340,11 @@ function pickResults(p) {
   const q = norm(state.pickQ);
   const have = new Set((p.sorts || []).map(s => s.id));
   const res = db.sorts
-    .filter(s => !have.has(s.id) && (!q || norm(s.nom).includes(q) || norm(s.nomVO).includes(q)))
-    .sort(byNom).slice(0, 25);
+    .filter(s => !have.has(s.id) && (!q || norm(s.nom).includes(q) || norm(s.nomVO).includes(q)) && (!state.pickUsage || usagesSort(s).includes(state.pickUsage)))
+    .sort(byNom).slice(0, 40);
   if (!res.length) return '<p class="empty">Aucun sort correspondant.</p>';
   return res.map(s => `<button class="${ecoleClass(s.ecole)}" data-action="add-sort-perso" data-id="${s.id}">
-    <b>${esc(s.nom)}</b> <span class="meta">${esc(s.ecole)}, ${esc(niveauxTxt(s))}</span></button>`).join('');
+    <b>${esc(s.nom)}</b> <span class="meta">${esc(s.ecole)}, ${esc(niveauxTxt(s))}</span> ${tagsUsages(s)}<small class="pick-desc">${esc(String(s.description || '').slice(0, 110))}${String(s.description || '').length > 110 ? '…' : ''}</small></button>`).join('');
 }
 
 /* ---------- Progression ---------- */
@@ -2371,14 +2501,15 @@ function filtrerSorts() {
     (!q || norm(s.nom).includes(q) || norm(s.nomVO).includes(q) || norm(s.description).includes(q)) &&
     (!f.ecole || s.ecole === f.ecole) &&
     (!f.classe || (s.niveaux || []).some(n => n.classe === f.classe && (f.niveau === '' || n.niveau === Number(f.niveau)))) &&
-    (f.classe || f.niveau === '' || (s.niveaux || []).some(n => n.niveau === Number(f.niveau)))
+    (f.classe || f.niveau === '' || (s.niveaux || []).some(n => n.niveau === Number(f.niveau))) &&
+    (!f.usage || usagesSort(s).includes(f.usage))
   ).sort(byNom);
 }
 function resultatsSorts() {
   const res = filtrerSorts();
   const lis = res.map(s => `<li><a class="spell ${ecoleClass(s.ecole)}" href="#/sort/${s.id}">
       <span><span class="nom">${esc(s.nom)}</span>${s.source === 'Maison' ? '<span class="maison">maison</span>' : ''}<br>
-      <span class="tag">${esc(s.ecole)}${s.sousEcole ? ' (' + esc(s.sousEcole) + ')' : ''}</span></span>
+      <span class="tag">${esc(s.ecole)}${s.sousEcole ? ' (' + esc(s.sousEcole) + ')' : ''}</span> ${tagsUsages(s)}</span>
       <span class="meta">${esc(niveauxTxt(s))}</span></a></li>`).join('');
   return `<p class="count">${res.length} sort${res.length > 1 ? 's' : ''}</p>
     ${lis ? `<ul class="spells">${lis}</ul>` : '<p class="empty">Aucun sort ne correspond à ces filtres.</p>'}`;
@@ -2397,6 +2528,7 @@ function pageSorts() {
     <select data-filtre="ecole" aria-label="École">${opt('', 'Toutes les écoles', f.ecole)}${ECOLES.map(e => opt(e, e, f.ecole)).join('')}</select>
     <select data-filtre="classe" aria-label="Classe">${opt('', 'Toutes les classes', f.classe)}${classes.map(c => opt(c, CLASSES_ABR[c] || c, f.classe)).join('')}</select>
     <select data-filtre="niveau" aria-label="Niveau">${opt('', 'Tous niveaux', f.niveau)}${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => opt(String(n), 'Niveau ' + n, f.niveau)).join('')}</select>
+    <select data-filtre="usage" aria-label="Usage">${opt('', 'Tous les usages', f.usage)}${Object.entries(USAGES_SORT).map(([k, l]) => opt(k, l, f.usage)).join('')}</select>
   </div>
   <div id="sortres">${resultatsSorts()}</div>`;
 }
@@ -2414,6 +2546,7 @@ function pageSort(id) {
     <h1>${esc(s.nom)}${s.source === 'Maison' ? '<span class="maison">maison</span>' : ''}</h1>
     ${s.nomVO ? `<p class="sub">VO : ${esc(s.nomVO)}</p>` : ''}
     <p class="ecole">${esc(ecole)}</p>
+    <p class="usages">${tagsUsages(s)}</p>
   </div>
   <section class="card">
     <dl class="fiche-sort">
@@ -2453,6 +2586,9 @@ function pageSortEdit(id) {
       ${fi(d, 'duree', 'Durée')}${fi(d, 'sauvegarde', 'Jet de sauvegarde')}${fi(d, 'rm', 'Résistance à la magie')}
     </div>
     ${ta(d, 'description', 'Description', { rows: 8 })}
+    <div class="f"><span class="lbl">Usage (pour filtrer et aider à choisir)</span>
+      <div class="chips">${Object.entries(USAGES_SORT).map(([k, l]) => `<button class="chip ${(d.usages || usagesSort({ ...d, usages: null, _usages: null })).includes(k) ? 'on' : ''}" data-action="toggle-usage" data-u="${k}">${l}</button>`).join('')}</div>
+    </div>
     <p class="hint">Niveaux : abréviation de la classe suivie du niveau, séparés par des virgules. Abréviations utilisées : ${Object.entries(CLASSES_ABR).map(([k, v]) => `${k} (${v})`).join(', ')}.</p>
   </section>
   <button class="btn" data-action="save-sort">Enregistrer le sort</button>`;
@@ -2638,7 +2774,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -2707,6 +2843,7 @@ document.addEventListener('click', ev => {
       p[key] = p[key] || [];
       p[key].push(LIST_TEMPLATES[key]());
       const n = p[key].length - 1;
+      if (key === 'equipement') state.editObjet = p[key][n].id;
       save(); render();
       $(`[data-bind^="${key}.${n}."]`)?.focus();
       break;
@@ -2755,7 +2892,7 @@ document.addEventListener('click', ev => {
     case 'save-sort': {
       const d = state.draft;
       if (!String(d.nom || '').trim()) { toast('Donne un nom au sort'); break; }
-      const { niveauxTxt: nt, _for, ...sort } = d;
+      const { niveauxTxt: nt, _for, _usages, ...sort } = d;
       sort.niveaux = parseNiveaux(nt);
       if (sort.source === 'SRD') sort.modifie = true;
       const i = db.sorts.findIndex(s => s.id === sort.id);
@@ -3010,6 +3147,41 @@ document.addEventListener('click', ev => {
     case 'del-comp-perso':
       if (confirm('Supprimer cette compétence ?')) { p.compPerso.splice(idx, 1); save(); render(); }
       break;
+    case 'objet-edit':
+      state.editObjet = b.dataset.id; render();
+      break;
+    case 'objet-fin':
+      state.editObjet = null; save(); render();
+      break;
+    case 'baguette-edit':
+      state.editBaguette = p.id; p.baguette = p.baguette || {}; render();
+      break;
+    case 'baguette-fin':
+      state.editBaguette = null; save(); render();
+      break;
+    case 'baguette-encyclo': {
+      const fe = ficheEncycloBaguette(p);
+      if (!fe) break;
+      const txt = sansMentions(fe.description).replace(/^Baguette de [^,]+, remise par [^.]+\.\s*/, '');
+      const lg = txt.match(/(\d+)\s*cm/);
+      p.baguette = { ...(p.baguette || {}), nom: fe.nom, description: (p.baguette?.description ? p.baguette.description + '\n\n' : '') + txt, longueur: p.baguette?.longueur || (lg ? lg[1] + ' cm' : '') };
+      save(); render(); toast('Description reprise de l\'encyclopédie');
+      break;
+    }
+    case 'sort-infini':
+      p.sorts[idx].illimite = !p.sorts[idx].illimite; save(); render();
+      break;
+    case 'pick-usage':
+      state.pickUsage = b.dataset.u; $('#pickres').innerHTML = pickResults(p);
+      document.querySelectorAll('.usages-filtre .chip').forEach(c => c.classList.toggle('on', c.dataset.u === state.pickUsage));
+      break;
+    case 'toggle-usage': {
+      const d = state.draft;
+      const cur = d.usages && d.usages.length ? [...d.usages] : [...usagesSort({ ...d, usages: null, _usages: null })];
+      d.usages = cur.includes(b.dataset.u) ? cur.filter(x => x !== b.dataset.u) : [...cur, b.dataset.u];
+      render();
+      break;
+    }
     case 'nuit':
       if (!confirm('Une nuit de repos : toutes les capacités et les sorts du jour sont récupérés. Continuer ?')) break;
       p.compteurs = {};
@@ -3088,6 +3260,7 @@ document.addEventListener('click', ev => {
       $('#imginput').click();
       break;
     case 'img-retirer':
+      if (b.dataset.type === 'baguette') { if (confirm('Retirer la photo de la baguette ?')) { p.baguette.photo = ''; saveNow(); persoModifie(p); render(); } break; }
       if (confirm(b.dataset.type === 'portrait' ? 'Retirer le portrait ?' : 'Retirer l\'emblème ?')) { p[b.dataset.type] = ''; saveNow(); persoModifie(p); render(); }
       break;
     case 'toggle-langue': {
@@ -3210,6 +3383,12 @@ $('#imginput').addEventListener('change', async ev => {
   const p = state.ctx;
   if (!file || !p || !state.imgType) return;
   try {
+    if (state.imgType === 'baguette') {
+      p.baguette = { ...(p.baguette || {}), photo: await reduireImage(file, 900, 'image/jpeg') };
+      p.maj = Date.now();
+      saveNow(); persoModifie(p); render(); toast('Photo de la baguette ajoutée');
+      return;
+    }
     if (state.imgType === 'recap') {
       p.photo = await reduireImage(file, 1280, 'image/jpeg');
       p.photoMaj = Date.now();

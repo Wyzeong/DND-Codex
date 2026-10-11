@@ -813,3 +813,60 @@ button.banniere { border: none; cursor: pointer; font: inherit; width: 100%; }
 .cap-race[open] > summary::before { content: "▾ "; }
 .cap-race[open] > summary { margin-bottom: .5rem; }
 .avatar img, .image-cadre img, .mini-portrait, .mj-perso-tete img { object-position: 50% 18%; }
+
+/* ===== v16 ===== */
+/* Haut de fiche : baguette à gauche en grande case (écran large), au-dessus sur téléphone */
+.fiche-haut { display: grid; grid-template-columns: 1fr; gap: 0 1rem; }
+@media (min-width: 900px) { .fiche-haut { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; } }
+.baguette { border-color: var(--bronze); background: radial-gradient(120% 80% at 0% 0%, rgba(94, 158, 214, .12), transparent 55%), linear-gradient(180deg, rgba(16, 40, 58, .98), rgba(11, 30, 45, .98)); box-shadow: 0 0 0 1px rgba(183, 147, 90, .2), 0 10px 30px rgba(0, 0, 0, .25); }
+.baguette-corps { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; }
+@media (min-width: 480px) { .baguette-corps { grid-template-columns: 42% 1fr; align-items: start; } }
+.baguette-photo img, .baguette-photo .image-cadre { width: 100%; aspect-ratio: 3 / 4; object-fit: contain; background: var(--nuit-profonde); border: 1px solid var(--bronze); border-radius: var(--radius-m); display: block; }
+.baguette-photo .image-cadre { display: grid; }
+.baguette-vide { aspect-ratio: 3 / 4; display: grid; place-items: center; border: 1px dashed var(--line-bronze); border-radius: var(--radius-m); background: var(--nuit-profonde); }
+.baguette-vide svg { width: 60%; opacity: .8; }
+@media (max-width: 479px) { .baguette-photo img, .baguette-vide, .baguette-photo .image-cadre { aspect-ratio: 4 / 3; } }
+.baguette-nom { font-size: 1.5rem; color: var(--bronze-clair); margin: .1rem 0 .6rem; }
+.baguette-meta { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .9rem; margin: 0 0 .6rem; }
+.baguette-meta dt { color: var(--muted); }
+.baguette-meta dd { margin: 0; }
+.baguette-sort { margin: .2rem 0 0; }
+.baguette-texte { margin-top: .8rem; }
+.baguette-texte p:first-child::first-letter, .baguette-histoire p:first-child::first-letter { all: unset; }
+.baguette-histoire { margin: .5rem 0 .8rem; }
+.baguette .recit-num { margin-top: 0; }
+
+/* Objets en lecture */
+.objet-vue { background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius-s); padding: .5rem .65rem; }
+.objet-vue.range { opacity: .6; }
+.objet-vue-tete { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem; }
+.objet-vue-tete b { font-weight: 600; }
+.qte { color: var(--muted); font-size: .88rem; }
+.objet-modif { margin-left: auto; }
+.tag-cat { font-size: .7rem; border-radius: 99px; padding: 0 .5rem; border: 1px solid var(--line); color: var(--muted); }
+.cat-arme { border-color: var(--rouge); color: var(--rouge-clair); }
+.cat-munition { border-color: var(--bronze); color: var(--bronze-clair); }
+.cat-consommable { border-color: var(--emeraude); color: #8FD3C0; }
+.objet-det { margin: .2rem 0 0; font-size: .86rem; color: #CBD3D3; }
+.objet-bonus { margin: .25rem 0 0; display: flex; flex-wrap: wrap; gap: .5rem; font-size: .86rem; }
+.range-tag { color: var(--muted); font-style: italic; }
+.objet.en-edition { border-color: var(--bronze); }
+
+/* Usages des sorts */
+.usage { display: inline-block; font-size: .66rem; font-weight: 600; letter-spacing: .02em; border-radius: 99px; padding: 0 .45rem; margin: .1rem .2rem 0 0; border: 1px solid; vertical-align: middle; }
+.usage-offensif { color: #E58B6E; border-color: #8B4A3D; }
+.usage-controle { color: #C9A9F0; border-color: #6A4FA3; }
+.usage-protection { color: #8DBCE8; border-color: #3B6EA5; }
+.usage-soin { color: #8FD3C0; border-color: var(--emeraude); }
+.usage-amelioration { color: var(--bronze-clair); border-color: var(--bronze); }
+.usage-deplacement { color: #9FD4F0; border-color: var(--brume); }
+.usage-information { color: #DCCB86; border-color: #8A7A2E; }
+.usage-convocation { color: #7FCDB4; border-color: #2F7D6B; }
+.usage-utilitaire { color: var(--muted); border-color: var(--line); }
+.usages { margin: .2rem 0 0; }
+.linked .item .usages { display: block; }
+.pick-desc { display: block; color: var(--muted); font-size: .78rem; margin-top: .15rem; }
+.usages-filtre { margin: .5rem 0 .2rem; }
+.filters { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.filters .q { grid-column: 1 / -1; }
+.sort-c .usages { margin-bottom: .2rem; }
