@@ -483,3 +483,30 @@ details > summary { cursor: pointer; color: var(--bronze-clair); font-weight: 60
 .session-txt small { color: var(--muted); font-size: .8rem; }
 .session-extrait { color: #CBD3D3; font-size: .86rem; margin-top: .2rem; }
 .bottomnav a { flex-basis: 96px; }
+
+/* ---------- Récapitulatifs communs ---------- */
+.statut { flex: none; align-self: center; margin-left: auto; font-size: .72rem; font-weight: 600; border-radius: 99px; padding: .1rem .55rem; border: 1px solid var(--bronze); color: var(--bronze-clair); white-space: nowrap; }
+.statut-brouillon, .statut-modifie { border-color: var(--bronze); color: var(--bronze-clair); background: rgba(183, 147, 90, .1); }
+.bandeau { border-color: var(--line-bronze); background: linear-gradient(180deg, rgba(183, 147, 90, .12), rgba(13, 34, 50, .96)); }
+.bandeau p { margin: 0 0 .7rem; }
+.recit { max-width: 66ch; margin: 0 auto; text-align: left; }
+.recit h1 { font-size: clamp(1.5rem, 6vw, 2.1rem); }
+.recit-num { font-family: var(--font-titre); letter-spacing: .28em; text-transform: uppercase; font-size: .75rem; color: var(--bronze); margin: 1rem 0 .3rem; }
+.recit .ornement { margin: 1.1rem 0; max-width: 220px; }
+.recit-texte p { margin: 0 0 1rem; font-size: 1.06rem; line-height: 1.75; color: #E1DDD1; }
+.recit-texte p:first-child::first-letter { font-family: var(--font-titre); font-size: 2.6em; float: left; line-height: .9; padding: .08em .12em 0 0; color: var(--bronze); }
+.session-carte { align-items: flex-start; }
+
+/* ---------- Droits : lecture seule et revendication ---------- */
+fieldset.lecture { border: 0; padding: 0; margin: 0; min-width: 0; }
+fieldset.lecture input, fieldset.lecture textarea, fieldset.lecture select { opacity: 1; color: var(--ink); background: transparent; border-color: transparent; -webkit-text-fill-color: var(--ink); }
+fieldset.lecture input::placeholder, fieldset.lecture textarea::placeholder { color: transparent; }
+fieldset.lecture .btn, fieldset.lecture .icon, fieldset.lecture .lien, fieldset.lecture .chip:not(.on), fieldset.lecture .image-cadre span,
+fieldset.lecture [data-action="add-item"], fieldset.lecture .pick, fieldset.lecture #pickq, fieldset.lecture .ajustements { display: none; }
+fieldset.lecture select { appearance: none; -webkit-appearance: none; }
+fieldset.lecture .image-cadre { cursor: default; }
+.revendiquer summary { color: var(--muted); font-weight: 500; }
+.revendiquer[open] summary { margin-bottom: .5rem; }
+.revendiquer .row input { flex: 1 1 180px; }
+.admin { margin-top: .8rem; }
+.admin summary { font-size: .92rem; }

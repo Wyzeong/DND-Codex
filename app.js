@@ -58,6 +58,13 @@ let saveTimer;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveNow, 400);
+  signalerModif(state.ctx);
+}
+/* Une fiche ou une session modifiée part en ligne (si la base est configurée) */
+function signalerModif(o) {
+  if (!o) return;
+  if (db.personnages.includes(o)) { o.maj = Date.now(); persoModifie(o); }
+  else if ((db.sessions || []).includes(o)) { o.maj = Date.now(); notesModifiees(o.persoId); }
 }
 function saveNow() {
   try {
@@ -128,6 +135,7 @@ const state = {
   jq: '',               // recherche dans le journal
   typeNote: 'note',     // type de la prochaine note
   editNote: null,       // note en cours de modification
+  editRecap: null,      // récapitulatif en cours de modification
 };
 
 /* ---------- Visuels de la marque ---------- */
@@ -434,7 +442,7 @@ function pagePersos() {
   return `
     <header class="hero">
       ${LOGO_SVG}
-      <h1>Les Reliques<br>de l'Âge Oublié</h1>
+      <h1>L'Éveil<br>du Givre Éternel</h1>
       <p class="campagne">CAMPAGNE D&amp;D 3.5</p>
       <p class="devise">Il existe encore des secrets que le monde a oubliés…</p>
     </header>
@@ -461,7 +469,9 @@ function pagePerso(id, tab) {
   const e = etat(p);
   const tabs = [['fiche', 'Fiche'], ['sorts', 'Sorts'], ['progression', 'Progression']]
     .map(([k, l]) => `<a href="#/perso/${p.id}/${k}" class="${tab === k ? 'active' : ''}">${l}</a>`).join('');
-  const body = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : ongletFiche(p, e);
+  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : ongletFiche(p, e);
+  const lecture = !peutModifier(p);
+  const body = lecture ? `<fieldset class="lecture" disabled>${contenu}</fieldset>` : contenu;
   return `
     <div class="pagehead">
       <div class="titre-perso">
@@ -471,9 +481,10 @@ function pagePerso(id, tab) {
       </div>
       <div class="btns">
         <button class="btn ghost" data-action="export-perso">Exporter la fiche</button>
-        <button class="btn danger" data-action="del-perso">Supprimer</button>
+        ${peutModifier(p) ? '<button class="btn danger" data-action="del-perso">Supprimer</button>' : ''}
       </div>
     </div>
+    ${encartDroits(p)}
     ${recap(p, e)}
     <nav class="tabs" aria-label="Sections du personnage">${tabs}</nav>
     ${body}`;
@@ -848,19 +859,35 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
     <div class="choix">${choix.join('')}</div>`;
 }
 
-/* ---------- Journal de campagne ---------- */
+/* ---------- Journal : récapitulatifs communs et notes personnelles ---------- */
 const TYPES_NOTES = {
   note: 'Note', indice: 'Indice', pnj: 'PNJ', lieu: 'Lieu', quete: 'Quête', butin: 'Butin', question: 'Question',
 };
 const TYPES_SUIVIS = ['question', 'quete'];
 const findSession = id => (db.sessions || []).find(s => s.id === id);
-const sessionsTriees = () => [...(db.sessions || [])].sort((a, b) => (b.numero || 0) - (a.numero || 0));
+const carnetActif = () => {
+  if (!enLigne()) return null;
+  const mine = mesPersos();
+  if (!mine.length) return null;
+  return mine.some(p => p.id === state.carnet) ? state.carnet : mine[0].id;
+};
+const sessionsTriees = () => [...(db.sessions || [])]
+  .filter(s => !enLigne() || s.persoId === carnetActif())
+  .sort((a, b) => num(b.numero) - num(a.numero));
 const titreSession = s => `Session ${s.numero}${s.titre ? ' : ' + s.titre : ''}`;
 const dateFr = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 const heure = t => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
+function sousNav(actif) {
+  return `<nav class="tabs" aria-label="Journal">
+    <a href="#/recaps" class="${actif === 'recaps' ? 'active' : ''}">Récapitulatifs</a>
+    <a href="#/notes" class="${actif === 'notes' ? 'active' : ''}">Mes notes</a>
+  </nav>`;
+}
+
 /* Mentions : @Nom ou @[Nom en plusieurs mots] */
 const RE_MENTION = /@\[([^\]]+)\]|@([\p{L}\p{N}_'’-]+)/gu;
+const sansMentions = t => String(t || '').replace(RE_MENTION, (m, a, b) => (a || b.replace(/_/g, ' ')).trim());
 function mentionsDe(texte) {
   return [...String(texte || '').matchAll(RE_MENTION)].map(m => (m[1] || m[2].replace(/_/g, ' ')).trim()).filter(Boolean);
 }
@@ -869,29 +896,224 @@ function avecMentions(texte) {
   let out = '', last = 0;
   for (const m of t.matchAll(RE_MENTION)) {
     const nom = (m[1] || m[2].replace(/_/g, ' ')).trim();
-    out += esc(t.slice(last, m.index)) + `<a class="mention" href="#/journal/recherche/${encodeURIComponent(nom)}">${esc(nom)}</a>`;
+    out += esc(t.slice(last, m.index)) + `<a class="mention" href="#/notes/recherche/${encodeURIComponent(nom)}">${esc(nom)}</a>`;
     last = m.index + m[0].length;
   }
   return (out + esc(t.slice(last))).replace(/\n/g, '<br>');
 }
 function indexMentions() {
   const compte = new Map();
-  for (const s of db.sessions || []) {
-    const textes = [s.recap, ...(s.notes || []).map(n => n.texte)];
-    /* Chaque passage (note ou récapitulatif) ne compte qu'une fois par nom */
-    for (const nom of textes.flatMap(t => [...new Map(mentionsDe(t).map(m => [norm(m), m])).values()])) {
-      const cle = norm(nom);
-      const cur = compte.get(cle) || { nom, n: 0 };
-      cur.n++;
-      compte.set(cle, cur);
+  for (const s of sessionsTriees()) {
+    for (const n of s.notes || []) {
+      for (const nom of new Map(mentionsDe(n.texte).map(m => [norm(m), m])).values()) {
+        const cle = norm(nom);
+        const cur = compte.get(cle) || { nom, n: 0 };
+        cur.n++;
+        compte.set(cle, cur);
+      }
     }
   }
   return [...compte.values()].sort((a, b) => b.n - a.n || a.nom.localeCompare(b.nom, 'fr'));
 }
 
+/* ===== Récapitulatifs communs =====
+   La version publiée vient de recaps.json, à la racine du site (identique pour tout le monde).
+   Les créations et modifications restent locales tant qu'elles ne sont pas publiées. */
+const champsRecap = r => JSON.stringify(['numero', 'date', 'titre', 'auteur', 'texte'].map(k => String(r[k] ?? '')));
+const recapsPublies = () => db.recapsPublies || [];
+function recapsTous() {
+  const supprimes = new Set(db.recapsSupprimes || []);
+  const m = new Map(recapsPublies().map(r => [r.id, r]));
+  for (const r of db.recaps || []) m.set(r.id, r);
+  return [...m.values()].filter(r => !supprimes.has(r.id)).sort((a, b) => num(b.numero) - num(a.numero));
+}
+const findRecap = id => recapsTous().find(r => r.id === id);
+function statutRecap(r) {
+  const pub = recapsPublies().find(x => x.id === r.id);
+  const loc = (db.recaps || []).find(x => x.id === r.id);
+  if (!pub) return 'brouillon';
+  if (loc && champsRecap(loc) !== champsRecap(pub)) return 'modifie';
+  return 'publie';
+}
+const STATUTS_RECAP = { brouillon: 'Non publié', modifie: 'Modifié, non publié', publie: 'Publié' };
+const aPublier = () => recapsTous().filter(r => statutRecap(r) !== 'publie').length + (db.recapsSupprimes || []).length;
+
+/* Base de données en ligne (Supabase), configurée dans config.js */
+const CFG = window.CODEX_CONFIG || {};
+const enLigne = () => !!(CFG.supabaseUrl && CFG.supabaseCle) && !/XXXX/.test(CFG.supabaseUrl + CFG.supabaseCle);
+async function api(chemin, opts = {}) {
+  const entetes = { apikey: CFG.supabaseCle, 'Content-Type': 'application/json' };
+  if (CFG.supabaseCle.startsWith('eyJ')) entetes.Authorization = 'Bearer ' + CFG.supabaseCle; // ancienne clé « anon »
+  const res = await fetch(CFG.supabaseUrl.replace(/\/+$/, '') + '/rest/v1/' + chemin, { ...opts, headers: { ...entetes, ...(opts.headers || {}) } });
+  if (!res.ok) {
+    let msg = 'erreur ' + res.status;
+    try { const j = await res.json(); msg = j.message || msg; } catch (e) { /* réponse vide */ }
+    throw new Error(msg);
+  }
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+const rpc = (fonction, args) => api('rpc/' + fonction, { method: 'POST', body: JSON.stringify(args) });
+
+async function chargerRecaps() {
+  try {
+    let pub;
+    if (enLigne()) {
+      const lignes = await api('recaps?select=id,numero,date,titre,auteur,texte,maj&order=numero.desc');
+      pub = (lignes || []).map(r => ({ ...r, date: r.date || '', titre: r.titre || '', auteur: r.auteur || '', texte: r.texte || '' }));
+    } else {
+      const res = await fetch('recaps.json', { cache: 'no-store' });
+      if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status);
+      pub = res.ok ? ((await res.json()).recaps || []) : [];
+    }
+    db.recapsPublies = pub;
+    /* Ce qui est désormais publié à l'identique n'a plus besoin d'être gardé en local */
+    db.recaps = (db.recaps || []).filter(l => { const p = pub.find(x => x.id === l.id); return !p || champsRecap(p) !== champsRecap(l); });
+    db.recapsSupprimes = (db.recapsSupprimes || []).filter(id => pub.some(x => x.id === id));
+    state.recapsCharges = Date.now();
+    state.recapsErreur = '';
+    saveNow();
+    return true;
+  } catch (e) {
+    console.warn('Récapitulatifs publiés indisponibles', e);
+    state.recapsErreur = e.message;
+    return false;
+  }
+}
+
+/* Envoie en ligne tout ce qui n'est pas encore publié */
+async function publierTout() {
+  if (!db.codeCampagne) { toast('Saisis d\'abord le code de campagne'); return; }
+  const aEnvoyer = recapsTous().filter(r => statutRecap(r) !== 'publie');
+  try {
+    for (const r of aEnvoyer) {
+      await rpc('publier_recap', {
+        p_code: db.codeCampagne, p_id: r.id, p_numero: Math.round(num(r.numero)), p_date: r.date || null,
+        p_titre: r.titre || '', p_auteur: r.auteur || '', p_texte: r.texte || '',
+      });
+    }
+    for (const id of db.recapsSupprimes || []) await rpc('supprimer_recap', { p_code: db.codeCampagne, p_id: id });
+    await chargerRecaps();
+    render();
+    toast('Publié pour toute la compagnie');
+  } catch (e) {
+    if (/code/i.test(e.message)) { db.codeCampagne = ''; saveNow(); render(); }
+    alert('Publication impossible : ' + e.message);
+  }
+}
+
+function recapLocal(id) {
+  db.recaps = db.recaps || [];
+  let r = db.recaps.find(x => x.id === id);
+  if (!r) {
+    const pub = recapsPublies().find(x => x.id === id);
+    if (!pub) return null;
+    r = { ...pub };
+    db.recaps.push(r);
+  }
+  return r;
+}
+function nouveauRecap(depuis) {
+  const numero = depuis ? depuis.numero : recapsTous().reduce((m, r) => Math.max(m, num(r.numero)), 0) + 1;
+  return {
+    id: uid(), numero, date: depuis ? depuis.date : new Date().toISOString().slice(0, 10),
+    titre: depuis ? depuis.titre : '', auteur: '', texte: depuis ? brouillonRecap(depuis) : '', maj: Date.now(),
+  };
+}
+
+function bandeauPublication() {
+  const n = aPublier();
+  if (!n) return state.recapsErreur && enLigne() ? `<p class="hint">Base de données injoignable (${esc(state.recapsErreur)}). Les récapitulatifs affichés sont ceux du dernier chargement.</p>` : '';
+  const pluriel = n > 1 ? 's' : '';
+  if (enLigne()) {
+    return `<section class="card bandeau">
+      <h3>À publier</h3>
+      <p>${n} récapitulatif${pluriel} pas encore publié${pluriel}. Tant qu'ils ne le sont pas, les autres joueurs ne les voient pas.</p>
+      <div class="btns" style="margin-top:.6rem"><button class="btn" data-action="publier-tout">Publier maintenant</button></div>
+    </section>`;
+  }
+  return `<section class="card bandeau">
+    <h3>À publier</h3>
+    <p>${n} récapitulatif${pluriel} modifié${pluriel} sur cet appareil seulement. Tant qu'ils ne sont pas publiés, les autres joueurs ne les voient pas.</p>
+    <div class="btns"><button class="btn" data-action="export-recaps">Exporter recaps.json</button></div>
+    <p class="hint">Ensuite, place <b>recaps.json</b> dans le dossier du site et fais un <b>git push</b>. Un autre joueur peut aussi t'envoyer ce fichier : importe-le depuis l'onglet Partage, puis publie.</p>
+  </section>`;
+}
+
+function pageRecaps() {
+  const liste = recapsTous();
+  const joueurs = liste.map(r => {
+    const st = statutRecap(r);
+    return `<a class="session-carte" href="#/recap/${r.id}">
+      <span class="session-num">${esc(r.numero)}</span>
+      <span class="session-txt"><b>${esc(r.titre || 'Sans titre')}</b>
+        <small>${esc([r.auteur ? 'Raconté par ' + r.auteur : '', dateFr(r.date)].filter(Boolean).join(', '))}</small>
+        ${r.texte ? `<span class="session-extrait">${esc(sansMentions(r.texte).replace(/\s+/g, ' ').slice(0, 150))}${r.texte.length > 150 ? '…' : ''}</span>` : ''}
+      </span>
+      ${st !== 'publie' ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
+    </a>`;
+  }).join('');
+  return `${sousNav('recaps')}
+  <div class="pagehead">
+    <div><h1>Récapitulatifs</h1><p class="sub">Le récit lu en début de session, commun à toute la compagnie</p></div>
+    ${estAdmin() ? '<button class="btn" data-action="new-recap">Nouveau récapitulatif</button>' : ''}
+  </div>
+  ${estAdmin() ? bandeauPublication() : ''}
+  <section class="card"><h3>Les sessions racontées</h3>
+    ${joueurs ? `<div class="sessions">${joueurs}</div>` : '<p class="empty">Aucun récapitulatif publié pour l\'instant.</p>'}
+  </section>`;
+}
+
+function pageRecap(id) {
+  const r = findRecap(id);
+  if (!r) return `${sousNav('recaps')}<p>Récapitulatif introuvable. <a href="#/recaps">Retour aux récapitulatifs</a></p>`;
+  const st = statutRecap(r);
+  if (state.editRecap === id && estAdmin()) {
+    const loc = recapLocal(id);
+    state.ctx = loc;
+    state.editRecapObj = loc;
+    const noms = [...new Set([...db.personnages.map(p => p.joueur), ...db.personnages.map(p => p.nom)].filter(Boolean))];
+    return `${sousNav('recaps')}
+    <p><a href="#/recaps">← Récapitulatifs</a></p>
+    <h1>Modifier le récapitulatif</h1>
+    <section class="card" style="margin-top:1rem">
+      <div class="grid">
+        ${fi(loc, 'numero', 'Session n°', { type: 'number' })}
+        ${fi(loc, 'date', 'Date de la session', { type: 'date' })}
+        ${fi(loc, 'titre', 'Titre', { ph: 'Ex. : Le tombeau des anciens', span: true })}
+        <label class="f span2"><span>Raconté par</span>
+          <input type="text" list="liste-auteurs" data-bind="auteur" value="${esc(loc.auteur)}" placeholder="Le joueur qui fait le récit"></label>
+        <datalist id="liste-auteurs">${noms.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      </div>
+      ${ta(loc, 'texte', 'Récit', { rows: 16, ph: 'La dernière fois, la compagnie…' })}
+      <div class="btns">
+        ${enLigne() ? '<button class="btn" data-action="recap-publier">Enregistrer et publier</button><button class="btn ghost" data-action="recap-fin">Enregistrer sans publier</button>' : '<button class="btn" data-action="recap-fin">Terminé</button>'}
+        <button class="btn danger" data-action="del-recap" data-id="${r.id}">Supprimer</button>
+      </div>
+    </section>`;
+  }
+  const paragraphes = sansMentions(r.texte).split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+  return `${sousNav('recaps')}
+  <p><a href="#/recaps">← Récapitulatifs</a></p>
+  <article class="recit">
+    <p class="recit-num">Session ${esc(r.numero)}</p>
+    <h1>${esc(r.titre || 'Sans titre')}</h1>
+    <p class="sub">${esc([r.auteur ? 'Raconté par ' + r.auteur : '', dateFr(r.date)].filter(Boolean).join(', '))}</p>
+    <div class="ornement" aria-hidden="true"><span></span></div>
+    <div class="recit-texte">${paragraphes || '<p class="empty">Le récit n\'est pas encore écrit.</p>'}</div>
+  </article>
+  <div class="btns" style="margin-top:1rem">
+    ${estAdmin() ? `<button class="btn" data-action="recap-edit" data-id="${r.id}">Modifier</button>` : ''}
+    <button class="btn ghost" data-action="recap-copier" data-id="${r.id}">Copier le texte</button>
+    ${st !== 'publie' ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
+  </div>
+  ${st !== 'publie' && estAdmin() ? bandeauPublication() : ''}`;
+}
+
+/* ===== Notes personnelles ===== */
 function nouvelleSession() {
-  const numero = (db.sessions || []).reduce((m, s) => Math.max(m, s.numero || 0), 0) + 1;
-  return { id: uid(), numero, date: new Date().toISOString().slice(0, 10), titre: '', recap: '', notes: [], maj: Date.now() };
+  const numero = sessionsTriees().reduce((m, s) => Math.max(m, num(s.numero)), 0) + 1;
+  return { id: uid(), persoId: carnetActif() || undefined, numero, date: new Date().toISOString().slice(0, 10), titre: '', notes: [], maj: Date.now() };
 }
 
 function noteHtml(n, i, s, editable) {
@@ -917,18 +1139,35 @@ function noteHtml(n, i, s, editable) {
   </li>`;
 }
 
-function pageJournal(mode, q) {
+function pageNotes(mode, q) {
   if (mode === 'recherche' && q != null) state.jq = decodeURIComponent(q);
+  const carnet = carnetActif();
+  if (enLigne() && !carnet) {
+    return `${sousNav('notes')}
+    <h1>Mes notes</h1>
+    <section class="card intro" style="margin-top:1rem"><h3>D'abord, ton personnage</h3>
+      <p>Les notes sont rattachées à ton personnage et protégées par son code personnel : personne d'autre ne peut les lire.</p>
+      <p>Crée ton personnage, ou ouvre sa fiche et touche « C'est ton personnage ? » pour saisir ton code sur cet appareil.</p>
+      <a class="btn" href="#/persos">Aller aux personnages</a>
+    </section>`;
+  }
+  if (carnet) {
+    /* Notes d'avant la mise en ligne : rangées dans le carnet du personnage */
+    const orphelines = (db.sessions || []).filter(s => !s.persoId);
+    if (orphelines.length) { orphelines.forEach(s => { s.persoId = carnet; }); saveNow(); notesModifiees(carnet); }
+  }
   const sessions = sessionsTriees();
-  return `
+  const mine = mesPersos();
+  return `${sousNav('notes')}
   <div class="pagehead">
-    <div><h1>Journal</h1><p class="sub">Notes et récapitulatifs de session</p></div>
+    <div><h1>Mes notes</h1><p class="sub">${enLigne() ? `Carnet de ${esc(findPerso(carnet)?.nom || '')}, visible de toi seul` : 'Personnelles : elles restent sur cet appareil'}</p></div>
     <div class="btns">
       <button class="btn" data-action="new-session">Nouvelle session</button>
-      ${sessions[0] ? `<a class="btn ghost" href="#/session/${sessions[0].id}">Reprendre la session ${sessions[0].numero}</a>` : ''}
+      ${sessions[0] ? `<a class="btn ghost" href="#/session/${sessions[0].id}">Reprendre la session ${esc(sessions[0].numero)}</a>` : ''}
     </div>
   </div>
-  <input type="search" id="jq" value="${esc(state.jq)}" placeholder="Chercher dans toutes les notes : un nom, un lieu, un mot…" aria-label="Chercher dans le journal">
+  ${mine.length > 1 && enLigne() ? `<label class="f" style="margin-bottom:.8rem"><span>Carnet de notes</span><select id="carnet">${mine.map(x => `<option value="${x.id}" ${x.id === carnet ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select></label>` : ''}
+  <input type="search" id="jq" value="${esc(state.jq)}" placeholder="Chercher dans toutes mes notes : un nom, un lieu, un mot…" aria-label="Chercher dans mes notes">
   <div id="jres">${resultatsJournal()}</div>`;
 }
 
@@ -937,28 +1176,19 @@ function resultatsJournal() {
   const q = norm(state.jq).trim();
   if (q) {
     const res = [];
-    for (const s of sessions) {
-      (s.notes || []).forEach(n => { if (norm(n.texte).includes(q)) res.push(noteHtml(n, 0, s, false)); });
-      if (norm(s.recap).includes(q) || norm(s.titre).includes(q)) {
-        res.push(`<li class="note note-recap"><div class="note-tete"><span class="type-note">Récapitulatif</span><a class="note-session" href="#/session/${s.id}">${esc(titreSession(s))}</a></div>
-          <p>${avecMentions(extrait(s.recap || s.titre, q))}</p></li>`);
-      }
-    }
+    for (const s of sessions) (s.notes || []).forEach(n => { if (norm(n.texte).includes(q)) res.push(noteHtml(n, 0, s, false)); });
     return `<p class="count">${res.length} résultat${res.length > 1 ? 's' : ''} pour « ${esc(state.jq)} » <button class="lien" data-action="jq-effacer">Effacer</button></p>
       ${res.length ? `<ul class="notes">${res.join('')}</ul>` : '<p class="empty">Rien trouvé. Essaie un autre mot.</p>'}`;
   }
-
   const fils = [];
   for (const s of sessions) for (const n of s.notes || []) if (TYPES_SUIVIS.includes(n.type) && !n.resolu) fils.push(noteHtml(n, 0, s, false));
   const index = indexMentions();
   const cartes = sessions.map(s => {
     const nb = (s.notes || []).length;
     return `<a class="session-carte" href="#/session/${s.id}">
-      <span class="session-num">${s.numero}</span>
+      <span class="session-num">${esc(s.numero)}</span>
       <span class="session-txt"><b>${esc(s.titre || 'Sans titre')}</b>
-        <small>${esc(dateFr(s.date))}${nb ? `, ${nb} note${nb > 1 ? 's' : ''}` : ''}${s.recap ? ', récap rédigé' : ''}</small>
-        ${s.recap ? `<span class="session-extrait">${esc(String(s.recap).replace(/\s+/g, ' ').slice(0, 140))}${s.recap.length > 140 ? '…' : ''}</span>` : ''}
-      </span></a>`;
+        <small>${esc(dateFr(s.date))}${nb ? `, ${nb} note${nb > 1 ? 's' : ''}` : ''}</small></span></a>`;
   }).join('');
   return `
   ${fils.length ? `<section class="card"><h3>Fils rouges</h3>
@@ -969,25 +1199,21 @@ function resultatsJournal() {
   </section>
   ${index.length ? `<section class="card"><h3>Index</h3>
     <p class="hint">Tout ce que tu as mentionné avec @ dans tes notes. Touche un nom pour retrouver chaque passage.</p>
-    <div class="chips">${index.map(m => `<a class="chip" href="#/journal/recherche/${encodeURIComponent(m.nom)}">${esc(m.nom)} <small>${m.n}</small></a>`).join('')}</div>
+    <div class="chips">${index.map(m => `<a class="chip" href="#/notes/recherche/${encodeURIComponent(m.nom)}">${esc(m.nom)} <small>${m.n}</small></a>`).join('')}</div>
   </section>` : ''}`;
-}
-function extrait(texte, q) {
-  const t = String(texte || '');
-  const i = norm(t).indexOf(q);
-  const d = Math.max(0, i - 60);
-  return (d > 0 ? '…' : '') + t.slice(d, i + q.length + 100) + (i + q.length + 100 < t.length ? '…' : '');
 }
 
 function pageSession(id) {
-  const s = findSession(id);
-  if (!s) return `<p>Session introuvable. <a href="#/journal">Retour au journal</a></p>`;
+  const s0 = findSession(id);
+  const s = s0 && (!enLigne() || mesPersos().some(p => p.id === s0.persoId)) ? s0 : null;
+  if (!s) return `${sousNav('notes')}<p>Session introuvable. <a href="#/notes">Retour à mes notes</a></p>`;
   state.ctx = s;
   const notes = (s.notes || []).map((n, i) => ({ n, i })).reverse();
   const type = state.typeNote || 'note';
-  return `
-  <p><a href="#/journal">← Journal</a></p>
-  <div class="pagehead"><div><h1>${esc(titreSession(s))}</h1><p class="sub">${esc(dateFr(s.date))}</p></div>
+  const recap = recapsTous().find(r => String(r.numero) === String(s.numero));
+  return `${sousNav('notes')}
+  <p><a href="#/notes">← Mes notes</a></p>
+  <div class="pagehead"><div><h1>${esc(titreSession(s))}</h1><p class="sub">${esc(dateFr(s.date))}, notes personnelles</p></div>
     <button class="btn danger" data-action="del-session">Supprimer la session</button></div>
   <section class="card">
     <div class="grid">
@@ -1003,14 +1229,18 @@ function pageSession(id) {
     </div>
     <textarea id="nouvelle-note" rows="2" placeholder="Ce qui vient de se passer… (Entrée pour enregistrer)" aria-label="Nouvelle note"></textarea>
     <div class="btns" style="margin-top:.5rem"><button class="btn" data-action="add-note">Ajouter la note</button></div>
-    <p class="hint">Écris <b>@Nom</b> pour un PNJ, un lieu ou un objet (<b>@[Nom en plusieurs mots]</b> s'il y a des espaces) : il rejoint l'index du journal. Maj + Entrée pour aller à la ligne.</p>
+    <p class="hint">Écris <b>@Nom</b> pour un PNJ, un lieu ou un objet (<b>@[Nom en plusieurs mots]</b> s'il y a des espaces) : il rejoint l'index de tes notes. Maj + Entrée pour aller à la ligne.</p>
     ${notes.length ? `<ul class="notes">${notes.map(({ n, i }) => noteHtml(n, i, null, true)).join('')}</ul>` : '<p class="empty">Pas encore de note pour cette session.</p>'}
   </section>
 
-  <section class="card"><h3>Récapitulatif</h3>
-    <p class="hint">À rédiger après la partie. Le brouillon reprend tes notes, classées par type : il ne reste qu'à écrire le résumé.</p>
-    <div class="btns" style="margin-bottom:.6rem"><button class="btn ghost" data-action="recap-brouillon">Préparer un brouillon depuis les notes</button></div>
-    <textarea data-bind="recap" rows="14" aria-label="Récapitulatif de la session">${esc(s.recap)}</textarea>
+  <section class="card"><h3>Récapitulatif commun</h3>
+    ${recap
+      ? `<p>Le récapitulatif de la session ${esc(s.numero)} existe déjà${recap.auteur ? `, raconté par ${esc(recap.auteur)}` : ''}.</p>
+         <a class="btn ghost" href="#/recap/${recap.id}">Lire le récapitulatif</a>`
+      : estAdmin()
+        ? `<p class="hint">Prépare le récapitulatif à partir de tes notes, classées par type. Seul le texte du récapitulatif sera partagé : tes notes restent privées.</p>
+           <button class="btn ghost" data-action="new-recap" data-session="${s.id}">Préparer le récapitulatif depuis mes notes</button>`
+        : '<p class="hint">Pas encore de récapitulatif pour cette session. Il apparaîtra dans l\'onglet Récapitulatifs dès qu\'il sera enregistré.</p>'}
   </section>`;
 }
 
@@ -1018,10 +1248,10 @@ function brouillonRecap(s) {
   const notes = s.notes || [];
   const bloc = (titre, type) => {
     const l = notes.filter(n => n.type === type);
-    return l.length ? [titre, ...l.map(n => `- ${n.texte.replace(/\n+/g, ' ')}${n.resolu ? ' (résolu)' : ''}`), ''] : [];
+    return l.length ? [titre, ...l.map(n => `- ${sansMentions(n.texte).replace(/\n+/g, ' ')}${n.resolu ? ' (résolu)' : ''}`), ''] : [];
   };
   return [
-    'Résumé', '(Ce qui s\'est passé, en quelques phrases.)', '',
+    'La dernière fois…', '', '(Écris ici le récit à lire en début de session, puis supprime les listes ci-dessous.)', '',
     ...bloc('Quêtes', 'quete'), ...bloc('Indices', 'indice'), ...bloc('PNJ', 'pnj'), ...bloc('Lieux', 'lieu'),
     ...bloc('Butin', 'butin'), ...bloc('Questions en suspens', 'question'), ...bloc('Autres notes', 'note'),
   ].join('\n').trim();
@@ -1037,8 +1267,194 @@ function ajouterNote() {
   s.maj = Date.now();
   state.typeNote = 'note';
   saveNow();
+  notesModifiees(s.persoId);
   render();
   $('#nouvelle-note')?.focus();
+}
+
+/* Les récapitulatifs rédigés dans l'ancienne version deviennent des récapitulatifs communs non publiés */
+function migrerSessions(liste) {
+  db.recaps = db.recaps || [];
+  for (const s of liste || []) {
+    if (s.recap && String(s.recap).trim()) {
+      db.recaps.push({ id: uid(), numero: s.numero, date: s.date, titre: s.titre || '', auteur: '', texte: s.recap, maj: s.maj || Date.now() });
+    }
+    delete s.recap;
+  }
+}
+
+/* ---------- Droits et synchronisation en ligne ---------- */
+/* Hors ligne (pas de config.js), tout reste local et tout est modifiable, comme avant. */
+const estAdmin = () => !enLigne() || !!db.codeCampagne;
+const estAMoi = p => !enLigne() || !!(db.cles || {})[p.id];
+const peutModifier = p => !!p && (estAMoi(p) || (enLigne() && !!db.codeCampagne) || (enLigne() && !p.publie));
+const codePour = p => (db.cles || {})[p.id] || db.codeCampagne || '';
+const mesPersos = () => db.personnages.filter(p => enLigne() ? !!(db.cles || {})[p.id] : true);
+
+function statutSync(txt, persistant = false) {
+  const s = $('#status');
+  if (!s) return;
+  s.textContent = txt;
+  s.classList.add('on');
+  clearTimeout(statutSync._t);
+  if (!persistant) statutSync._t = setTimeout(() => s.classList.remove('on'), 2000);
+}
+
+/* Personnages : la version en ligne fait foi, sauf modification locale pas encore envoyée */
+async function chargerPersos() {
+  if (!enLigne()) return false;
+  try {
+    const lignes = await api('persos?select=id,data,maj') || [];
+    const enLigneIds = new Set(lignes.map(l => l.id));
+    const attente = new Set(db.enAttente || []);
+    const res = [];
+    for (const l of lignes) {
+      const local = findPerso(l.id);
+      if (local && attente.has(l.id)) { res.push(local); continue; }
+      const data = { ...l.data, id: l.id, publie: true };
+      migrer(data);
+      if (local) { for (const k of Object.keys(local)) delete local[k]; Object.assign(local, data); res.push(local); }
+      else res.push(data);
+    }
+    /* Gardés : les personnages jamais mis en ligne. Retirés : ceux supprimés en ligne par leur propriétaire. */
+    for (const p of db.personnages) if (!enLigneIds.has(p.id) && (!p.publie || attente.has(p.id))) res.push(p);
+    db.personnages = res;
+    state.syncErreur = '';
+    state.persosCharges = Date.now();
+    saveNow();
+    return true;
+  } catch (e) {
+    state.syncErreur = e.message;
+    console.warn('Personnages en ligne indisponibles', e);
+    return false;
+  }
+}
+
+let envoiTimer;
+function persoModifie(p) {
+  if (!enLigne() || !p || !p.publie || !codePour(p)) return;
+  db.enAttente = [...new Set([...(db.enAttente || []), p.id])];
+  clearTimeout(envoiTimer);
+  envoiTimer = setTimeout(envoyerPersos, 1500);
+}
+async function envoyerPersos() {
+  if (!enLigne()) return;
+  for (const id of [...(db.enAttente || [])]) {
+    const p = findPerso(id);
+    if (!p || !codePour(p)) { db.enAttente = db.enAttente.filter(x => x !== id); continue; }
+    try {
+      await rpc('sauver_perso', { p_id: id, p_code: codePour(p), p_data: { ...p, publie: true } });
+      db.enAttente = db.enAttente.filter(x => x !== id);
+      state.syncErreur = '';
+      statutSync('Synchronisé');
+    } catch (e) {
+      state.syncErreur = e.message;
+      statutSync('Hors ligne : en attente d\'envoi', true);
+      if (/code/i.test(e.message)) { delete db.cles[id]; db.enAttente = db.enAttente.filter(x => x !== id); alert(`« ${p.nom} » : ${e.message}.`); render(); }
+      break;
+    }
+  }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* saveNow gère l'alerte */ }
+}
+
+async function mettreEnLigne(p, code) {
+  await rpc('sauver_perso', { p_id: p.id, p_code: code, p_data: { ...p, publie: true } });
+  db.cles = db.cles || {};
+  db.cles[p.id] = code;
+  p.publie = true;
+  saveNow();
+}
+
+/* Notes : une ligne par personnage, lisible uniquement avec son code personnel */
+let notesTimer;
+function notesModifiees(persoId) {
+  if (!enLigne() || !persoId || !(db.cles || {})[persoId]) return;
+  db.notesEnAttente = [...new Set([...(db.notesEnAttente || []), persoId])];
+  clearTimeout(notesTimer);
+  notesTimer = setTimeout(envoyerNotes, 1500);
+}
+async function envoyerNotes() {
+  for (const id of [...(db.notesEnAttente || [])]) {
+    const code = (db.cles || {})[id];
+    if (!code) { db.notesEnAttente = db.notesEnAttente.filter(x => x !== id); continue; }
+    try {
+      await rpc('sauver_notes', { p_id: id, p_code: code, p_data: { sessions: (db.sessions || []).filter(s => s.persoId === id) } });
+      db.notesEnAttente = db.notesEnAttente.filter(x => x !== id);
+      statutSync('Notes synchronisées');
+    } catch (e) {
+      statutSync('Hors ligne : notes en attente d\'envoi', true);
+      break;
+    }
+  }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* */ }
+}
+async function chargerNotes() {
+  if (!enLigne()) return;
+  const attente = new Set(db.notesEnAttente || []);
+  for (const [id, code] of Object.entries(db.cles || {})) {
+    if (attente.has(id) || !findPerso(id)) continue;
+    try {
+      const data = await rpc('lire_notes', { p_id: id, p_code: code }) || {};
+      const distantes = data.sessions || [];
+      const ids = new Set(distantes.map(s => s.id));
+      const autres = (db.sessions || []).filter(s => s.persoId !== id);
+      const locales = (db.sessions || []).filter(s => s.persoId === id);
+      const fusion = distantes.map(d => {
+        const l = locales.find(x => x.id === d.id);
+        return l && (l.maj || 0) > (d.maj || 0) ? l : d;
+      });
+      /* Une session locale absente en ligne mais créée depuis la dernière synchro est gardée (et renvoyée) */
+      const derniere = (db.notesSynchro || {})[id] || 0;
+      const nouvelles = locales.filter(l => !ids.has(l.id) && (l.maj || 0) > derniere);
+      db.sessions = [...autres, ...fusion, ...nouvelles];
+      db.notesSynchro = { ...(db.notesSynchro || {}), [id]: Date.now() };
+      if (nouvelles.length) notesModifiees(id);
+    } catch (e) {
+      console.warn('Notes indisponibles pour', id, e);
+    }
+  }
+  state.notesChargees = Date.now();
+  saveNow();
+}
+
+/* Encart affiché sur la fiche d'un personnage selon les droits */
+function encartDroits(p) {
+  if (!enLigne()) return '';
+  if (!p.publie) {
+    return `<section class="card bandeau"><h3>Sur cet appareil seulement</h3>
+      <p>Ce personnage n'est pas encore en ligne : les autres joueurs ne le voient pas. Choisis un code personnel pour le mettre en ligne. Ce code protège ta fiche et tes notes, et permet de les retrouver sur un autre appareil.</p>
+      <div class="grid">
+        <label class="f"><span>Code personnel</span><input type="password" id="code-perso" autocomplete="new-password" placeholder="4 caractères minimum"></label>
+        <label class="f"><span>Confirmation</span><input type="password" id="code-perso-2" autocomplete="new-password"></label>
+      </div>
+      <button class="btn" data-action="perso-en-ligne">Mettre en ligne</button>
+    </section>`;
+  }
+  if (estAMoi(p)) return '';
+  return `<details class="card revendiquer">
+    <summary>Lecture seule${db.codeCampagne ? ' (modification permise par le code administrateur)' : ''}. C'est ton personnage ?</summary>
+    <p class="hint">Saisis ton code personnel pour modifier la fiche et retrouver tes notes sur cet appareil.</p>
+    <div class="row"><input type="password" id="code-revendiquer" autocomplete="current-password" placeholder="Code personnel" aria-label="Code personnel">
+      <button class="btn" data-action="revendiquer">Valider</button></div>
+  </details>`;
+}
+
+function pageNouveauPerso() {
+  return `
+  <p><a href="#/persos">← Personnages</a></p>
+  <h1>Nouveau personnage</h1>
+  <section class="card" style="margin-top:1rem">
+    <p>Tout le monde pourra voir ta fiche, mais toi seul pourras la modifier grâce à ton code personnel. Il protège aussi tes notes de session. Garde-le bien : il sert à retrouver ton personnage sur un autre appareil.</p>
+    <div class="grid">
+      <label class="f span2"><span>Nom du personnage</span><input type="text" id="np-nom" autocomplete="off"></label>
+      <label class="f"><span>Code personnel</span><input type="password" id="np-code" autocomplete="new-password" placeholder="4 caractères minimum"></label>
+      <label class="f"><span>Confirmation du code</span><input type="password" id="np-code-2" autocomplete="new-password"></label>
+    </div>
+    <button class="btn" data-action="creer-perso">Créer le personnage</button>
+  </section>
+  <section class="card"><h3>Déjà un personnage ?</h3>
+    <p class="hint">Sur un nouvel appareil, ouvre ta fiche dans la liste des personnages, puis « C'est ton personnage ? » pour saisir ton code.</p>
+  </section>`;
 }
 
 /* ---------- Grimoire ---------- */
@@ -1143,11 +1559,26 @@ function pageDonnees() {
 
   <section class="card intro"><h3>Partager avec la troupe</h3>
     <p>Chaque joueur remplit sa fiche sur son propre téléphone, puis l'exporte depuis la page du personnage. Le fichier .json s'envoie par Discord, mail ou message, et le destinataire l'importe ici. Un personnage déjà présent est remplacé par la version importée.</p>
-    <p>L'export de toute la campagne contient aussi ton journal (sessions, notes et récapitulatifs). C'est pratique pour passer d'un appareil à l'autre, mais pense-y avant de l'envoyer à quelqu'un.</p>
+    <p>L'export de toute la campagne contient aussi tes notes personnelles de session. C'est pratique pour passer d'un appareil à l'autre, mais pense-y avant de l'envoyer à quelqu'un.</p>
+    <p>Pour les récapitulatifs communs, utilise plutôt « Exporter recaps.json » dans Journal, Récapitulatifs : ce fichier ne contient que les récits, sans aucune note.</p>
     <div class="btns">
       <button class="btn" data-action="import">Importer un fichier</button>
       <button class="btn ghost" data-action="export-all">Exporter toute la campagne</button>
     </div>
+  </section>
+
+  <section class="card intro"><h3>Base de données de la campagne</h3>
+    ${enLigne()
+      ? `<p>Connectée${state.syncErreur || state.recapsErreur ? ` (dernière synchronisation en échec : ${esc(state.syncErreur || state.recapsErreur)})` : ''}. Tout le monde voit toutes les fiches et les récapitulatifs ; chacun ne modifie que son personnage, avec son code personnel.</p>
+         <p>Personnages associés à cet appareil : ${mesPersos().map(x => esc(x.nom)).join(', ') || 'aucun'}.</p>
+         <details class="admin"><summary>Administration</summary>
+           <p class="hint">Le code administrateur permet d'enregistrer les récapitulatifs et de corriger n'importe quelle fiche. Il n'ouvre pas les notes des joueurs.</p>
+           ${db.codeCampagne
+             ? `<p>Code administrateur enregistré sur cet appareil.</p><button class="btn danger" data-action="code-oublier">Retirer le code</button>`
+             : `<div class="row"><input type="password" id="code-reglage" autocomplete="off" placeholder="Code administrateur" aria-label="Code administrateur">
+                <button class="btn" data-action="code-verifier">Vérifier et enregistrer</button></div>`}
+         </details>`
+      : '<p>Non configurée : tout reste sur cet appareil, et les récapitulatifs sont publiés via le fichier recaps.json du site.</p>'}
   </section>
 
   <section class="card intro"><h3>Grimoire</h3>
@@ -1171,26 +1602,40 @@ function render(garderScroll = true) {
   const [page, id, tab] = h.split('/');
   state.ctx = null;
   if (page !== 'sort-edit') state.draft = null;
+  if (page !== 'recap') { state.editRecap = null; state.editRecapObj = null; }
   let html;
   switch (page) {
     case 'perso': html = pagePerso(id, tab); break;
     case 'sorts': html = pageSorts(); break;
     case 'sort': html = pageSort(id); break;
     case 'sort-edit': html = pageSortEdit(id); break;
-    case 'journal': html = pageJournal(id, tab); break;
+    case 'journal':
+    case 'recaps': html = pageRecaps(); break;
+    case 'recap': html = pageRecap(id); break;
+    case 'notes': html = pageNotes(id, tab); break;
     case 'session': html = pageSession(id); break;
+    case 'nouveau': html = pageNouveauPerso(); break;
     case 'donnees': html = pageDonnees(); break;
     default: html = pagePersos();
   }
   $('#app').innerHTML = html;
-  const nav = page === 'perso' ? 'persos' : page.startsWith('sort') ? 'sorts' : page === 'session' ? 'journal' : page;
+  const nav = page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session'].includes(page) ? 'journal' : page;
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav));
   if (garderScroll) window.scrollTo(0, y);
 }
 function go(hash) {
   if (location.hash === hash) render(); else location.hash = hash;
 }
-window.addEventListener('hashchange', () => { render(false); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => {
+  render(false); window.scrollTo(0, 0);
+  const page = (location.hash.replace(/^#\/?/, '').split('/')[0]) || '';
+  if (['persos', 'perso', ''].includes(page) && enLigne() && Date.now() - (state.persosCharges || 0) > 30000) {
+    chargerPersos().then(ok => { if (ok && ['persos', 'perso', ''].includes(location.hash.replace(/^#\/?/, '').split('/')[0]) && !document.activeElement?.dataset?.bind) render(); });
+  }
+  if (['journal', 'recaps', 'recap'].includes(page) && Date.now() - (state.recapsCharges || 0) > 30000 && !state.editRecap) {
+    chargerRecaps().then(ok => { if (ok && ['journal', 'recaps', 'recap'].includes(location.hash.replace(/^#\/?/, '').split('/')[0])) render(); });
+  }
+});
 
 /* ---------- Saisie ---------- */
 document.addEventListener('input', ev => {
@@ -1211,8 +1656,11 @@ document.addEventListener('input', ev => {
     $('#sortres').innerHTML = resultatsSorts();
     return;
   }
+  if (t.id === 'carnet') { state.carnet = t.value; render(); return; }
   const path = t.dataset.bind;
   if (!path || !state.ctx) return;
+  if (db.personnages.includes(state.ctx) && !peutModifier(state.ctx)) return;
+  if (state.ctx === state.editRecapObj && !estAdmin()) return;
   setP(state.ctx, path, t.type === 'checkbox' ? t.checked : t.value);
   if (state.ctx === state.draft) return; // le sort n'est enregistré qu'au clic sur le bouton
   state.ctx.maj = Date.now();
@@ -1259,21 +1707,70 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
+  const libres = ['new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
     case 'new-perso': {
+      if (enLigne()) { go('#/nouveau'); setTimeout(() => $('#np-nom')?.focus(), 60); break; }
       const np = nouveauPerso();
       db.personnages.push(np); saveNow();
       go(`#/perso/${np.id}/fiche`);
       setTimeout(() => { const i = $('[data-bind="nom"]'); i?.focus(); i?.select(); }, 50);
       break;
     }
-    case 'del-perso':
-      if (confirm(`Supprimer définitivement « ${p.nom} » de cet appareil ?`)) {
-        db.personnages = db.personnages.filter(x => x.id !== p.id); saveNow();
-        toast('Personnage supprimé'); go('#/persos');
-      }
+    case 'del-perso': {
+      const enLigneAussi = enLigne() && p.publie;
+      if (!confirm(enLigneAussi ? `Supprimer définitivement « ${p.nom} » pour tout le monde ?` : `Supprimer définitivement « ${p.nom} » de cet appareil ?`)) break;
+      const retirer = () => {
+        db.personnages = db.personnages.filter(x => x.id !== p.id);
+        if (db.cles) delete db.cles[p.id];
+        db.enAttente = (db.enAttente || []).filter(x => x !== p.id);
+        saveNow(); toast('Personnage supprimé'); go('#/persos');
+      };
+      if (enLigneAussi) rpc('supprimer_perso', { p_id: p.id, p_code: codePour(p) }).then(retirer).catch(e => alert('Suppression impossible : ' + e.message));
+      else retirer();
       break;
+    }
+    case 'creer-perso': {
+      const nom = $('#np-nom').value.trim(), code = $('#np-code').value, code2 = $('#np-code-2').value;
+      if (!nom) { toast('Donne un nom au personnage'); break; }
+      if (code.length < 4) { toast('Le code doit faire au moins 4 caractères'); break; }
+      if (code !== code2) { toast('Les deux codes ne correspondent pas'); break; }
+      const np = nouveauPerso();
+      np.nom = nom;
+      db.personnages.push(np); saveNow();
+      b.disabled = true;
+      mettreEnLigne(np, code)
+        .then(() => toast('Personnage créé et mis en ligne'))
+        .catch(e => alert('Créé sur cet appareil seulement (' + e.message + '). Tu pourras le mettre en ligne depuis sa fiche.'))
+        .finally(() => go(`#/perso/${np.id}/fiche`));
+      break;
+    }
+    case 'perso-en-ligne': {
+      const code = $('#code-perso').value, code2 = $('#code-perso-2').value;
+      if (code.length < 4) { toast('Le code doit faire au moins 4 caractères'); break; }
+      if (code !== code2) { toast('Les deux codes ne correspondent pas'); break; }
+      b.disabled = true;
+      mettreEnLigne(p, code).then(() => {
+        for (const se of db.sessions || []) if (!se.persoId) se.persoId = p.id;
+        notesModifiees(p.id);
+        saveNow(); render(); toast('Personnage mis en ligne');
+      }).catch(e => { b.disabled = false; alert('Mise en ligne impossible : ' + e.message); });
+      break;
+    }
+    case 'revendiquer': {
+      const code = $('#code-revendiquer').value;
+      if (!code) { toast('Saisis ton code personnel'); break; }
+      rpc('verifier_perso', { p_id: p.id, p_code: code }).then(ok => {
+        if (!ok) { toast('Code incorrect'); return; }
+        db.cles = { ...(db.cles || {}), [p.id]: code };
+        state.carnet = p.id;
+        saveNow();
+        return chargerNotes().then(() => { render(); toast('Personnage associé à cet appareil'); });
+      }).catch(e => alert('Vérification impossible : ' + e.message));
+      break;
+    }
     case 'add-item': {
       const key = b.dataset.list;
       p[key] = p[key] || [];
@@ -1350,7 +1847,7 @@ document.addEventListener('click', ev => {
     }
     case 'export-all':
       download(`campagne-${new Date().toISOString().slice(0, 10)}.json`,
-        { type: 'campagne', version: APP_VERSION, personnages: db.personnages, sessions: db.sessions || [], sorts: db.sorts.filter(s => s.source === 'Maison') });
+        { type: 'campagne', version: APP_VERSION, personnages: db.personnages, sessions: db.sessions || [], recaps: db.recaps || [], sorts: db.sorts.filter(s => s.source === 'Maison') });
       break;
     case 'export-sorts':
       download('grimoire.json', { type: 'sorts', version: APP_VERSION, sorts: db.sorts.filter(s => s.source === 'Maison') });
@@ -1368,15 +1865,15 @@ document.addEventListener('click', ev => {
     case 'new-session': {
       const ns = nouvelleSession();
       db.sessions = db.sessions || [];
-      db.sessions.push(ns); saveNow();
+      db.sessions.push(ns); saveNow(); notesModifiees(ns.persoId);
       go(`#/session/${ns.id}`);
       setTimeout(() => $('#nouvelle-note')?.focus(), 60);
       break;
     }
     case 'del-session':
       if (confirm(`Supprimer « ${titreSession(p)} » et toutes ses notes ?`)) {
-        db.sessions = db.sessions.filter(x => x.id !== p.id); saveNow();
-        toast('Session supprimée'); go('#/journal');
+        db.sessions = db.sessions.filter(x => x.id !== p.id); saveNow(); notesModifiees(p.persoId);
+        toast('Session supprimée'); go('#/notes');
       }
       break;
     case 'type-note':
@@ -1394,23 +1891,79 @@ document.addEventListener('click', ev => {
       state.editNote = null; save(); render();
       break;
     case 'note-suppr':
-      if (confirm('Supprimer cette note ?')) { p.notes.splice(idx, 1); state.editNote = null; saveNow(); render(); }
+      if (confirm('Supprimer cette note ?')) { p.notes.splice(idx, 1); p.maj = Date.now(); state.editNote = null; saveNow(); notesModifiees(p.persoId); render(); }
       break;
     case 'note-resolu': {
       const ses = findSession(b.dataset.s);
       const n = ses && ses.notes.find(x => x.id === b.dataset.n);
-      if (n) { n.resolu = b.checked; ses.maj = Date.now(); saveNow(); setTimeout(render, 150); }
+      if (n) { n.resolu = b.checked; ses.maj = Date.now(); saveNow(); notesModifiees(ses.persoId); setTimeout(render, 150); }
       break;
     }
-    case 'recap-brouillon': {
-      if (!(p.notes || []).length) { toast('Ajoute d\'abord quelques notes à cette session'); break; }
-      if (p.recap && p.recap.trim() && !confirm('Remplacer le récapitulatif actuel par un brouillon tiré des notes ?')) break;
-      p.recap = brouillonRecap(p); saveNow(); render();
-      toast('Brouillon prêt : complète le résumé');
+    case 'new-recap': {
+      if (!estAdmin()) { toast('Réservé à l\'administrateur'); break; }
+      const ses = b.dataset.session ? findSession(b.dataset.session) : null;
+      const r = nouveauRecap(ses);
+      db.recaps = db.recaps || [];
+      db.recaps.push(r); saveNow();
+      state.editRecap = r.id;
+      go(`#/recap/${r.id}`);
       break;
     }
+    case 'recap-edit':
+      if (!estAdmin()) { toast('Réservé à l\'administrateur'); break; }
+      state.editRecap = b.dataset.id; recapLocal(b.dataset.id); render();
+      break;
+    case 'recap-fin':
+      state.editRecap = null; saveNow(); render();
+      toast(aPublier() ? 'Enregistré sur cet appareil. Pense à publier.' : 'Enregistré');
+      break;
+    case 'del-recap': {
+      if (!estAdmin()) { toast('Réservé à l\'administrateur'); break; }
+      const id = b.dataset.id;
+      if (!confirm('Supprimer ce récapitulatif ? S\'il est déjà publié, il disparaîtra pour tout le monde à la prochaine publication.')) break;
+      db.recaps = (db.recaps || []).filter(x => x.id !== id);
+      if (recapsPublies().some(x => x.id === id)) db.recapsSupprimes = [...new Set([...(db.recapsSupprimes || []), id])];
+      state.editRecap = null; saveNow(); go('#/recaps');
+      break;
+    }
+    case 'publier-tout': {
+      if (!estAdmin()) { toast('Réservé à l\'administrateur'); break; }
+      const champ = $('#code-campagne');
+      if (champ && champ.value.trim()) { db.codeCampagne = champ.value.trim(); saveNow(); }
+      b.disabled = true;
+      publierTout().finally(() => { b.disabled = false; });
+      break;
+    }
+    case 'recap-publier':
+      if (!estAdmin()) { toast('Réservé à l\'administrateur'); break; }
+      state.editRecap = null; saveNow();
+      if (!db.codeCampagne) { render(); toast('Saisis le code de campagne pour publier'); break; }
+      publierTout();
+      break;
+    case 'code-verifier': {
+      const code = $('#code-reglage').value.trim();
+      if (!code) { toast('Saisis le code'); break; }
+      rpc('verifier_code', { p_code: code }).then(ok => {
+        if (ok) { db.codeCampagne = code; saveNow(); render(); toast('Code administrateur accepté'); }
+        else toast('Code incorrect');
+      }).catch(e => alert('Vérification impossible : ' + e.message));
+      break;
+    }
+    case 'code-oublier':
+      db.codeCampagne = ''; saveNow(); render(); toast('Code retiré de cet appareil');
+      break;
+    case 'recap-copier': {
+      const r = findRecap(b.dataset.id);
+      const txt = [`Session ${r.numero}${r.titre ? ' : ' + r.titre : ''}`, '', sansMentions(r.texte)].join('\n');
+      navigator.clipboard?.writeText(txt).then(() => toast('Texte copié'), () => toast('Copie impossible sur ce navigateur'));
+      break;
+    }
+    case 'export-recaps':
+      download('recaps.json', { type: 'recaps', version: 1, maj: Date.now(),
+        recaps: recapsTous().map(({ id, numero, date, titre, auteur, texte, maj }) => ({ id, numero, date, titre, auteur, texte, maj })) });
+      break;
     case 'jq-effacer':
-      state.jq = ''; go('#/journal');
+      state.jq = ''; go('#/notes');
       break;
     case 'img-choisir':
       state.imgType = b.dataset.type;
@@ -1418,7 +1971,7 @@ document.addEventListener('click', ev => {
       $('#imginput').click();
       break;
     case 'img-retirer':
-      if (confirm(b.dataset.type === 'portrait' ? 'Retirer le portrait ?' : 'Retirer l\'emblème ?')) { p[b.dataset.type] = ''; saveNow(); render(); }
+      if (confirm(b.dataset.type === 'portrait' ? 'Retirer le portrait ?' : 'Retirer l\'emblème ?')) { p[b.dataset.type] = ''; saveNow(); persoModifie(p); render(); }
       break;
     case 'toggle-langue': {
       const l = b.dataset.l;
@@ -1464,16 +2017,29 @@ $('#fileinput').addEventListener('change', async ev => {
     const persos = data.type === 'personnage' ? [data.personnage] : data.type === 'campagne' ? data.personnages || [] : [];
     const sorts = data.sorts || [];
     const sessions = data.type === 'campagne' ? data.sessions || [] : [];
-    if (!persos.length && !sorts.length && !sessions.length) throw new Error('ce fichier ne vient pas du Codex de campagne');
+    const recapsImp = data.type === 'recaps' || data.type === 'campagne' ? data.recaps || [] : [];
+    if (!persos.length && !sorts.length && !sessions.length && !recapsImp.length) throw new Error('ce fichier ne vient pas du Codex de campagne');
 
     const remplaces = persos.filter(p => findPerso(p.id)).map(p => p.nom);
     if (remplaces.length && !confirm(`Ces personnages existent déjà et seront remplacés par la version importée :\n${remplaces.join(', ')}\n\nContinuer ?`)) return;
 
     for (const p of persos) {
       migrer(p);
+      delete p.publie;
       const i = db.personnages.findIndex(x => x.id === p.id);
       if (i >= 0) db.personnages[i] = p; else db.personnages.push(p);
     }
+    let recapsMaj = 0;
+    db.recaps = db.recaps || [];
+    for (const r of recapsImp) {
+      const cur = findRecap(r.id);
+      if (cur && champsRecap(cur) === champsRecap(r)) continue;
+      const i = db.recaps.findIndex(x => x.id === r.id);
+      if (i >= 0) db.recaps[i] = r; else db.recaps.push(r);
+      db.recapsSupprimes = (db.recapsSupprimes || []).filter(x => x !== r.id);
+      recapsMaj++;
+    }
+    migrerSessions(sessions);
     let nouvellesSessions = 0;
     db.sessions = db.sessions || [];
     for (const se of sessions) {
@@ -1487,8 +2053,8 @@ $('#fileinput').addEventListener('change', async ev => {
       if (i >= 0) db.sorts[i] = s; else { db.sorts.push(s); nouveauxSorts++; }
     }
     saveNow();
-    toast(`Import terminé : ${persos.length} personnage(s), ${nouvellesSessions} nouvelle(s) session(s), ${nouveauxSorts} nouveau(x) sort(s)`);
-    go(persos.length === 1 ? `#/perso/${persos[0].id}/fiche` : persos.length ? '#/persos' : sessions.length ? '#/journal' : '#/sorts');
+    toast(`Import terminé : ${persos.length} personnage(s), ${nouvellesSessions} session(s) de notes, ${recapsMaj} récapitulatif(s), ${nouveauxSorts} nouveau(x) sort(s)`);
+    go(persos.length === 1 ? `#/perso/${persos[0].id}/fiche` : persos.length ? '#/persos' : recapsImp.length ? '#/recaps' : sessions.length ? '#/notes' : '#/sorts');
   } catch (e) {
     alert('Import impossible : ' + e.message);
   }
@@ -1519,7 +2085,7 @@ $('#imginput').addEventListener('change', async ev => {
     const portrait = state.imgType === 'portrait';
     p[state.imgType] = await reduireImage(file, portrait ? 640 : 256, portrait ? 'image/jpeg' : 'image/webp');
     p.maj = Date.now();
-    saveNow(); render();
+    saveNow(); persoModifie(p); render();
     toast(portrait ? 'Portrait ajouté' : 'Emblème ajouté');
   } catch (e) {
     alert('Image impossible à charger : ' + e.message);
@@ -1530,9 +2096,16 @@ $('#imginput').addEventListener('change', async ev => {
 (async function start() {
   load();
   db.personnages.forEach(migrer);
+  migrerSessions(db.sessions);
   render();
-  await initSorts();
+  await Promise.all([initSorts(), chargerRecaps(), chargerPersos()]);
   render();
+  if (enLigne()) {
+    await envoyerPersos();
+    await chargerNotes();
+    await envoyerNotes();
+    render();
+  }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service worker :', e));
   }
