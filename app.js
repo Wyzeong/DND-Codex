@@ -203,7 +203,7 @@ function bonusObjets(p) {
 const LIST_TEMPLATES = {
   dons: () => ({ nom: '', description: '' }),
   capacites: () => ({ nom: '', description: '' }),
-  equipement: () => ({ nom: '', qte: '', poids: '', notes: '' }),
+  equipement: () => ({ id: uid(), nom: '', qte: '', poids: '', notes: '', cat: '' }),
 };
 function nouveauNiveau(n, classe = '') {
   return { niveau: n, classe, atteint: false, don: '', donRace: '', donsBonus: [], augment: '', pv: '', choix: {}, notes: '' };
@@ -462,7 +462,9 @@ function pagePersos() {
     return `
     <a class="banniere" href="#/perso/${p.id}/fiche" aria-label="${esc(p.nom || 'Sans nom')}">
       <div class="banniere-in">
-        <div class="banniere-img">${p.portrait ? `<img src="${p.portrait}" alt="">` : `<div class="silhouette">${SILHOUETTE_SVG}</div>`}</div>
+        <div class="banniere-img">${p.portrait
+          ? `<img class="fond" src="${p.portrait}" alt=""><img class="photo" src="${p.portrait}" alt="">`
+          : `<div class="silhouette">${SILHOUETTE_SVG}</div>`}</div>
         <h2>${esc(p.nom || 'Sans nom')}</h2>
         <p>${esc([raceNom(p), classesTxt(e)].filter(Boolean).join(', ') || 'À compléter')}</p>
         ${p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
@@ -470,6 +472,9 @@ function pagePersos() {
       </div>
     </a>`;
   }).join('');
+  const ajout = `<button class="banniere ajout" data-action="new-perso" aria-label="Créer un personnage">
+      <div class="banniere-in"><span class="plus" aria-hidden="true">+</span><h2>Nouveau</h2><p>Créer un personnage</p><span class="losange" aria-hidden="true"></span></div>
+    </button>`;
   return `
     <header class="hero">
       ${LOGO_SVG}
@@ -477,20 +482,11 @@ function pagePersos() {
       <p class="campagne">CAMPAGNE D&amp;D 3.5</p>
       <p class="devise">Il existe encore des secrets que le monde a oubliés…</p>
     </header>
-    <div class="ornement" aria-hidden="true"><span></span></div>
     ${carteConteur(false)}
-    <div class="pagehead">
-      <div><h1>Personnages</h1><p class="sub">La compagnie</p></div>
-      <div class="btns">
-        <button class="btn" data-action="new-perso">Créer un personnage</button>
-        <button class="btn ghost" data-action="import">Importer</button>
-      </div>
-    </div>
-    ${bannieres ? `<div class="persos">${bannieres}</div>` : `
-      <div class="card intro">
-        <h3>La compagnie est vide</h3>
-        <p>Crée ta fiche, ou importe celle qu'un autre joueur t'a envoyée (fichier .json).</p>
-      </div>`}`;
+    <div class="ornement" aria-hidden="true"><span></span></div>
+    <h2 class="titre-section">La compagnie</h2>
+    <div class="persos">${bannieres}${ajout}</div>
+    <p class="hint centre">Pour importer une fiche reçue d'un autre joueur : onglet Partage.</p>`;
 }
 
 function pagePerso(id, tab) {
@@ -556,6 +552,10 @@ function ongletFiche(p, e) {
   return outilsReplis() + repliable(ongletFicheBrut(p, e));
 }
 function ongletFicheBrut(p, e) {
+  if (p.languesAutres && peutModifier(p)) {
+    p.langues = [...new Set([...(p.langues || []), ...p.languesAutres.split(/[,;]+/).map(x => x.trim()).filter(Boolean)])];
+    p.languesAutres = ''; save();
+  }
   const s = stats(p, e);
   const race = e.race;
   const raceOpts = [...Object.entries(R.RACES).map(([k, r]) => [k, r.nom]), ['autre', 'Autre race (campagne)']];
@@ -581,10 +581,7 @@ function ongletFicheBrut(p, e) {
     </div>
     <p class="niveau-ligne">${esc(nivTxt)}</p>
     ${race ? `<p class="hint">Catégorie de taille ${R.TAILLES[race.taille].nom.toLowerCase()}, vitesse de base ${race.vitesse} m. Ajustements raciaux : ${race.ajust}. Classe de prédilection : ${race.classeFav}.</p>` : ''}
-    <div class="f"><span class="lbl">Langues</span>
-      <div class="chips">${R.LANGUES.map(l => `<button class="chip ${p.langues?.includes(l) ? 'on' : ''}" data-action="toggle-langue" data-l="${esc(l)}" aria-pressed="${p.langues?.includes(l) ? 'true' : 'false'}">${esc(l)}</button>`).join('')}</div>
-    </div>
-    ${fi(p, 'languesAutres', 'Autres langues (campagne)')}
+    ${blocLangues(p)}
     ${ta(p, 'apparence', 'Apparence et historique')}
   </section>
 
@@ -602,7 +599,9 @@ function ongletFicheBrut(p, e) {
     <p class="hint">Saisis les valeurs de base (ajustements raciaux compris, sans les objets). Les bonus des objets équipés s'ajoutent <span class="bonus-objet">en couleur</span>, et les modificateurs se calculent seuls.</p>
   </section>
 
-  <section class="card"><h3>Combat</h3>
+  ${ficheCombat(p, e)}
+
+  <section class="card"><h3>Défense et statistiques</h3>
     <div class="stats">
       ${stat('Classe d\'armure', s.ca)}${stat('Contact', s.contact)}${stat('Pris au dépourvu', s.depourvu, s.esquiveInst ? 'Esquive instinctive' : '')}
       ${stat('Initiative', R.signe(s.init))}${stat('Vitesse', s.vitesse + ' m')}
@@ -610,7 +609,7 @@ function ongletFicheBrut(p, e) {
       ${stat('BBA', R.attTxt(s.att))}${stat('Corps à corps', R.signe(s.cac))}${stat('Distance', R.signe(s.dist))}${stat('Lutte', R.signe(s.lutte))}
       ${s.rm ? stat('Résistance à la magie', s.rm) : ''}${s.rd.length ? stat('Réduction des dégâts', s.rd.join(', ')) : ''}
     </div>
-    ${deluge ? `<p class="hint"><b>Déluge de coups :</b> ${esc(deluge[1])}</p>` : ''}
+
     ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
     ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
     <div class="grid" style="margin-top:.8rem">
@@ -629,7 +628,7 @@ function ongletFicheBrut(p, e) {
 
   ${ficheCompetences(p, e)}
   ${ficheDons(p, e)}
-  ${ficheCapacites(p, e, valsClasses)}
+  ${ficheCapacitesLisible(p, e, valsClasses)}
 
   <section class="card"><h3>Équipement</h3>
     ${ficheEquipement(p)}
@@ -647,8 +646,21 @@ function ongletFicheBrut(p, e) {
 function ficheEquipement(p) {
   const items = p.equipement || [];
   const opts = cur => CIBLES_BONUS.map(([g, l]) => `<optgroup label="${g}">${l.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  for (const it of items) if (!it.id) it.id = uid();
+  const armes = items.filter(x => x.cat === 'arme');
   const lignes = items.map((it, i) => {
     const bonus = it.bonus || [];
+    const champCat = it.cat === 'arme' ? `<div class="objet-cat">
+        <select data-bind="equipement.${i}.mode" data-rerender aria-label="Type d'attaque"><option value="">Corps à corps</option><option value="distance" ${it.mode === 'distance' ? 'selected' : ''}>Distance</option></select>
+        <input type="text" data-bind="equipement.${i}.degats" data-recalc value="${esc(it.degats)}" placeholder="Dégâts (1d8)" aria-label="Dégâts">
+        <input type="text" data-bind="equipement.${i}.critique" value="${esc(it.critique)}" placeholder="Critique (19-20/×2)" aria-label="Critique">
+        <input type="text" data-bind="equipement.${i}.portee" value="${esc(it.portee)}" placeholder="Portée (24 m)" aria-label="Portée">
+      </div>` : it.cat === 'munition' ? `<div class="objet-cat">
+        <select data-bind="equipement.${i}.lien" data-rerender aria-label="Arme associée"><option value="">— Pour quelle arme ? —</option>${armes.map(a => `<option value="${a.id}" ${it.lien === a.id ? 'selected' : ''}>${esc(a.nom || 'Arme')}</option>`).join('')}</select>
+        <input type="text" data-bind="equipement.${i}.effet" value="${esc(it.effet)}" placeholder="Effet (ex. +1d6 de feu)" aria-label="Effet">
+      </div>` : it.cat === 'consommable' ? `<div class="objet-cat">
+        <input type="text" data-bind="equipement.${i}.effet" value="${esc(it.effet)}" placeholder="Effet (ex. soigne 1d8+1 PV)" aria-label="Effet">
+      </div>` : '';
     return `<div class="objet ${bonus.length && it.equipe === false ? 'range' : ''}">
       <div class="row">
         <input type="text" data-bind="equipement.${i}.nom" value="${esc(it.nom)}" placeholder="Objet" aria-label="Objet">
@@ -656,7 +668,11 @@ function ficheEquipement(p) {
         <input type="text" class="s" data-bind="equipement.${i}.poids" value="${esc(it.poids)}" placeholder="Poids" aria-label="Poids">
         <button class="icon" data-action="del-item" data-list="equipement" data-idx="${i}" aria-label="Supprimer l'objet">✕</button>
       </div>
-      <input type="text" data-bind="equipement.${i}.notes" value="${esc(it.notes)}" placeholder="Notes" aria-label="Notes" class="objet-notes">
+      <div class="row objet-type">
+        <select data-bind="equipement.${i}.cat" data-rerender aria-label="Type d'objet">${Object.entries(CATS_OBJET).map(([k, l]) => `<option value="${k}" ${(it.cat || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <input type="text" data-bind="equipement.${i}.notes" value="${esc(it.notes)}" placeholder="Notes" aria-label="Notes" class="objet-notes">
+      </div>
+      ${champCat}
       ${bonus.map((b, j) => `<div class="bonus-ligne">
         <select data-bind="equipement.${i}.bonus.${j}.cible" data-rerender aria-label="Ce que l'objet améliore"><option value="">— Ce que l'objet améliore —</option>${opts(b.cible)}</select>
         <input type="text" inputmode="numeric" class="bonus-val" data-bind="equipement.${i}.bonus.${j}.val" data-recalc value="${esc(b.val)}" aria-label="Valeur du bonus">
@@ -670,7 +686,7 @@ function ficheEquipement(p) {
   }).join('');
   return `<div class="objets">${lignes || '<p class="empty">Aucun objet.</p>'}</div>
     <button class="btn ghost" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>
-    <p class="hint">Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac. Tous les bonus des objets équipés s'additionnent.</p>`;
+    <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac. Tous les bonus des objets équipés s'additionnent.</p>`;
 }
 
 /* Compétences soumises au malus d'armure (◘ sur la feuille papier) */
@@ -706,6 +722,331 @@ function ligneComp(e, c, v, base, opts) {
     </span>
     ${perso ? `<button class="icon cl-suppr" data-action="del-comp-perso" data-idx="${i}" aria-label="Supprimer cette compétence">✕</button>` : ''}
   </div>`;
+}
+
+/* ===== En combat : actions, armes, sorts et capacités avec compteurs ===== */
+const CATS_OBJET = { '': 'Objet', arme: 'Arme', munition: 'Munition', consommable: 'Consommable' };
+
+function infosMainsNues(p, e, st) {
+  const moine = e.classes.moine || 0;
+  if (!moine && !e.dons.has('science-mains-nues')) return null;
+  const petit = e.taille === 'P';
+  const de = moine ? R.palier(moine, petit
+    ? [[1, '1d4'], [4, '1d6'], [8, '1d8'], [12, '1d10'], [16, '2d6'], [20, '2d8']]
+    : [[1, '1d6'], [4, '1d8'], [8, '1d10'], [12, '2d6'], [16, '2d8'], [20, '2d10']]) : (petit ? '1d2' : '1d3');
+  const fo = e.mods.for;
+  const degats = `${de}${fo ? R.signe(fo) : ''}`;
+  const toucher = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods.for + (R.TAILLES[e.taille]?.ca || 0));
+  let deluge = null;
+  if (moine) {
+    const pen = moine < 5 ? -2 : moine < 9 ? -1 : 0;
+    const base = toucher.map(x => x + pen);
+    const liste = [base[0], ...base];
+    if (moine >= 11) liste.unshift(base[0]);
+    deluge = { liste, pen };
+  }
+  return { de, degats, toucher, deluge };
+}
+
+/* Ressources qui se rechargent chaque nuit */
+function ressources(p, e) {
+  const res = [];
+  const c = e.classes, niv = e.niveau;
+  const moine = c.moine || 0;
+  if (e.dons.has('coup-etourdissant')) {
+    const n = moine ? moine + Math.floor((niv - moine) / 4) : Math.floor(niv / 4);
+    const dd = 10 + Math.floor(niv / 2) + e.mods.sag;
+    res.push({ id: 'coup-etourdissant', nom: 'Coup étourdissant', max: n, unite: 'fois', action: 'À annoncer avant ton jet d\'attaque',
+      texte: `Annonce-le avant de frapper à mains nues. Si tu touches, la cible fait un jet de Vigueur DD ${dd}. Si elle le rate, elle est étourdie pendant 1 round : elle ne peut pas agir, lâche ce qu'elle tient et perd son bonus de Dextérité à la CA. Une fois par round au maximum. Si ton attaque rate, l'utilisation est perdue.` });
+  }
+  if (moine >= 7) res.push({ id: 'plenitude', nom: 'Plénitude physique', max: 2 * moine, unite: 'PV', pool: true, action: 'Action simple',
+    texte: `Tu te soignes toi-même. Tu as ${2 * moine} PV à répartir dans la journée, en une ou plusieurs fois.` });
+  if (moine >= 12) res.push({ id: 'pas-chasse', nom: 'Pas chassé', max: 1, unite: 'fois', action: 'Action de mouvement',
+    texte: 'Tu te téléportes à une distance de 120 m + 12 m par niveau de moine, comme Porte dimensionnelle.' });
+  if (c.barbare) {
+    const n = R.palier(c.barbare, [[1, 1], [4, 2], [8, 3], [12, 4], [16, 5], [20, 6]]);
+    res.push({ id: 'rage', nom: 'Rage', max: n, unite: 'fois', action: 'Action libre',
+      texte: `Pendant ${3 + e.mods.con + 2} rounds environ : +4 en Force et en Constitution (donc plus de PV et de dégâts), +2 aux jets de Volonté, mais −2 à la CA. Tu es fatigué ensuite.` });
+  }
+  if (c.paladin) {
+    res.push({ id: 'chatiment', nom: 'Châtiment du Mal', max: R.palier(c.paladin, [[1, 1], [5, 2], [10, 3], [15, 4], [20, 5]]), unite: 'fois', action: 'À annoncer avant ton jet d\'attaque',
+      texte: `Contre une créature mauvaise : ${R.signe(e.mods.cha)} au jet d'attaque et +${c.paladin} aux dégâts. Si la cible n'est pas mauvaise, l'utilisation est perdue.` });
+    if (c.paladin >= 2) res.push({ id: 'imposition', nom: 'Imposition des mains', max: Math.max(0, c.paladin * e.mods.cha), unite: 'PV', pool: true, action: 'Action simple',
+      texte: 'Tu soignes en touchant (toi ou un allié). Les PV se répartissent comme tu veux dans la journée.' });
+  }
+  if (c.barde) res.push({ id: 'musique', nom: 'Musique de barde', max: c.barde, unite: 'fois', action: 'Action simple',
+    texte: 'Inspiration vaillante, fascination, contre-chant… Chaque morceau compte une utilisation.' });
+  if (c.pretre || (c.paladin || 0) >= 4) res.push({ id: 'renvoi', nom: 'Renvoi des morts-vivants', max: Math.max(0, 3 + e.mods.cha + (e.dons.has('renvoi-supplementaire') ? 4 : 0)), unite: 'fois', action: 'Action simple',
+    texte: 'Tu présentes ton symbole sacré : les morts-vivants proches fuient, ou sont détruits s\'ils sont faibles.' });
+  if ((c.druide || 0) >= 5) res.push({ id: 'forme-animale', nom: 'Forme animale', max: R.palier(c.druide, [[5, 1], [6, 2], [7, 3], [10, 4], [14, 5], [18, 6]]), unite: 'fois', action: 'Action simple',
+    texte: 'Tu te transformes en animal pendant 1 heure par niveau de druide.' });
+  return res;
+}
+
+function compteur(p, r) {
+  const utilise = num((p.compteurs || {})[r.id]);
+  const reste = Math.max(0, r.max - utilise);
+  const pips = !r.pool && r.max <= 12
+    ? `<span class="pips" aria-label="${reste} sur ${r.max}">${Array.from({ length: r.max }, (_, i) => `<span class="pip-u ${i < reste ? 'on' : ''}"></span>`).join('')}</span>`
+    : '';
+  return `<div class="ressource ${reste ? '' : 'epuisee'}">
+    <div class="ressource-tete">
+      <b>${esc(r.nom)}</b>
+      <span class="reste">${reste} / ${r.max} ${esc(r.unite)}</span>
+    </div>
+    ${pips}
+    <p class="ressource-action">${esc(r.action)}</p>
+    <details class="effet"><summary>Ce que ça fait</summary><p>${esc(r.texte)}</p></details>
+    <div class="btns">
+      ${r.pool
+        ? `<button class="btn" data-action="cpt-pv" data-id="${r.id}" ${reste ? '' : 'disabled'}>Dépenser des PV</button>`
+        : `<button class="btn" data-action="cpt-use" data-id="${r.id}" ${reste ? '' : 'disabled'}>Utiliser</button>`}
+      ${utilise ? `<button class="lien" data-action="cpt-annuler" data-id="${r.id}">Annuler la dernière</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function ficheCombat(p, e) {
+  const st = stats(p, e);
+  const mn = infosMainsNues(p, e, st);
+  const armes = (p.equipement || []).filter(it => it.cat === 'arme');
+  const munitions = (p.equipement || []).map((it, i) => ({ it, i })).filter(x => x.it.cat === 'munition');
+  const consommables = (p.equipement || []).map((it, i) => ({ it, i })).filter(x => x.it.cat === 'consommable');
+  const res = ressources(p, e);
+  const taille = R.TAILLES[e.taille]?.ca || 0;
+
+  const carteArme = it => {
+    const dist = it.mode === 'distance';
+    const mod = dist ? e.mods.dex : e.mods.for;
+    const tou = R.attaques(Math.max(0, st.bba)).map(x => x + mod + taille);
+    const deg = `${it.degats || '?'}${!dist && e.mods.for ? R.signe(e.mods.for) : ''}`;
+    const mun = munitions.filter(m => m.it.lien === it.id);
+    return `<div class="arme">
+      <div class="arme-tete"><b>${esc(it.nom || 'Arme')}</b><span class="tag-mode">${dist ? 'Distance' : 'Corps à corps'}</span></div>
+      <dl class="arme-stats">
+        <dt>Pour toucher</dt><dd><span class="gros">${R.signe(tou[0])}</span>${tou.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(tou)})</small>` : ''}</dd>
+        <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${it.critique ? ` <small>critique ${esc(it.critique)}</small>` : ''}</dd>
+        ${it.portee ? `<dt>Portée</dt><dd>${esc(it.portee)}</dd>` : ''}
+      </dl>
+      ${mun.map(({ it: m, i }) => `<div class="munition">
+        <span><b>${esc(m.nom || 'Munition')}</b> <small>× ${esc(m.qte || 0)}</small>${m.effet ? `<br><small>${esc(m.effet)}</small>` : ''}</span>
+        <button class="btn ghost" data-action="objet-use" data-idx="${i}" ${num(m.qte) > 0 ? '' : 'disabled'}>Tirer</button>
+      </div>`).join('')}
+    </div>`;
+  };
+
+  const sorts = (p.sorts || []).map((x, i) => ({ x, i, s: findSort(x.id) })).filter(o => o.s);
+  return `<section class="card combat"><h3>En combat</h3>
+    <div class="combat-tete">
+      <details class="tour"><summary>Que puis-je faire à mon tour ?</summary>
+        <ul>
+          <li><b>1 action simple</b> (attaquer une fois, lancer un sort, utiliser un objet) <b>et 1 action de mouvement</b> (te déplacer de ${st.vitesse} m, dégainer, te relever) ;</li>
+          <li><b>ou 1 action complexe</b> : l'attaque à outrance (toutes tes attaques${mn?.deluge ? ', dont le déluge de coups' : ''}), en restant sur place ou en faisant un pas de 1,5 m ;</li>
+          <li>plus des <b>actions libres</b> : parler, lâcher un objet.</li>
+        </ul>
+        <p class="hint">Initiative ${R.signe(st.init)} : c'est ce que tu ajoutes au d20 au début du combat pour savoir quand tu joues.</p>
+      </details>
+      <button class="btn nuit" data-action="nuit" title="Tout récupérer après une nuit de repos">☾ Nuit</button>
+    </div>
+
+    <h4>Attaquer</h4>
+    <div class="armes">
+      ${mn ? `<div class="arme">
+        <div class="arme-tete"><b>Mains nues</b><span class="tag-mode">Corps à corps</span></div>
+        <dl class="arme-stats">
+          <dt>Pour toucher</dt><dd><span class="gros">${R.signe(mn.toucher[0])}</span>${mn.toucher.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(mn.toucher)})</small>` : ''}</dd>
+          <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span></dd>
+        </dl>
+        ${mn.deluge ? `<div class="deluge"><b>Déluge de coups</b> : ${mn.deluge.liste.length} attaques à <span class="gros">${R.attTxt(mn.deluge.liste)}</span>, ${esc(mn.degats)} chacune.
+          <small>Prend tout ton tour. Le malus de ${R.signe(mn.deluge.pen)} est déjà inclus${mn.deluge.pen ? '' : ' (il a disparu à ton niveau)'}.</small></div>` : ''}
+      </div>` : ''}
+      ${armes.map(carteArme).join('')}
+      ${!mn && !armes.length ? '<p class="empty">Aucune arme. Dans l\'Équipement, choisis le type « Arme » pour un objet.</p>' : ''}
+    </div>
+
+    <h4>Lancer un sort</h4>
+    ${sorts.length ? `<div class="sorts-combat">${sorts.map(({ x, i, s }) => {
+      const max = num(x.max), reste = Math.max(0, max - num(x.utilises));
+      return `<div class="sort-c ${ecoleClass(s.ecole)}">
+        <div class="sort-c-tete"><b>${esc(s.nom)}</b>
+          ${max ? `<span class="reste">${reste} / ${max}</span>` : ''}</div>
+        <details class="effet"><summary>${esc(s.ecole)}${s.portee ? ', ' + esc(s.portee.split(' (')[0]) : ''} : voir l'effet</summary>
+          <p>${esc(s.description || '')}</p>
+          <dl class="fiche-sort">${[['Temps', s.incantation], ['Portée', s.portee], ['Cible', s.cible], ['Durée', s.duree], ['Jet de sauvegarde', s.sauvegarde], ['Résistance à la magie', s.rm]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+        </details>
+        <div class="sort-c-pied">
+          <label class="mini">Par jour <input type="text" inputmode="numeric" data-bind="sorts.${i}.max" data-recalc value="${esc(x.max)}" placeholder="—"></label>
+          ${max ? `<button class="btn" data-action="sort-use" data-idx="${i}" ${reste ? '' : 'disabled'}>Lancer</button>${num(x.utilises) ? `<button class="lien" data-action="sort-annuler" data-idx="${i}">Annuler</button>` : ''}` : ''}
+        </div>
+      </div>`;
+    }).join('')}</div>` : '<p class="empty">Aucun sort. Ajoute ceux de ta baguette dans l\'onglet Sorts.</p>'}
+
+    <h4>Capacités spéciales</h4>
+    ${res.length ? `<div class="ressources">${res.map(r => compteur(p, r)).join('')}</div>` : '<p class="empty">Pas de capacité à utilisations limitées pour l\'instant.</p>'}
+
+    ${consommables.length ? `<h4>Consommables</h4><div class="consos">${consommables.map(({ it, i }) => `<div class="munition">
+      <span><b>${esc(it.nom || 'Objet')}</b> <small>× ${esc(it.qte || 0)}</small>${it.effet ? `<br><small>${esc(it.effet)}</small>` : ''}</span>
+      <button class="btn ghost" data-action="objet-use" data-idx="${i}" ${num(it.qte) > 0 ? '' : 'disabled'}>Utiliser</button></div>`).join('')}</div>` : ''}
+  </section>`;
+}
+
+/* ===== Capacités expliquées concrètement ===== */
+function explications(p, e) {
+  const st = stats(p, e);
+  const mn = infosMainsNues(p, e, st);
+  const moine = e.classes.moine || 0;
+  return {
+    'Bonus à la CA': `Sans rien faire, tu ajoutes ta Sagesse (${R.signe(Math.max(0, e.mods.sag))}) et ton bonus de moine (+${Math.floor(moine / 5)}) à ta CA. C'est déjà compté : ta CA est de ${st.ca}.`,
+    'Déluge de coups': mn?.deluge ? `Au lieu d'attaquer une fois, tu frappes ${mn.deluge.liste.length} fois dans le même tour : jets pour toucher à ${R.attTxt(mn.deluge.liste)}, et ${mn.degats} dégâts par coup qui touche. Le malus${mn.deluge.pen ? ` de ${R.signe(mn.deluge.pen)}` : ''} est déjà inclus dans ces chiffres. Ça prend tout ton tour : tu restes sur place ou fais un pas de 1,5 m.` : null,
+    'Combat à mains nues': mn ? `Tes poings et tes pieds sont des armes : ${R.signe(mn.toucher[0])} pour toucher, ${mn.degats} dégâts. Frapper sans arme ne provoque pas d'attaque d'opportunité.` : null,
+    'Esquive totale': 'Quand un effet de zone (boule de feu, souffle…) permet un jet de Réflexes pour réduire les dégâts de moitié, et que tu le réussis, tu ne subis aucun dégât.',
+    'Déplacement accéléré': `Tu cours plus vite : ta vitesse est de ${st.vitesse} m par action de mouvement (bonus compris).`,
+    'Sérénité': '+2 à tes jets de sauvegarde contre les sorts qui jouent sur l\'esprit : charme, sommeil, peur…',
+    'Frappe ki': 'Tes coups comptent comme des armes magiques : ils blessent normalement les créatures qui ne craignent que la magie.',
+    'Chute ralentie': 'Si un mur est à portée de main pendant que tu tombes, une partie de la chute ne compte pas pour les dégâts.',
+    'Pureté physique': 'Tu ne tombes plus malade (maladies normales).',
+    'Plénitude physique': `Tu peux te soigner toi-même de ${2 * moine} PV par jour, en une ou plusieurs fois (compteur dans « En combat »).`,
+    'Esquive surnaturelle': 'Même si tu rates ton jet de Réflexes contre un effet de zone, tu ne subis que la moitié des dégâts.',
+    'Rage': 'Tu entres en fureur : plus fort et plus résistant, mais moins prudent (compteur dans « En combat »).',
+    'Attaque sournoise': 'Quand l\'ennemi est pris en tenaille ou ne peut pas se défendre, tes attaques font des dégâts en plus.',
+  };
+}
+
+function ficheCapacitesLisible(p, e, valsClasses) {
+  const race = e.race;
+  const ex = explications(p, e);
+  const raceBloc = race ? `<details class="cap-groupe cap-race"><summary><h4>Traits ${/^[AEIOUÉH]/.test(race.nom) ? 'd\'' : 'de '}${esc(race.nom.toLowerCase())} (${race.traits.length})</h4></summary>
+    <div class="cap-cartes">${race.traits.map(([n, t]) => `<div class="cap-carte"><b>${esc(n)}</b><p>${esc(t)}</p></div>`).join('')}</div></details>` : '';
+  const classes = Object.entries(e.classes).map(([id, k]) => {
+    const cl = R.CLASSES[id];
+    const vals = Object.fromEntries((valsClasses.find(x => x.id === id)?.vals || []));
+    const apt = cl.aptitudes.filter(a => a.niv <= k && !/^Don supplémentaire$/.test(a.nom));
+    const sp = sortsParJour(id, k, e);
+    const vus = new Set();
+    const cartes = apt.map(a => {
+      const concret = ex[a.nom];
+      const v = vals[a.nom] ?? (a.nom === 'Bonus à la CA' ? vals['Bonus de CA du moine'] : a.nom === 'Combat à mains nues' ? vals['Dégâts à mains nues'] : undefined);
+      vus.add(a.nom); if (a.nom === 'Bonus à la CA') vus.add('Bonus de CA du moine'); if (a.nom === 'Combat à mains nues') vus.add('Dégâts à mains nues');
+      return `<div class="cap-carte">
+        <div class="cap-tete"><b>${esc(a.nom)}</b><small>niveau ${a.niv}</small></div>
+        <p>${esc(concret || a.texte)}</p>
+        ${concret ? `<details class="effet"><summary>Règle complète</summary><p>${esc(a.texte)}</p></details>` : ''}
+        ${v != null && !concret ? `<p class="cap-valeur">Pour toi : <b>${esc(v)}</b></p>` : ''}
+      </div>`;
+    }).join('');
+    const autres = Object.entries(vals).filter(([n]) => !vus.has(n) && n !== 'Déluge de coups');
+    return `<div class="cap-groupe"><h4>${esc(cl.nom)} ${k}</h4>
+      <div class="cap-cartes">${cartes}</div>
+      ${autres.length ? `<dl class="valeurs">${autres.map(([n, v]) => `<dt>${esc(n)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+      ${sp ? tableSorts(sp) : ''}
+      <p class="hint">Maîtrises : ${esc(cl.maitrises)}</p>
+    </div>`;
+  }).join('');
+  return `<section class="card"><h3>Capacités spéciales</h3>
+    ${classes}${raceBloc}
+    ${!race && !classes ? '<p class="empty">Choisis une race et coche tes niveaux pour voir les capacités apparaître ici.</p>' : ''}
+    <h4>Autres capacités</h4>
+    ${liste(p, 'capacites', [{ k: 'nom', l: 'Capacité' }, { k: 'description', l: 'Effet', type: 'area' }], 'Ajouter une capacité')}
+  </section>`;
+}
+
+/* ===== Langues : seulement celles connues, avec un « + » ===== */
+function blocLangues(p) {
+  const mes = p.langues || [];
+  const reste = R.LANGUES.filter(l => !mes.includes(l));
+  return `<div class="f"><span class="lbl">Langues</span>
+    <div class="chips">
+      ${mes.map(l => `<span class="chip on">${esc(l)}<button class="chip-x" data-action="lang-del" data-l="${esc(l)}" aria-label="Retirer ${esc(l)}">✕</button></span>`).join('')}
+      <button class="chip ajout" data-action="lang-plus" aria-expanded="${state.langPanel ? 'true' : 'false'}" aria-label="Ajouter une langue">+</button>
+    </div>
+    ${state.langPanel ? `<div class="lang-panel">
+      <div class="chips">${reste.map(l => `<button class="chip" data-action="lang-add" data-l="${esc(l)}">${esc(l)}</button>`).join('')}</div>
+      <div class="row"><input type="text" id="lang-autre" placeholder="Autre langue (campagne)" aria-label="Autre langue"><button class="btn ghost" data-action="lang-add-autre">Ajouter</button></div>
+    </div>` : ''}
+  </div>`;
+}
+
+/* ===== Espace MJ (données fictives pour l'instant) ===== */
+const CODE_MJ_DEMO = 'givre-mj';
+const DEMO_MJ = {
+  initiative: [
+    { nom: 'Élémental du sable', init: 17, pv: 26, pvMax: 26, ennemi: true },
+    { nom: 'Régihus (éclaireur)', init: 12, pv: 11, pvMax: 11, ennemi: true },
+    { nom: 'Régihus (archer)', init: 8, pv: 9, pvMax: 9, ennemi: true },
+  ],
+  rencontres: [
+    { nom: 'Patrouille de Régihus aux portes de Marsember', fp: 3, notes: '4 Régihus (guerriers 1), 1 sergent (guerrier 3). Fouillent les sacs : toute baguette trouvée est confisquée.' },
+    { nom: 'Le retour de l\'élémental', fp: 4, notes: 'Surgit du sable sur le passage des contrebandiers. Se souvient de Phyrra.' },
+    { nom: 'Gideon Vane, l\'Herboriste Pâle', fp: 2, notes: 'Refuse de parler du poison tant que Pelagia ne nomme pas le commanditaire.' },
+  ],
+  butin: ['Potion de soins légers × 2', 'Carreaux d\'arbalète en argent × 10', '320 pièces d\'or', 'Lettre scellée aux armes des Régihus'],
+  notes: 'La broche Blackthorn a été volée à la mère de Lyra il y a vingt ans. Les clous de girofle servent de monnaie d\'échange aux contrebandiers de Marsember.',
+};
+const XP_NIVEAU = n => n * (n - 1) / 2 * 1000;
+
+function pageMJ() {
+  if (!db.mj) {
+    return `<div class="pagehead"><div><h1>Espace MJ</h1><p class="sub">Réservé au maître du jeu</p></div></div>
+    <section class="card intro"><h3>Accès MJ</h3>
+      <p>Saisis le code MJ pour accéder au tableau de bord : statistiques de tous les personnages, initiative, rencontres, notes secrètes.</p>
+      <div class="row"><input type="password" id="code-mj" autocomplete="off" placeholder="Code MJ" aria-label="Code MJ"><button class="btn" data-action="mj-entrer">Entrer</button></div>
+    </section>`;
+  }
+  const persos = db.personnages.filter(x => !enLigne() || x.publie);
+  const cartes = persos.map(x => {
+    const e = etat(x), st = stats(x, e);
+    const comp = id => { const c = R.COMPETENCES.find(y => y.id === id); const v = x.comp?.[id] || {}; return num(v.rangs) + (c.car ? e.mods[c.car] : 0) + bonusComp(id, e) + num(v.divers); };
+    return `<div class="mj-perso">
+      <div class="mj-perso-tete">${x.portrait ? `<img src="${x.portrait}" alt="">` : '<span class="vide"></span>'}
+        <div><b>${esc(x.nom)}</b><small>${esc([x.joueur, raceNom(x), classesTxt(e)].filter(Boolean).join(', '))}</small></div></div>
+      <div class="mj-stats">
+        <span>PV<b>${esc(x.pvMax || '—')}</b></span><span>CA<b>${st.ca}</b></span><span>Contact<b>${st.contact}</b></span><span>Dépourvu<b>${st.depourvu}</b></span>
+        <span>Init<b>${R.signe(st.init)}</b></span><span>Vig<b>${R.signe(st.js.vig)}</b></span><span>Réf<b>${R.signe(st.js.ref)}</b></span><span>Vol<b>${R.signe(st.js.vol)}</b></span>
+        <span>Détection<b>${R.signe(comp('detection'))}</b></span><span>Perception<b>${R.signe(comp('perception'))}</b></span><span>Psychologie<b>${R.signe(comp('psychologie'))}</b></span><span>Vitesse<b>${st.vitesse} m</b></span>
+      </div>
+      ${(x.langues || []).length ? `<p class="hint">Langues : ${esc(x.langues.join(', '))}</p>` : ''}
+    </div>`;
+  }).join('');
+  const ini = state.mjInit || (state.mjInit = [
+    ...DEMO_MJ.initiative.map(c => ({ ...c })),
+    ...persos.map(x => { const e = etat(x); return { nom: x.nom, init: 10 + stats(x, e).init, pv: num(x.pvMax), pvMax: num(x.pvMax), ennemi: false }; }),
+  ].sort((a, b) => b.init - a.init));
+  const tour = state.mjTour || 0;
+  return `<div class="pagehead"><div><h1>Espace MJ</h1><p class="sub">Tableau de bord du maître du jeu</p></div>
+    <button class="btn danger" data-action="mj-sortir">Quitter le mode MJ</button></div>
+
+  <section class="card"><h3>Le groupe</h3>
+    <p class="hint">Données réelles des fiches : idéal pour les jets secrets (Détection, Perception auditive, Psychologie) sans demander aux joueurs.</p>
+    <div class="mj-persos">${cartes || '<p class="empty">Aucun personnage.</p>'}</div>
+  </section>
+
+  <section class="card"><h3>Combat en cours <span class="demo">exemple</span></h3>
+    <ol class="mj-init">${ini.map((c, i) => `<li class="${i === tour % ini.length ? 'actif' : ''} ${c.ennemi ? 'ennemi' : ''}">
+      <span class="mj-init-val">${c.init}</span><b>${esc(c.nom)}</b>
+      <span class="mj-pv">${c.pvMax ? `<button class="icon" data-action="mj-pv" data-idx="${i}" data-d="-1" aria-label="Retirer 1 PV">−</button>${c.pv}/${c.pvMax}<button class="icon" data-action="mj-pv" data-idx="${i}" data-d="1" aria-label="Ajouter 1 PV">+</button>` : ''}</span>
+    </li>`).join('')}</ol>
+    <div class="btns"><button class="btn" data-action="mj-suivant">Tour suivant</button><span class="hint">Round ${Math.floor(tour / ini.length) + 1}</span></div>
+  </section>
+
+  <section class="card"><h3>Expérience <span class="demo">exemple</span></h3>
+    <div class="mj-xp">${persos.map((x, i) => {
+      const e = etat(x), niv = Math.max(1, e.niveau || 1), xp = XP_NIVEAU(niv) + (i * 370 + 450) % 1000 * niv;
+      const prochain = XP_NIVEAU(niv + 1), pct = Math.min(100, Math.round((xp - XP_NIVEAU(niv)) / (prochain - XP_NIVEAU(niv)) * 100));
+      return `<div><span>${esc(x.nom)} <small>niveau ${niv}</small></span><div class="barre"><span style="width:${pct}%"></span></div><small>${xp} / ${prochain} XP</small></div>`;
+    }).join('') || '<p class="empty">Aucun personnage.</p>'}</div>
+  </section>
+
+  <section class="card"><h3>Rencontres préparées <span class="demo">exemple</span></h3>
+    <div class="cap-cartes">${DEMO_MJ.rencontres.map(r => `<div class="cap-carte"><div class="cap-tete"><b>${esc(r.nom)}</b><small>FP ${r.fp}</small></div><p>${esc(r.notes)}</p></div>`).join('')}</div>
+  </section>
+
+  <section class="card"><h3>Butin à distribuer <span class="demo">exemple</span></h3>
+    <ul class="changes">${DEMO_MJ.butin.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
+  </section>
+
+  <section class="card"><h3>Notes secrètes <span class="demo">exemple</span></h3>
+    <p>${esc(DEMO_MJ.notes)}</p>
+  </section>`;
 }
 
 function ficheCompetences(p, e) {
@@ -2184,11 +2525,12 @@ function render(garderScroll = true) {
     case 'fiche': html = pageFiche(id); break;
     case 'session': html = pageSession(id); break;
     case 'nouveau': html = pageNouveauPerso(); break;
+    case 'mj': html = pageMJ(); break;
     case 'donnees': html = pageDonnees(); break;
     default: html = pagePersos();
   }
   $('#app').innerHTML = html;
-  const nav = page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
+  const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav));
   if (garderScroll) window.scrollTo(0, y);
 }
@@ -2296,7 +2638,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -2668,6 +3010,73 @@ document.addEventListener('click', ev => {
     case 'del-comp-perso':
       if (confirm('Supprimer cette compétence ?')) { p.compPerso.splice(idx, 1); save(); render(); }
       break;
+    case 'nuit':
+      if (!confirm('Une nuit de repos : toutes les capacités et les sorts du jour sont récupérés. Continuer ?')) break;
+      p.compteurs = {};
+      (p.sorts || []).forEach(x => { x.utilises = 0; });
+      save(); render(); toast('☾ Bonne nuit : tout est récupéré');
+      break;
+    case 'cpt-use':
+      p.compteurs = { ...(p.compteurs || {}), [b.dataset.id]: num((p.compteurs || {})[b.dataset.id]) + 1 };
+      save(); render();
+      break;
+    case 'cpt-annuler':
+      p.compteurs = { ...(p.compteurs || {}), [b.dataset.id]: Math.max(0, num((p.compteurs || {})[b.dataset.id]) - 1) };
+      save(); render();
+      break;
+    case 'cpt-pv': {
+      const r = ressources(p, etat(p)).find(x => x.id === b.dataset.id);
+      const reste = r.max - num((p.compteurs || {})[r.id]);
+      const n = Math.round(num(prompt(`Combien de PV ? (il en reste ${reste})`, String(Math.min(reste, 5)))));
+      if (!n || n < 0) break;
+      p.compteurs = { ...(p.compteurs || {}), [r.id]: num((p.compteurs || {})[r.id]) + Math.min(n, reste) };
+      save(); render();
+      break;
+    }
+    case 'sort-use':
+      p.sorts[idx].utilises = num(p.sorts[idx].utilises) + 1; save(); render();
+      break;
+    case 'sort-annuler':
+      p.sorts[idx].utilises = Math.max(0, num(p.sorts[idx].utilises) - 1); save(); render();
+      break;
+    case 'objet-use': {
+      const it = p.equipement[idx];
+      it.qte = String(Math.max(0, num(it.qte) - 1)); save(); render();
+      toast(`${it.nom || 'Objet'} : il en reste ${it.qte}`);
+      break;
+    }
+    case 'lang-plus':
+      state.langPanel = !state.langPanel; render();
+      break;
+    case 'lang-add':
+      p.langues = [...new Set([...(p.langues || []), b.dataset.l])]; save(); render();
+      break;
+    case 'lang-add-autre': {
+      const v = $('#lang-autre').value.trim();
+      if (!v) break;
+      p.langues = [...new Set([...(p.langues || []), v])]; save(); render();
+      break;
+    }
+    case 'lang-del':
+      p.langues = (p.langues || []).filter(l => l !== b.dataset.l); save(); render();
+      break;
+    case 'mj-entrer': {
+      const code = $('#code-mj').value.trim();
+      if (code === (CFG.codeMJ || CODE_MJ_DEMO)) { db.mj = true; saveNow(); render(); toast('Bienvenue, maître du jeu'); }
+      else toast('Code MJ incorrect');
+      break;
+    }
+    case 'mj-sortir':
+      db.mj = false; saveNow(); go('#/persos');
+      break;
+    case 'mj-suivant':
+      state.mjTour = (state.mjTour || 0) + 1; render();
+      break;
+    case 'mj-pv': {
+      const c = state.mjInit[idx];
+      c.pv = Math.max(-10, Math.min(c.pvMax, c.pv + Number(b.dataset.d))); render();
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
