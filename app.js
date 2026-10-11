@@ -174,6 +174,29 @@ function nouveauPerso() {
     sorts: [], progression: [], maj: Date.now(),
   };
 }
+/* Ce qu'un objet équipé peut améliorer */
+const CIBLES_BONUS = [
+  ['Caractéristiques', R.CARACS.map(c => [c.k, c.n])],
+  ['Défense', [['caArmure', 'CA (armure, bouclier, naturelle)'], ['caParade', 'CA (parade, divers : aussi au contact)']]],
+  ['Jets de sauvegarde', [['js', 'Tous les jets de sauvegarde'], ['vig', 'Vigueur'], ['ref', 'Réflexes'], ['vol', 'Volonté']]],
+  ['Combat', [['attaque', 'Jets d\'attaque'], ['init', 'Initiative'], ['vitesse', 'Vitesse (m)']]],
+];
+const NOM_CIBLE = Object.fromEntries(CIBLES_BONUS.flatMap(([, l]) => l));
+/* Somme des bonus des objets équipés, par cible, avec le détail des objets */
+function bonusObjets(p) {
+  const tot = {}, detail = {};
+  for (const it of p.equipement || []) {
+    if (it.equipe === false) continue;
+    for (const b of it.bonus || []) {
+      const v = num(b.val);
+      if (!b.cible || !v) continue;
+      tot[b.cible] = (tot[b.cible] || 0) + v;
+      (detail[b.cible] = detail[b.cible] || []).push(`${it.nom || 'Objet'} ${R.signe(v)}`);
+    }
+  }
+  return { tot, detail };
+}
+
 const LIST_TEMPLATES = {
   dons: () => ({ nom: '', description: '' }),
   capacites: () => ({ nom: '', description: '' }),
@@ -241,7 +264,11 @@ function etat(p, n, prevus = false, sauf = null) {
   const race = R.RACES[p.race] || null;
   const e = { niveau: lv.length, classes: {}, etapes: [], bba: 0, js: { vig: 0, ref: 0, vol: 0 }, dons: new Set(), donsListe: [], race, taille: race ? race.taille : 'M' };
   e.car = {};
-  for (const c of R.CARACS) e.car[c.k] = p.caracs?.[c.k]?.val === '' || p.caracs?.[c.k]?.val == null ? null : num(p.caracs[c.k].val);
+  e.objets = bonusObjets(p);
+  for (const c of R.CARACS) {
+    const base = p.caracs?.[c.k]?.val === '' || p.caracs?.[c.k]?.val == null ? null : num(p.caracs[c.k].val);
+    e.car[c.k] = base == null ? null : base + (e.objets.tot[c.k] || 0);
+  }
   const ajoute = (id, source, niveau, libre = false) => {
     if (!id || !R.DON[id]) return;
     e.dons.add(id);
@@ -358,19 +385,20 @@ function stats(p, e) {
   const notesJs = [];
   if (p.race === 'halfelin') { js.vig++; js.ref++; js.vol++; notesJs.push('+1 halfelin inclus'); }
   if ((e.classes.paladin || 0) >= 2) { js.vig += e.mods.cha; js.ref += e.mods.cha; js.vol += e.mods.cha; notesJs.push('Grâce divine incluse'); }
-  for (const s of ['vig', 'ref', 'vol']) js[s] += num(a[s]);
+  const ob = e.objets.tot;
+  for (const s of ['vig', 'ref', 'vol']) js[s] += num(a[s]) + (ob[s] || 0) + (ob.js || 0);
   const bonusMoine = moine ? Math.max(0, e.mods.sag) + Math.floor(moine / 5) : 0;
   const armure = num(a.armure), bouclier = num(a.bouclier), nat = num(a.naturelle), parade = num(a.parade), div = num(a.caDivers);
-  const ca = 10 + e.mods.dex + t.ca + armure + bouclier + nat + parade + div + bonusMoine;
-  const contact = 10 + e.mods.dex + t.ca + parade + div + bonusMoine;
+  const ca = 10 + e.mods.dex + t.ca + armure + bouclier + nat + parade + div + bonusMoine + (ob.caArmure || 0) + (ob.caParade || 0);
+  const contact = 10 + e.mods.dex + t.ca + parade + div + bonusMoine + (ob.caParade || 0);
   const esquiveInst = (e.classes.barbare || 0) >= 2 || (e.classes.roublard || 0) >= 4;
   const depourvu = esquiveInst ? ca : ca - Math.max(0, e.mods.dex);
   let vitesse = e.race ? e.race.vitesse : 9;
   const notesVit = [];
-  if (moine >= 3) { vitesse += 3 * Math.floor(moine / 3); notesVit.push('déplacement accéléré du moine inclus (sans armure)'); }
+  if (moine >= 3) { vitesse += 3 * Math.floor(moine / 3); notesVit.push('déplacement accéléré du moine inclus'); }
   if (e.classes.barbare) { vitesse += 3; notesVit.push('déplacement accéléré du barbare inclus'); }
-  vitesse += num(a.vitesse);
-  const bba = e.bba + num(a.bba);
+  vitesse += num(a.vitesse) + (ob.vitesse || 0);
+  const bba = e.bba + num(a.bba) + (ob.attaque || 0);
   const pvDes = e.etapes.map(s => num(s.l.pv));
   const pvCalc = pvDes.reduce((x, y) => x + y, 0) + e.niveau * e.mods.con + (e.dons.has('robustesse') ? 3 : 0);
   const pvComplets = e.etapes.length > 0 && e.etapes.every(s => s.l.pv !== '' && s.l.pv != null);
@@ -381,7 +409,7 @@ function stats(p, e) {
   return {
     bba, att: R.attaques(Math.max(0, bba)),
     cac: bba + e.mods.for + t.ca, dist: bba + e.mods.dex + t.ca, lutte: bba + e.mods.for + t.lutte,
-    js, notesJs, init: e.mods.dex + (e.dons.has('science-initiative') ? 4 : 0) + num(a.init),
+    js, notesJs, init: e.mods.dex + (e.dons.has('science-initiative') ? 4 : 0) + num(a.init) + (ob.init || 0),
     ca, contact, depourvu, esquiveInst, vitesse, notesVit, pvCalc, pvComplets, rm, rd,
   };
 }
@@ -559,12 +587,16 @@ function ongletFicheBrut(p, e) {
 
   <section class="card"><h3>Caractéristiques</h3>
     <div class="caracs">
-      ${R.CARACS.map(c => `<div class="carac"><b title="${c.n}">${c.l}</b>
-        <input type="text" inputmode="numeric" data-bind="caracs.${c.k}.val" data-recalc value="${esc(getP(p, `caracs.${c.k}.val`))}" aria-label="${c.n}">
-        <span class="mod" id="mod-${c.k}">${e.car[c.k] == null ? '—' : R.signe(e.mods[c.k])}</span>
-      </div>`).join('')}
+      ${R.CARACS.map(c => {
+        const bo = e.objets.tot[c.k] || 0;
+        return `<div class="carac ${bo ? 'avec-bonus' : ''}"><b title="${c.n}">${c.l}</b>
+        <input type="text" inputmode="numeric" data-bind="caracs.${c.k}.val" data-recalc value="${esc(getP(p, `caracs.${c.k}.val`))}" aria-label="${c.n} (valeur de base)">
+        ${bo ? `<span class="bonus-objet ${bo < 0 ? 'malus' : ''}" title="${esc(e.objets.detail[c.k].join(', '))}">${R.signe(bo)}${e.car[c.k] != null ? ` <small>= ${e.car[c.k]}</small>` : ''}</span>` : ''}
+        <span class="mod" id="mod-${c.k}" data-bonus="${bo}">${e.car[c.k] == null ? '—' : R.signe(e.mods[c.k])}</span>
+      </div>`;
+      }).join('')}
     </div>
-    <p class="hint">Saisis les valeurs finales (ajustements raciaux compris). Les modificateurs se calculent seuls.</p>
+    <p class="hint">Saisis les valeurs de base (ajustements raciaux compris, sans les objets). Les bonus des objets équipés s'ajoutent <span class="bonus-objet">en couleur</span>, et les modificateurs se calculent seuls.</p>
   </section>
 
   <section class="card"><h3>Combat</h3>
@@ -576,6 +608,7 @@ function ongletFicheBrut(p, e) {
       ${s.rm ? stat('Résistance à la magie', s.rm) : ''}${s.rd.length ? stat('Réduction des dégâts', s.rd.join(', ')) : ''}
     </div>
     ${deluge ? `<p class="hint"><b>Déluge de coups :</b> ${esc(deluge[1])}</p>` : ''}
+    ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
     ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
     <div class="grid" style="margin-top:.8rem">
       ${fi(p, 'pvMax', 'Points de vie max', { type: 'number' })}
@@ -596,7 +629,7 @@ function ongletFicheBrut(p, e) {
   ${ficheCapacites(p, e, valsClasses)}
 
   <section class="card"><h3>Équipement</h3>
-    ${liste(p, 'equipement', [{ k: 'nom', l: 'Objet' }, { k: 'qte', l: 'Qté', w: 's' }, { k: 'poids', l: 'Poids', w: 's' }, { k: 'notes', l: 'Notes' }], 'Ajouter un objet')}
+    ${ficheEquipement(p)}
     <div class="grid" style="margin-top:1rem">
       ${fi(p, 'argent.pp', 'Pièces de platine')}${fi(p, 'argent.po', 'Pièces d\'or')}
       ${fi(p, 'argent.pa', 'Pièces d\'argent')}${fi(p, 'argent.pc', 'Pièces de cuivre')}
@@ -606,6 +639,35 @@ function ongletFicheBrut(p, e) {
   <section class="card"><h3>Notes</h3>
     ${ta(p, 'notes', 'Notes libres', { rows: 5 })}
   </section>`;
+}
+
+function ficheEquipement(p) {
+  const items = p.equipement || [];
+  const opts = cur => CIBLES_BONUS.map(([g, l]) => `<optgroup label="${g}">${l.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  const lignes = items.map((it, i) => {
+    const bonus = it.bonus || [];
+    return `<div class="objet ${bonus.length && it.equipe === false ? 'range' : ''}">
+      <div class="row">
+        <input type="text" data-bind="equipement.${i}.nom" value="${esc(it.nom)}" placeholder="Objet" aria-label="Objet">
+        <input type="text" class="s" data-bind="equipement.${i}.qte" value="${esc(it.qte)}" placeholder="Qté" aria-label="Quantité">
+        <input type="text" class="s" data-bind="equipement.${i}.poids" value="${esc(it.poids)}" placeholder="Poids" aria-label="Poids">
+        <button class="icon" data-action="del-item" data-list="equipement" data-idx="${i}" aria-label="Supprimer l'objet">✕</button>
+      </div>
+      <input type="text" data-bind="equipement.${i}.notes" value="${esc(it.notes)}" placeholder="Notes" aria-label="Notes" class="objet-notes">
+      ${bonus.map((b, j) => `<div class="bonus-ligne">
+        <select data-bind="equipement.${i}.bonus.${j}.cible" data-rerender aria-label="Ce que l'objet améliore"><option value="">— Ce que l'objet améliore —</option>${opts(b.cible)}</select>
+        <input type="text" inputmode="numeric" class="bonus-val" data-bind="equipement.${i}.bonus.${j}.val" data-recalc value="${esc(b.val)}" aria-label="Valeur du bonus">
+        <button class="icon" data-action="del-bonus" data-idx="${i}" data-j="${j}" aria-label="Retirer ce bonus">✕</button>
+      </div>`).join('')}
+      <div class="objet-pied">
+        <button class="lien" data-action="add-bonus" data-idx="${i}">+ Bonus de statistique</button>
+        ${bonus.length ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.equipe" data-rerender ${it.equipe === false ? '' : 'checked'}> Équipé</label>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="objets">${lignes || '<p class="empty">Aucun objet.</p>'}</div>
+    <button class="btn ghost" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>
+    <p class="hint">Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac. Tous les bonus des objets équipés s'additionnent.</p>`;
 }
 
 function ficheCompetences(p, e) {
@@ -1145,7 +1207,7 @@ function pageRecaps() {
       <span class="session-num">${esc(r.numero)}</span>
       <span class="session-txt"><b>${esc(r.titre || 'Sans titre')}</b>
         <small>${esc([r.auteur ? 'Raconté par ' + r.auteur : '', dateFr(r.date)].filter(Boolean).join(', '))}</small>
-        ${r.texte ? `<span class="session-extrait">${esc(sansMentions(r.texte).replace(/\s+/g, ' ').slice(0, 150))}${r.texte.length > 150 ? '…' : ''}</span>` : ''}
+        ${r.texte ? `<span class="session-extrait">${esc(texteBrut(r.texte).replace(/\s+/g, ' ').trim().slice(0, 150))}${r.texte.length > 150 ? '…' : ''}</span>` : ''}
       </span>
       ${st !== 'publie' ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
     </a>`;
@@ -1183,7 +1245,10 @@ function pageRecap(id) {
           <input type="text" list="liste-auteurs" data-bind="auteur" value="${esc(loc.auteur)}" placeholder="Le joueur qui fait le récit"></label>
         <datalist id="liste-auteurs">${noms.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
       </div>
-      ${ta(loc, 'texte', 'Récit', { rows: 16, ph: 'La dernière fois, la compagnie…' })}
+      <label class="f"><span>Récit</span></label>
+      ${barreOutils()}
+      <textarea data-bind="texte" id="zone-recit" rows="16" placeholder="La dernière fois, la compagnie…" aria-label="Récit">${esc(loc.texte)}</textarea>
+      <details class="apercu" open><summary>Aperçu</summary><div class="recit-texte" id="apercu-recit">${formaterRecit(loc.texte) || '<p class="empty">Le récit apparaîtra ici, mis en forme.</p>'}</div></details>
       <div class="photo-recap">
         <h4>Photo de la session</h4>
         ${photoRecap(loc) ? `<img class="photo-apercu" src="${photoRecap(loc)}" alt="Photo de la session">` : '<p class="alerte-photo">Pas encore de photo : le conteur doit en fournir une.</p>'}
@@ -1202,7 +1267,7 @@ function pageRecap(id) {
     </section>`;
   }
   if (r.photoMaj && photoRecap(r) === undefined) chargerPhoto(r.id);
-  const paragraphes = sansMentions(r.texte).split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+  const paragraphes = formaterRecit(r.texte);
   return `${sousNav('recaps')}
   <p><a href="#/recaps">← Récapitulatifs</a></p>
   <article class="recit">
@@ -1219,6 +1284,81 @@ function pageRecap(id) {
     ${st !== 'publie' ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
   </div>
   ${st !== 'publie' && estAdmin() ? bandeauPublication() : ''}`;
+}
+
+/* ===== Mise en forme du récit =====
+   Syntaxe simple, insérée par la barre d'outils :
+   **gras**  _italique_  ++souligné++  ==mise en valeur==
+   # Titre   ## Grand texte   > citation   - liste   --- séparateur */
+function formaterLigne(t) {
+  return esc(t)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\+\+(.+?)\+\+/g, '<u>$1</u>')
+    .replace(/==(.+?)==/g, '<mark>$1</mark>')
+    .replace(/(^|[\s(«"'’])_(.+?)_(?=$|[\s).,;:!?»"'’])/g, '$1<em>$2</em>');
+}
+function formaterRecit(texte) {
+  const lignes = sansMentions(texte).replace(/\r/g, '').split('\n');
+  const out = [];
+  let para = [], liste = [];
+  const finPara = () => { if (para.length) { out.push(`<p>${para.map(formaterLigne).join('<br>')}</p>`); para = []; } };
+  const finListe = () => { if (liste.length) { out.push(`<ul>${liste.map(l => `<li>${formaterLigne(l)}</li>`).join('')}</ul>`); liste = []; } };
+  for (const brut of lignes) {
+    const l = brut.trimEnd();
+    let m;
+    if (!l.trim()) { finPara(); finListe(); continue; }
+    if (/^-{3,}$/.test(l.trim())) { finPara(); finListe(); out.push('<div class="ornement" aria-hidden="true"><span></span></div>'); continue; }
+    if ((m = l.match(/^#\s+(.*)$/))) { finPara(); finListe(); out.push(`<h2 class="recit-titre">${formaterLigne(m[1])}</h2>`); continue; }
+    if ((m = l.match(/^##\s+(.*)$/))) { finPara(); finListe(); out.push(`<p class="recit-grand">${formaterLigne(m[1])}</p>`); continue; }
+    if ((m = l.match(/^>\s?(.*)$/))) { finPara(); finListe(); out.push(`<blockquote>${formaterLigne(m[1])}</blockquote>`); continue; }
+    if ((m = l.match(/^[-•]\s+(.*)$/))) { finPara(); liste.push(m[1]); continue; }
+    finListe(); para.push(l);
+  }
+  finPara(); finListe();
+  return out.join('');
+}
+/* Texte sans les marques de mise en forme (copie, extraits) */
+const texteBrut = t => sansMentions(t)
+  .replace(/\*\*(.+?)\*\*/g, '$1').replace(/\+\+(.+?)\+\+/g, '$1').replace(/==(.+?)==/g, '$1')
+  .replace(/(^|\s)_(.+?)_(?=\s|$|[.,;:!?])/g, '$1$2').replace(/^#{1,2}\s+/gm, '').replace(/^>\s?/gm, '').replace(/^-{3,}$/gm, '');
+
+const OUTILS_TEXTE = [
+  ['gras', 'G', 'Gras'], ['italique', 'I', 'Italique'], ['souligne', 'S', 'Souligné'], ['valeur', '✦', 'Mettre en valeur (bronze)'],
+  ['titre', 'Titre', 'Titre de partie'], ['grand', 'A+', 'Texte plus grand'], ['citation', '« »', 'Citation'],
+  ['liste', '•', 'Liste à puces'], ['separateur', '◆', 'Séparateur'],
+];
+function barreOutils() {
+  return `<div class="barre-texte" role="toolbar" aria-label="Mise en forme du récit">
+    ${OUTILS_TEXTE.map(([f, l, t]) => `<button type="button" class="outil outil-${f}" data-action="fmt" data-fmt="${f}" title="${t}" aria-label="${t}">${l}</button>`).join('')}
+  </div>`;
+}
+function appliquerFormat(zone, fmt) {
+  const v = zone.value;
+  let a = zone.selectionStart, b = zone.selectionEnd;
+  const enLigne = { gras: ['**', '**'], italique: ['_', '_'], souligne: ['++', '++'], valeur: ['==', '=='] }[fmt];
+  const prefixe = { titre: '# ', grand: '## ', citation: '> ', liste: '- ' }[fmt];
+  let nouveau, debutSel, finSel;
+  if (enLigne) {
+    const sel = v.slice(a, b) || 'texte';
+    nouveau = v.slice(0, a) + enLigne[0] + sel + enLigne[1] + v.slice(b);
+    debutSel = a + enLigne[0].length; finSel = debutSel + sel.length;
+  } else if (prefixe) {
+    const d = v.lastIndexOf('\n', a - 1) + 1;
+    const fin = v.indexOf('\n', b); const f = fin < 0 ? v.length : fin;
+    const bloc = v.slice(d, f).split('\n').map(l => l.startsWith(prefixe) ? l.slice(prefixe.length) : prefixe + l.replace(/^(#{1,2}|>|-)\s?/, '')).join('\n');
+    nouveau = v.slice(0, d) + bloc + v.slice(f);
+    debutSel = d; finSel = d + bloc.length;
+  } else {
+    /* Le séparateur s'insère après la sélection, sans rien effacer */
+    const fin = v.indexOf('\n', b); const pos = fin < 0 ? v.length : fin;
+    const ins = '\n\n---\n\n';
+    nouveau = v.slice(0, pos) + ins + v.slice(pos).replace(/^\n+/, '');
+    debutSel = finSel = pos + ins.length;
+  }
+  zone.value = nouveau;
+  zone.focus();
+  zone.setSelectionRange(debutSel, finSel);
+  zone.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 /* ===== Notes personnelles ===== */
@@ -1770,6 +1910,7 @@ document.addEventListener('input', ev => {
   }
   if (t.id === 'carnet') { state.carnet = t.value; render(); return; }
   if (t.classList.contains('don-recherche')) { resultatsDons(t); return; }
+  if (t.id === 'zone-recit' && $('#apercu-recit')) $('#apercu-recit').innerHTML = formaterRecit(t.value) || '<p class="empty">Le récit apparaîtra ici, mis en forme.</p>';
   const path = t.dataset.bind;
   if (!path || !state.ctx) return;
   if (db.personnages.includes(state.ctx) && !peutModifier(state.ctx)) return;
@@ -1779,7 +1920,7 @@ document.addEventListener('input', ev => {
   state.ctx.maj = Date.now();
   if (path === 'nom') $('#ptitle').textContent = t.value || 'Sans nom';
   const m = path.match(/^caracs\.(\w+)\.val$/);
-  if (m && $('#mod-' + m[1])) $('#mod-' + m[1]).textContent = t.value === '' ? '—' : R.signe(R.mod(t.value));
+  if (m && $('#mod-' + m[1])) $('#mod-' + m[1]).textContent = t.value === '' ? '—' : R.signe(R.mod(num(t.value) + num($('#mod-' + m[1]).dataset.bonus)));
   save();
   if (t.hasAttribute('data-rerender')) render();
 });
@@ -2078,7 +2219,7 @@ document.addEventListener('click', ev => {
       break;
     case 'recap-copier': {
       const r = findRecap(b.dataset.id);
-      const txt = [`Session ${r.numero}${r.titre ? ' : ' + r.titre : ''}`, '', sansMentions(r.texte)].join('\n');
+      const txt = [`Session ${r.numero}${r.titre ? ' : ' + r.titre : ''}`, '', texteBrut(r.texte)].join('\n');
       navigator.clipboard?.writeText(txt).then(() => toast('Texte copié'), () => toast('Copie impossible sur ce navigateur'));
       break;
     }
@@ -2117,6 +2258,21 @@ document.addEventListener('click', ev => {
       const fini = () => { db.conteur = { conteur_id: id, conteur_nom: nom, session }; saveNow(); render(); toast(nom ? `${nom} racontera la session ${session || ''}` : 'Conteur retiré'); };
       if (enLigne()) rpc('definir_conteur', { p_code: db.codeCampagne, p_id: id, p_nom: nom, p_session: session }).then(fini).catch(e => alert('Impossible : ' + e.message));
       else fini();
+      break;
+    }
+    case 'add-bonus': {
+      const it = p.equipement[idx];
+      it.bonus = [...(it.bonus || []), { cible: '', val: '1' }];
+      if (it.equipe === undefined) it.equipe = true;
+      save(); render();
+      break;
+    }
+    case 'del-bonus':
+      p.equipement[idx].bonus.splice(Number(b.dataset.j), 1); save(); render();
+      break;
+    case 'fmt': {
+      const zone = $('#zone-recit');
+      if (zone) appliquerFormat(zone, b.dataset.fmt);
       break;
     }
     case 'replis-tout': {

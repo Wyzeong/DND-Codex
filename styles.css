@@ -570,3 +570,46 @@ fieldset.lecture .image-cadre { cursor: default; }
 .conteur .conteur-nom { font-size: 1.1rem; margin: 0 0 .3rem; }
 .conteur .conteur-nom b { font-family: var(--font-titre); color: var(--bronze-clair); letter-spacing: .03em; }
 .conteur.moi { border-color: var(--bronze); box-shadow: 0 0 0 3px rgba(183, 147, 90, .12), inset 0 1px 0 rgba(183, 147, 90, .2); }
+
+/* ---------- Équipement avec bonus ---------- */
+.objets { display: flex; flex-direction: column; gap: .55rem; margin-bottom: .6rem; }
+.objet { background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius-s); padding: .5rem .55rem; display: flex; flex-direction: column; gap: .4rem; }
+.objet.range { opacity: .65; }
+.objet .row input:first-child { flex: 1 1 140px; }
+.objet-notes { font-size: .88rem; }
+.bonus-ligne { display: grid; grid-template-columns: minmax(0, 1fr) 4rem auto; gap: .4rem; align-items: center; border-left: 2px solid #3E9C84; padding-left: .5rem; }
+.bonus-val { text-align: center; color: #8FD3C0; font-weight: 600; }
+.objet-pied { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; }
+.objet-pied .check { padding-bottom: 0; }
+.bonus-objet { color: #8FD3C0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bonus-objet.malus { color: var(--rouge-clair); }
+.carac .bonus-objet { display: block; font-size: .9rem; line-height: 1.2; padding-top: .15rem; }
+.carac .bonus-objet small { color: var(--ivoire); font-weight: 600; font-size: .85rem; }
+.carac.avec-bonus { border-top-color: #3E9C84; }
+
+/* ---------- Mise en forme du récit ---------- */
+.barre-texte { display: flex; flex-wrap: wrap; gap: .3rem; margin: .3rem 0 .4rem; }
+.outil {
+  font: inherit; font-size: .88rem; min-width: 2.3rem; height: 2.1rem; padding: 0 .55rem; cursor: pointer;
+  background: var(--inset); color: var(--ivoire); border: 1px solid var(--line); border-radius: var(--radius-s);
+}
+.outil:hover { border-color: var(--bronze); color: var(--bronze-clair); }
+.outil-gras { font-weight: 700; }
+.outil-italique { font-style: italic; font-family: Georgia, serif; }
+.outil-souligne { text-decoration: underline; }
+.outil-valeur { color: var(--bronze-clair); }
+.outil-titre { font-family: var(--font-titre); font-weight: 600; }
+.outil-grand { font-weight: 600; }
+.apercu { margin: .6rem 0 1rem; border: 1px dashed var(--line); border-radius: var(--radius-s); padding: .5rem .75rem; }
+.apercu summary { font-size: .85rem; }
+.apercu .recit-texte { margin-top: .5rem; }
+.recit-texte strong { color: var(--ivoire); font-weight: 700; }
+.recit-texte mark { background: none; color: var(--bronze-clair); font-weight: 600; }
+.recit-texte u { text-decoration-color: var(--bronze); text-underline-offset: 3px; }
+.recit-texte .recit-titre { font-size: 1.3rem; color: var(--bronze); margin: 1.4rem 0 .6rem; }
+.recit-texte .recit-grand { font-size: 1.3rem; line-height: 1.5; font-family: var(--font-titre); color: var(--ivoire); }
+.recit-texte blockquote { margin: 0 0 1rem; padding: .3rem 0 .3rem 1rem; border-left: 2px solid var(--bronze); font-style: italic; color: #D6D1C4; font-size: 1.06rem; }
+.recit-texte ul { margin: 0 0 1rem; padding-left: 1.2rem; }
+.recit-texte li { margin: .2rem 0; line-height: 1.6; }
+.recit-texte li::marker { color: var(--bronze); }
+.recit-texte p.recit-grand::first-letter { all: unset; }
