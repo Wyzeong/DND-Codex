@@ -510,7 +510,20 @@ function blocImages(p) {
   return `<div class="images">${img('portrait', 'Portrait', 'portrait')}${img('embleme', 'Emblème', 'embleme')}</div>`;
 }
 
+/* Transforme les sections titrées de la fiche en blocs repliables (état mémorisé sur l'appareil) */
+function repliable(html) {
+  return html.replace(/<section class="card"><h3>(.*?)<\/h3>([\s\S]*?)<\/section>/g, (m, titre, corps) => {
+    const id = slug(titre.replace(/<[^>]+>/g, ''));
+    const ferme = (db.replis || {})[id];
+    return `<details class="card repli" data-section="${id}"${ferme ? '' : ' open'}><summary><h3>${titre}</h3></summary>${corps}</details>`;
+  });
+}
+const outilsReplis = () => `<div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
+
 function ongletFiche(p, e) {
+  return outilsReplis() + repliable(ongletFicheBrut(p, e));
+}
+function ongletFicheBrut(p, e) {
   const s = stats(p, e);
   const race = e.race;
   const raceOpts = [...Object.entries(R.RACES).map(([k, r]) => [k, r.nom]), ['autre', 'Autre race (campagne)']];
@@ -599,28 +612,35 @@ function ficheCompetences(p, e) {
   const dispo = pointsComp(p, e);
   let depense = 0;
   const rangsMax = e.niveau + 3;
+  const reduit = !!db.compReduit;
   const lignes = R.COMPETENCES.map(c => {
     const v = p.comp?.[c.id] || {};
     const rangs = num(v.rangs), classe = deClasse.has(c.id);
     depense += classe ? rangs : rangs * 2;
+    if (reduit && !classe && !rangs && !num(v.divers)) return '';
     const mod = c.car ? e.mods[c.car] : 0;
     const bonus = bonusComp(c.id, e);
     const total = rangs + mod + bonus + num(v.divers);
     const inutilisable = c.formation && rangs === 0;
     const spe = ['artisanat', 'profession', 'representation', 'langue'].includes(c.id);
     return `<div class="comp ${classe ? 'de-classe' : ''} ${inutilisable ? 'formation' : ''}">
-      <div class="comp-nom">${classe ? '<span class="etoile" title="Compétence de classe">★</span>' : ''}${esc(c.nom)}${c.formation ? '<span class="formation-tag" title="Formation nécessaire">F</span>' : ''}
-        <small>${c.car ? R.CARACS.find(x => x.k === c.car).l + ' ' + R.signe(mod) : ''}${bonus ? `, bonus ${R.signe(bonus)}` : ''}</small>
-        ${spe ? `<input type="text" class="spe" data-bind="comp.${c.id}.spe" value="${esc(v.spe)}" placeholder="Spécialité">` : ''}
+      <div class="comp-nom" title="${esc(c.nom)}">${classe ? '<span class="etoile" title="Compétence de classe">★</span>' : ''}<span class="comp-libelle">${esc(c.nom.replace(/^Connaissances \((.*)\)$/, 'Conn. : $1').replace(' et ingénierie', '').replace('exploration souterraine', 'souterrain').replace(' et royauté', ''))}</span>${c.formation ? '<span class="formation-tag" title="Formation nécessaire">F</span>' : ''}
+        </div>
+      ${spe ? `<input type="text" class="spe" data-bind="comp.${c.id}.spe" value="${esc(v.spe)}" placeholder="Spécialité">` : ''}
+      <div class="comp-val">
+        <small class="comp-car" title="${bonus ? 'Bonus racial ou de don : ' + R.signe(bonus) : ''}">${c.car ? R.CARACS.find(x => x.k === c.car).l + '<br>' + R.signe(mod) : ''}${bonus ? '*' : ''}</small>
+        <input type="text" inputmode="decimal" data-bind="comp.${c.id}.rangs" data-recalc value="${esc(v.rangs)}" placeholder="rg" aria-label="Rangs en ${esc(c.nom)}">
+        <input type="text" inputmode="numeric" data-bind="comp.${c.id}.divers" data-recalc value="${esc(v.divers)}" placeholder="div" aria-label="Bonus divers en ${esc(c.nom)}">
+        <b class="comp-total" title="Total">${inutilisable ? '—' : R.signe(total)}</b>
       </div>
-      <input type="text" inputmode="decimal" data-bind="comp.${c.id}.rangs" data-recalc value="${esc(v.rangs)}" placeholder="0" aria-label="Rangs en ${esc(c.nom)}">
-      <input type="text" inputmode="numeric" data-bind="comp.${c.id}.divers" data-recalc value="${esc(v.divers)}" placeholder="0" aria-label="Bonus divers en ${esc(c.nom)}">
-      <b class="comp-total">${inutilisable ? '—' : R.signe(total)}</b>
     </div>`;
   }).join('');
   return `<section class="card"><h3>Compétences</h3>
     <p class="hint">Points : ${depense} dépensés sur ${dispo} disponibles${e.race?.pcBonus ? ' (bonus humain compris)' : ''}. Rangs max : ${rangsMax} pour une compétence de classe ★, ${String(rangsMax / 2).replace('.', ',')} sinon (une compétence hors classe coûte 2 points par rang). F = formation nécessaire.</p>
-    <div class="comp entete"><span>Compétence</span><span>Rangs</span><span>Divers</span><span>Total</span></div>
+    <div class="comp-outils">
+      <p class="hint">Dans chaque case : caractéristique, rangs (rg), bonus divers (div), puis le total calculé. * = bonus racial ou de don inclus.</p>
+      <label class="check"><input type="checkbox" data-action="comp-reduit" ${reduit ? 'checked' : ''}> Seulement les compétences de classe et celles avec des rangs</label>
+    </div>
     <div class="comps">${lignes}</div>
   </section>`;
 }
@@ -1695,6 +1715,11 @@ document.addEventListener('change', ev => {
 /* Mémorise les niveaux dépliés ou repliés */
 document.addEventListener('toggle', ev => {
   const d = ev.target;
+  if (d.matches && d.matches('details[data-section]')) {
+    db.replis = { ...(db.replis || {}), [d.dataset.section]: !d.open };
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* */ }
+    return;
+  }
   if (!d.matches || !d.matches('details[data-niveau]')) return;
   const n = Number(d.dataset.niveau);
   if (d.open) { state.ouverts.add(n); state.fermes.delete(n); } else { state.ouverts.delete(n); state.fermes.add(n); }
@@ -1707,7 +1732,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -1965,6 +1990,16 @@ document.addEventListener('click', ev => {
     case 'jq-effacer':
       state.jq = ''; go('#/notes');
       break;
+    case 'comp-reduit':
+      db.compReduit = b.checked;
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* */ }
+      render();
+      break;
+    case 'replis-tout': {
+      const ouvrir = b.dataset.ouvrir === '1';
+      document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
+      break;
+    }
     case 'img-choisir':
       state.imgType = b.dataset.type;
       $('#imginput').value = '';
