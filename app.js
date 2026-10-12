@@ -3603,11 +3603,43 @@ function formaterLigne(t) {
 /* Les @mentions deviennent des liens vers les fiches de l'encyclopédie (marqueurs posés avant l'échappement) */
 function marquerMentions(t) {
   const idx = indexNoms();
-  return String(t || '').replace(RE_MENTION, (m, a, b) => {
+  const marque = String(t || '').replace(RE_MENTION, (m, a, b) => {
     const { cible, texte } = partiesMention(a, b);
     const f = idx.get(norm(cible));
     return `\u0001${f ? f.id : ''}\u0002${texte}\u0003`;
   });
+  return lierNomsConnus(marque);
+}
+/* Liens automatiques : chaque nom de fiche (ou autre nom connu) écrit avec une majuscule devient un lien,
+   à sa première apparition dans chaque paragraphe, sans avoir à écrire @[…]. */
+let reNoms = null, reNomsCle = '';
+function lierNomsConnus(texte) {
+  const fiches = fichesToutes();
+  const cle = fiches.map(f => f.id + f.nom + f.alias).join('|');
+  if (cle !== reNomsCle) {
+    reNomsCle = cle;
+    const noms = [];
+    for (const f of fiches) for (const n of [f.nom, ...String(f.alias || '').split(',')]) {
+      const x = n.trim();
+      if (x.length >= 4 && /^[A-ZÀ-ÖØ-Þ]/.test(x)) noms.push([x, f.id]);
+    }
+    noms.sort((a, b) => b[0].length - a[0].length);
+    reNoms = noms.length ? { re: new RegExp('(^|[^\\p{L}\\p{N}\\u0002])(' + noms.map(([x]) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![\\p{L}\\p{N}])', 'gu'), ids: new Map(noms.map(([x, id]) => [x, id])) } : null;
+  }
+  if (!reNoms) return texte;
+  return texte.split('\n').map(ligne => {
+    const deja = new Set();
+    /* on ne touche pas aux liens déjà posés (entre \u0001 et \u0003) ni aux adresses web */
+    return ligne.split(/(\u0001[^\u0003]*\u0003|https?:\/\/\S+)/).map(seg => {
+      if (/^\u0001|^https?:/.test(seg)) { const m = seg.match(/^\u0001([^\u0002]*)/); if (m) deja.add(m[1]); return seg; }
+      return seg.replace(reNoms.re, (m, avant, nom) => {
+        const id = reNoms.ids.get(nom);
+        if (!id || deja.has(id)) return m;
+        deja.add(id);
+        return `${avant}\u0001${id}\u0002${nom}\u0003`;
+      });
+    }).join('');
+  }).join('\n');
 }
 const liensMentions = h => h.replace(/\u0001([^\u0002]*)\u0002([^\u0003]*)\u0003/g, (m, id, nom) => id ? `<a class="mention" href="#/fiche/${id}">${nom}</a>` : nom);
 function formaterRecit(texte) {
