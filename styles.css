@@ -1189,3 +1189,13 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .prerequis-liste li.ok { color: #8FD3C0; }
 .prerequis-liste li.ko { color: var(--rouge-clair); }
 .butin-ligne .ligne-entiere { flex: 1 1 100%; }
+/* Sorts à apprendre dans la progression */
+.sorts-niveau { border: 1px solid var(--line-bronze); border-radius: var(--radius-s); padding: .5rem .7rem; margin: .6rem 0; background: rgba(94, 158, 214, .05); }
+.sorts-niveau h4 { margin-top: .2rem; }
+.choix-sorts { margin: .5rem 0 .7rem; }
+.choix-sorts .lbl { display: flex; align-items: center; gap: .5rem; }
+.quota { font-size: .75rem; border: 1px solid var(--rouge); color: var(--rouge-clair); border-radius: 99px; padding: 0 .45rem; }
+.quota.ok { border-color: var(--emeraude); color: #8FD3C0; }
+.choix-sorts .chips { margin: .3rem 0; }
+.prog-sort-res { display: flex; flex-direction: column; gap: .3rem; margin-top: .35rem; max-height: 360px; overflow-y: auto; }
+.prog-sort-res:empty { display: none; }

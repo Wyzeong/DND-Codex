@@ -289,6 +289,21 @@ const num = v => (v === '' || v == null || isNaN(Number(v))) ? 0 : Number(v);
 /* État du personnage au niveau n.
    prevus = true : compte aussi les niveaux planifiés (pour la progression).
    sauf = { niveau, champ } : ignore le don d'un emplacement (vérification de ses propres prérequis). */
+function appliquerAugment(p, l) {
+  if (!l) return;
+  const voulu = l.atteint && l.augment ? l.augment : null;
+  const fait = l.augmentApplique || null;
+  if (voulu === fait) return;
+  const ajuste = (k, d) => {
+    const c = (p.caracs = p.caracs || {})[k] = p.caracs[k] || {};
+    if (c.val === '' || c.val == null) return false;
+    c.val = String(num(c.val) + d);
+    return true;
+  };
+  if (fait) ajuste(fait, -1);
+  l.augmentApplique = voulu && ajuste(voulu, 1) ? voulu : null;
+  if (l.augmentApplique) toast(`+1 ${R.CARACS.find(c => c.k === voulu).n} reporté sur la fiche`);
+}
 function enregistrerPrestigesPerso(p) {
   for (const d of p.prestigePerso || []) R.CLASSES['pp-' + d.id] = R.classePerso(d);
 }
@@ -314,7 +329,7 @@ function etat(p, n, prevus = false, sauf = null) {
     const k = (e.classes[l.classe] || 0) + 1;
     e.classes[l.classe] = k;
     e.etapes.push({ l, cl, id: l.classe, k });
-    if (prevus && !l.atteint && l.augment && e.car[l.augment] != null) e.car[l.augment] += 1;
+    if (prevus && !l.atteint && l.augment && !l.augmentApplique && e.car[l.augment] != null) e.car[l.augment] += 1;
     const ignore = champ => sauf && sauf.niveau === l.niveau && sauf.champ === champ;
     if (!ignore('don')) ajoute(l.don, `Niveau ${l.niveau}`, l.niveau);
     if (!ignore('donRace')) ajoute(l.donRace, `${race ? race.nom : 'Race'} (don supplémentaire)`, l.niveau);
@@ -2738,7 +2753,7 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
   if (n % 4 === 0) {
     choix.push(`<label class="f"><span>Augmentation de caractéristique (+1)</span><select data-bind="progression.${i}.augment" data-rerender>
       <option value="">— Choisir —</option>${R.CARACS.map(x => `<option value="${x.k}" ${l.augment === x.k ? 'selected' : ''}>${x.n}</option>`).join('')}</select></label>
-      <p class="hint">Une fois le niveau atteint, pense à ajouter ce +1 à la valeur sur la fiche.</p>`);
+      <p class="hint">Quand tu coches « Atteint », ce +1 s'ajoute tout seul à la caractéristique sur la fiche (et se retire si tu décoches).</p>`);
   }
   choix.push('<p class="hint">Points de vie : c\'est le MJ qui les fixe. Mets simplement à jour « Points de vie max » sur la fiche.</p>');
 
@@ -2755,14 +2770,71 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
     }
   }
   const spA = sortsParJour(l.classe, k - 1, avant), spB = sortsParJour(l.classe, k, apres);
+  const bs = blocSortsNiveau(p, l, i, cl, k, avant, apres);
   const sortsChange = spB && JSON.stringify(spA?.parJour) !== JSON.stringify(spB.parJour);
   return `
     <dl class="gains">${lignes}</dl>
     ${apt.length ? `<h4>Nouvelles aptitudes de ${esc(cl.nom.toLowerCase())}</h4><dl class="caps">${apt.map(a => `<dt>${esc(a.nom)}</dt><dd>${esc(a.texte)}</dd>`).join('')}</dl>` : ''}
     ${changes.length ? `<h4>Ce qui s'améliore</h4><ul class="changes">${changes.join('')}</ul>` : ''}
     ${sortsChange ? tableSorts(spB) : ''}
+    ${bs.tableau}
+    ${bs.choix}
     <h4>Choix du niveau</h4>
     <div class="choix">${choix.join('')}</div>`;
+}
+
+/* ===== Sorts gagnés en montant de niveau ===== */
+const ABR_SORTS = { magicien: 'Ens/Mag', ensorceleur: 'Ens/Mag', pretre: 'Prê', druide: 'Dru', barde: 'Brd', rodeur: 'Rôd', paladin: 'Pal' };
+const sortsDeClasse = (abr, min, max) => db.sorts.filter(x => (x.niveaux || []).some(n => n.classe === abr && n.niveau >= min && n.niveau <= max));
+const nivSortClasse = (x, abr) => (x.niveaux || []).find(n => n.classe === abr)?.niveau;
+function blocSortsNiveau(p, l, i, cl, k, avant, apres) {
+  /* Quelle classe de lanceur progresse à ce niveau ? */
+  let cid = null, spA = null, spB = null;
+  if (cl.lanceur) { cid = l.classe; spA = sortsParJour(cid, k - 1, avant); spB = sortsParJour(cid, k, apres); }
+  else if (cl.sortsPlus && cl.sortsPlus.niveaux.includes(k)) {
+    cid = Object.keys(apres.lanceurBonus || {}).find(c => (apres.lanceurBonus[c] || 0) > (avant.lanceurBonus?.[c] || 0));
+    if (cid) { spA = sortsParJour(cid, avant.classes[cid], avant); spB = sortsParJour(cid, apres.classes[cid], apres); }
+  }
+  if (!cid || !spB) return { tableau: '', choix: '' };
+  const lc = R.CLASSES[cid].lanceur, abr = ABR_SORTS[cid];
+  const effA = (avant.classes[cid] || 0) + (avant.lanceurBonus?.[cid] || 0), effB = (apres.classes[cid] || 0) + (apres.lanceurBonus?.[cid] || 0);
+  const nivMax = Math.max(...spB.parJour.map(x => x.niv));
+  const mod = peutModifier(p);
+  const blocs = [];
+  if (lc.connus && abr) {
+    /* Lanceur spontané : nouveaux sorts connus par niveau de sort */
+    const A = effA ? (lc.connus[effA] || '').split(' ').map(Number) : [];
+    const B = (lc.connus[effB] || '').split(' ').map(Number);
+    B.forEach((v, niv) => { const nb = v - (A[niv] || 0); if (nb > 0) blocs.push({ cle: String(niv), titre: `${nb} nouveau${nb > 1 ? 'x' : ''} sort${nb > 1 ? 's' : ''} connu${nb > 1 ? 's' : ''} de niveau ${niv}`, quota: nb, min: niv, max: niv }); });
+  } else if (cid === 'magicien' && abr) {
+    if (effB === 1) {
+      blocs.push({ cle: 'zero', titre: 'Grimoire : tous les sorts de niveau 0', tous: 0 });
+      const q = 3 + Math.max(0, apres.mods.int);
+      blocs.push({ cle: '1', titre: `Grimoire : ${q} sorts de niveau 1 (3 + mod Int)`, quota: q, min: 1, max: 1 });
+    } else blocs.push({ cle: 'max', titre: `2 nouveaux sorts pour le grimoire (niveau ${nivMax} au plus)`, quota: 2, min: 1, max: nivMax });
+  }
+  const html = blocs.map(bl => {
+    if (bl.tous != null) {
+      const zero = sortsDeClasse(abr, 0, 0);
+      const manquants = zero.filter(x => !(p.sorts || []).some(y => y.id === x.id));
+      return `<div class="choix-sorts"><p class="lbl">${esc(bl.titre)} <span class="quota ${manquants.length ? '' : 'ok'}">${zero.length - manquants.length} / ${zero.length}</span></p>
+        ${manquants.length && mod ? `<button class="btn ghost" data-action="prog-sorts-zero" data-abr="${abr}">Ajouter les ${manquants.length} sorts de niveau 0</button>` : ''}</div>`;
+    }
+    const choisis = (l.sortsAppris || []).filter(x => x.bloc === bl.cle);
+    return `<div class="choix-sorts">
+      <p class="lbl">${esc(bl.titre)} <span class="quota ${choisis.length >= bl.quota ? 'ok' : ''}">${choisis.length} / ${bl.quota}</span></p>
+      <div class="chips">${choisis.map(x => { const sp = findSort(x.id); return `<span class="chip on">${esc(sp ? sp.nom : x.id)}${mod ? `<button class="chip-x" data-action="prog-sort-suppr" data-i="${i}" data-id="${x.id}" aria-label="Retirer">✕</button>` : ''}</span>`; }).join('')}</div>
+      ${choisis.length < bl.quota && mod ? `<input type="search" class="prog-sort-q" data-i="${i}" data-bloc="${bl.cle}" data-abr="${abr}" data-min="${bl.min}" data-max="${bl.max}" placeholder="Chercher un sort (nom, effet, usage : offensif, soin…)" aria-label="Chercher un sort à apprendre">
+        <div class="prog-sort-res" data-pour="${i}-${bl.cle}"></div>` : ''}
+    </div>`;
+  }).join('');
+  const note = !blocs.length
+    ? (lc.type.startsWith('divin') ? `<p class="hint">${esc(R.CLASSES[cid].nom)} : tu prépares chaque jour tes sorts parmi <b>toute la liste</b> de ta classe, jusqu'au niveau ${nivMax}. Rien à choisir ici, seulement de nouveaux emplacements.</p>` : '')
+    : '<p class="hint">Les sorts choisis sont ajoutés à l\'onglet Sorts. Retirer un sort ici le retire aussi de l\'onglet Sorts.</p>';
+  return {
+    tableau: !cl.lanceur && JSON.stringify(spA?.parJour) !== JSON.stringify(spB.parJour) ? `<h4>Sorts de ${esc(R.CLASSES[cid].nom.toLowerCase())} : +1 niveau de lanceur</h4>${tableSorts(spB)}` : '',
+    choix: html || note ? `<div class="sorts-niveau"><h4>Sorts à apprendre</h4>${html}${note}</div>` : '',
+  };
 }
 
 /* ---------- Journal : récapitulatifs communs et notes personnelles ---------- */
@@ -4038,6 +4110,19 @@ document.addEventListener('input', ev => {
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
     return;
   }
+  if (t.classList.contains('prog-sort-q')) {
+    const q = norm(t.value).trim(), d = t.dataset;
+    const zone = t.parentElement.querySelector('.prog-sort-res');
+    const p2 = state.ctx;
+    const deja = new Set((p2.sorts || []).map(x => x.id));
+    const res = !q ? [] : sortsDeClasse(d.abr, num(d.min), num(d.max))
+      .filter(x => !deja.has(x.id) && (norm(x.nom).includes(q) || norm(x.description).includes(q) || usagesSort(x).some(u => norm(USAGES_SORT[u]).includes(q))))
+      .sort(byNom).slice(0, 15);
+    zone.innerHTML = res.map(x => `<button class="don-choix" data-action="prog-sort-ajout" data-i="${d.i}" data-bloc="${d.bloc}" data-id="${x.id}">
+      <b>${esc(x.nom)}</b> <span class="type-don">niveau ${nivSortClasse(x, d.abr)}, ${esc(x.ecole)}</span> ${tagsUsages(x)}
+      <small>${esc(String(x.description || '').slice(0, 140))}</small></button>`).join('') || (q ? '<p class="empty">Aucun sort ne correspond.</p>' : '');
+    return;
+  }
   if (t.id === 'invq') {
     state.invQ = t.value;
     const p2 = state.ctx;
@@ -4111,6 +4196,9 @@ document.addEventListener('input', ev => {
   if (state.ctx === state.draft) return; // le sort n'est enregistré qu'au clic sur le bouton
   state.ctx.maj = Date.now();
   if (path === 'nom') $('#ptitle').textContent = t.value || 'Sans nom';
+  /* Augmentation de caractéristique : reportée sur la fiche quand le niveau est atteint */
+  const mAug = path.match(/^progression\.(\d+)\.(atteint|augment)$/);
+  if (mAug) appliquerAugment(state.ctx, state.ctx.progression[Number(mAug[1])]);
   const m = path.match(/^caracs\.(\w+)\.val$/);
   if (m && $('#mod-' + m[1])) $('#mod-' + m[1]).textContent = t.value === '' ? '—' : R.signe(R.mod(num(t.value) + num($('#mod-' + m[1]).dataset.bonus)));
   save();
@@ -4283,6 +4371,9 @@ document.addEventListener('click', ev => {
     }
     case 'del-level':
       if (confirm(`Supprimer le niveau ${p.progression[idx].niveau} et ce qu'il contient ?`)) {
+        const l = p.progression[idx];
+        l.atteint = false; appliquerAugment(p, l);
+        p.sorts = (p.sorts || []).filter(x => x.notes !== `Appris au niveau ${l.niveau}`);
         p.progression.splice(idx, 1); save(); render();
       }
       break;
@@ -5087,6 +5178,26 @@ document.addEventListener('click', ev => {
     case 'pp-apt-suppr':
       p.prestigePerso[Number(b.dataset.i)].aptitudes.splice(Number(b.dataset.j), 1); save(); render();
       break;
+    case 'prog-sort-ajout': {
+      const l = p.progression[Number(b.dataset.i)];
+      l.sortsAppris = [...(l.sortsAppris || []), { id: b.dataset.id, bloc: b.dataset.bloc }];
+      if (!(p.sorts || []).some(x => x.id === b.dataset.id)) p.sorts = [...(p.sorts || []), { id: b.dataset.id, statut: 'Connu', notes: `Appris au niveau ${l.niveau}` }];
+      save(); render(); toast(`${findSort(b.dataset.id)?.nom || 'Sort'} appris`);
+      break;
+    }
+    case 'prog-sort-suppr': {
+      const l = p.progression[Number(b.dataset.i)];
+      l.sortsAppris = (l.sortsAppris || []).filter(x => x.id !== b.dataset.id);
+      p.sorts = (p.sorts || []).filter(x => !(x.id === b.dataset.id && x.notes === `Appris au niveau ${l.niveau}`));
+      save(); render();
+      break;
+    }
+    case 'prog-sorts-zero': {
+      const deja = new Set((p.sorts || []).map(x => x.id));
+      const nv = sortsDeClasse(b.dataset.abr, 0, 0).filter(x => !deja.has(x.id)).map(x => ({ id: x.id, statut: 'Connu', notes: 'Grimoire (niveau 0)' }));
+      p.sorts = [...(p.sorts || []), ...nv]; save(); render(); toast(`${nv.length} sorts de niveau 0 ajoutés`);
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
