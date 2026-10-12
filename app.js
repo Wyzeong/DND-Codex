@@ -460,11 +460,15 @@ function ta(o, path, label, opt = {}) {
 }
 function sel(o, path, label, options, opt = {}) {
   const cur = getP(o, path) ?? '';
-  const opts = options.map(x => Array.isArray(x) ? x : [x, x]);
+  const une = ([v, l]) => `<option value="${esc(v)}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(l)}</option>`;
+  /* Une entrée [titre, [options…]] devient un groupe d'options */
+  const html = options.map(x => Array.isArray(x) && Array.isArray(x[1])
+    ? `<optgroup label="${esc(x[0])}">${x[1].map(y => une(Array.isArray(y) ? y : [y, y])).join('')}</optgroup>`
+    : une(Array.isArray(x) ? x : [x, x])).join('');
   return `<label class="f${opt.span ? ' span2' : ''}"><span>${esc(label)}</span>
     <select data-bind="${path}" data-rerender>
       <option value="">${esc(opt.vide || '— Choisir —')}</option>
-      ${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+      ${html}
     </select></label>`;
 }
 function liste(o, key, fields, addLabel) {
@@ -596,7 +600,11 @@ function ongletFicheBrut(p, e) {
   }
   const s = stats(p, e);
   const race = e.race;
-  const raceOpts = [...Object.entries(R.RACES).map(([k, r]) => [k, r.nom]), ['autre', 'Autre race (campagne)']];
+  const raceOpts = [
+    ['Races courantes', Object.entries(R.RACES).filter(([, r]) => !r.rare).map(([k, r]) => [k, r.nom])],
+    ['Races moins communes', Object.entries(R.RACES).filter(([, r]) => r.rare).map(([k, r]) => [k, r.nom])],
+    ['Autre', [['autre', 'Autre race (campagne)']]],
+  ];
   const nivTxt = e.niveau ? `Niveau ${e.niveau} : ${classesTxt(e)}` : 'Aucun niveau atteint. Ajoute et coche tes niveaux dans l\'onglet Progression.';
   const stat = (label, val, note) => `<div class="stat"><span>${label}</span><b>${val}</b>${note ? `<small>${note}</small>` : ''}</div>`;
   const aj = (path, label) => `<label class="aj"><span>${label}</span><input type="text" inputmode="numeric" data-bind="ajust.${path}" data-recalc value="${esc(getP(p, 'ajust.' + path))}" placeholder="0"></label>`;
@@ -612,6 +620,7 @@ function ongletFicheBrut(p, e) {
       <div class="grid">
         ${fi(p, 'nom', 'Nom')}${fi(p, 'joueur', 'Joueur')}
         ${sel(p, 'race', 'Race', raceOpts)}
+        ${R.RACES[p.race]?.ajNiv ? `<p class="hint span2">${esc(R.RACES[p.race].nom)} : ${esc(R.RACES[p.race].ajust)} · ajustement de niveau +${R.RACES[p.race].ajNiv}.</p>` : ''}
         ${p.race === 'autre' ? fi(p, 'raceAutre', 'Nom de la race') : ''}
         ${sel(p, 'alignement', 'Alignement', R.ALIGNEMENTS)}
         ${sel(p, 'divinite', 'Divinité', [...R.DIVINITES, 'Autre'])}
@@ -811,6 +820,12 @@ function protections(p, e, st) {
   const imm = new Set(IMMUNITES.filter(([k]) => ob['imm:' + k]).map(([k]) => k));
   const jsc = Object.fromEntries(JS_CONTRE.map(([k]) => [k, ob['jsc:' + k] || 0]));
   const sources = [];
+  const rc = R.RACES[p.race];
+  if (rc) {
+    for (const [k, v] of Object.entries(rc.res || {})) res[k] = (res[k] || 0) + v;
+    for (const k of rc.imm || []) imm.add(k);
+    for (const [k, v] of Object.entries(rc.jsc || {})) jsc[k] = (jsc[k] || 0) + v;
+  }
   if (p.race === 'nain') { jsc.poison += 2; jsc.sorts += 2; sources.push('nain : +2 contre le poison et les sorts'); }
   if (p.race === 'elfe' || p.race === 'demi-elfe') { imm.add('sommeil'); jsc.enchantements += 2; sources.push('sang elfe : immunité au sommeil magique, +2 contre les enchantements'); }
   if (p.race === 'gnome') { jsc.illusions += 2; }
@@ -820,7 +835,8 @@ function protections(p, e, st) {
   if (moine >= 11) imm.add('poison');
   if ((c.paladin || 0) >= 3) { imm.add('maladie'); imm.add('peur'); }
   if ((c.druide || 0) >= 9) imm.add('poison');
-  const rm = Math.max(st.rm || 0, ob.rm || 0, num(a.rm));
+  const rmRace = rc && rc.rm === 'niv+11' ? 11 + (e.niveau || 0) : num(rc?.rm);
+  const rm = Math.max(st.rm || 0, ob.rm || 0, num(a.rm), rmRace);
   const rd = [...st.rd, ...(ob.rd ? [`${ob.rd}/—`] : []), ...(a.rd ? [a.rd] : [])];
   return { res, imm: [...imm], jsc, rm, rd, sources };
 }

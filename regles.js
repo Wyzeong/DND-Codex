@@ -106,6 +106,140 @@ R.RACES = {
       ['Adresse', '+1 aux jets d\'attaque avec les armes de jet et la fronde.'],
     ],
   },
+
+  /* ----- Races moins communes (Manuel des Monstres, Royaumes Oubliés) -----
+     ajNiv : ajustement de niveau (le personnage compte comme plus haut niveau pour l'expérience).
+     res, imm, jsc, rm : résistances, immunités, bonus de sauvegarde et résistance à la magie, repris dans la fiche. */
+  drow: {
+    nom: 'Drow (elfe noir)', rare: true, taille: 'M', vitesse: 9, ajust: '+2 Dex, −2 Con, +2 Int, +2 Cha', ajNiv: 2,
+    classeFav: 'Magicienne (femme : Prêtresse)', langues: 'Commun, elfe, commun des profondeurs',
+    comp: { perception: 2, fouille: 2, detection: 2 }, imm: ['sommeil'], jsc: { enchantements: 2, sorts: 2 }, rm: 'niv+11',
+    traits: [
+      ['Vision dans le noir', 'Voit dans le noir total jusqu\'à 36 m, en noir et blanc.'],
+      ['Résistance à la magie', '11 + niveau de classe : un sort qui le vise doit d\'abord vaincre cette résistance (d20 + niveau du lanceur).'],
+      ['Immunité', 'Immunisé contre le sommeil magique ; +2 aux jets contre les enchantements.'],
+      ['Volonté de fer', '+2 aux jets de Volonté contre les sorts et pouvoirs magiques.'],
+      ['Pouvoirs magiques', '1 fois par jour : lumières dansantes, ténèbres, lueur féerique (niveau de lanceur = niveau de classe).'],
+      ['Aveuglé par la lumière', 'Une lumière vive soudaine (soleil, lumière du jour) l\'aveugle 1 round ; ensuite −1 aux attaques, sauvegardes et tests tant qu\'il reste en pleine lumière.'],
+      ['Armes', 'Maîtrise l\'arbalète de poing, la rapière et l\'épée courte.'],
+      ['Sens aiguisés', '+2 en Perception auditive, Fouille et Détection ; repère les portes secrètes en passant à 1,5 m.'],
+      ['Ajustement de niveau +2', 'Compte comme 2 niveaux de plus pour l\'expérience (si votre MJ applique cette règle).'],
+    ],
+  },
+  'elfe-sylvestre': {
+    nom: 'Elfe sylvestre', rare: true, taille: 'M', vitesse: 9, ajust: '+2 For, +2 Dex, −2 Con, −2 Int', classeFav: 'Rôdeur', langues: 'Commun, elfe',
+    comp: { perception: 2, fouille: 2, detection: 2 }, imm: ['sommeil'], jsc: { enchantements: 2 },
+    traits: [
+      ['Vision nocturne', 'Voit deux fois plus loin qu\'un humain sous la lune, les étoiles ou une torche.'],
+      ['Immunité', 'Immunisé contre le sommeil magique ; +2 aux jets contre les enchantements.'],
+      ['Armes', 'Maîtrise l\'épée longue, la rapière, l\'arc long et l\'arc court.'],
+      ['Sens aiguisés', '+2 en Perception auditive, Fouille et Détection.'],
+    ],
+  },
+  'elfe-gris': {
+    nom: 'Elfe gris', rare: true, taille: 'M', vitesse: 9, ajust: '−2 For, +2 Dex, −2 Con, +2 Int', classeFav: 'Magicien', langues: 'Commun, elfe',
+    comp: { perception: 2, fouille: 2, detection: 2 }, imm: ['sommeil'], jsc: { enchantements: 2 },
+    traits: [
+      ['Vision nocturne', 'Voit deux fois plus loin qu\'un humain par faible éclairage.'],
+      ['Immunité', 'Immunisé contre le sommeil magique ; +2 aux jets contre les enchantements.'],
+      ['Sens aiguisés', '+2 en Perception auditive, Fouille et Détection.'],
+    ],
+  },
+  'elfe-aquatique': {
+    nom: 'Elfe aquatique', rare: true, taille: 'M', vitesse: 9, ajust: '+2 Dex, −2 Int', classeFav: 'Guerrier', langues: 'Commun, elfe, aquatique',
+    comp: { perception: 2, fouille: 2, detection: 2 }, imm: ['sommeil'], jsc: { enchantements: 2 },
+    traits: [
+      ['Nage', 'Vitesse de nage de 12 m ; respire sous l\'eau (amphibie).'],
+      ['Vision dans l\'ombre', 'Vision nocturne ; vision dans le noir 18 m sous l\'eau.'],
+      ['Immunité', 'Immunisé contre le sommeil magique ; +2 aux jets contre les enchantements.'],
+    ],
+  },
+  duergar: {
+    nom: 'Duergar (nain gris)', rare: true, taille: 'M', vitesse: 6, ajust: '+2 Con, −4 Cha', ajNiv: 1, classeFav: 'Guerrier', langues: 'Commun, nain, commun des profondeurs',
+    comp: { 'deplacement-silencieux': 4, perception: 1, detection: 1 }, imm: ['paralysie', 'poison'], jsc: { sorts: 2 },
+    traits: [
+      ['Vision dans le noir', 'Jusqu\'à 36 m.'],
+      ['Immunités', 'Immunisé contre la paralysie, les illusions de type fantasme et le poison.'],
+      ['Résistance aux sorts', '+2 aux jets de sauvegarde contre les sorts et pouvoirs magiques.'],
+      ['Pouvoirs magiques', '1 fois par jour : agrandissement et invisibilité (sur lui-même).'],
+      ['Sensibilité à la lumière', '−2 aux jets d\'attaque en pleine lumière.'],
+      ['Connaissance de la pierre', 'Comme les nains.'],
+      ['Ajustement de niveau +1', 'Compte comme 1 niveau de plus pour l\'expérience.'],
+    ],
+  },
+  svirfnebelin: {
+    nom: 'Svirfnebelin (gnome des profondeurs)', rare: true, taille: 'P', vitesse: 6, ajust: '−2 For, +2 Dex, +2 Sag, −4 Cha', ajNiv: 3, classeFav: 'Roublard', langues: 'Commun, gnome, commun des profondeurs',
+    comp: { discretion: 2, perception: 2 }, jsc: { sorts: 2 }, rm: 'niv+11',
+    traits: [
+      ['Vision dans le noir', 'Jusqu\'à 36 m.'],
+      ['Résistance à la magie', '11 + niveau de classe.'],
+      ['Esquive', '+4 d\'esquive à la CA contre toutes les attaques.'],
+      ['Pouvoirs magiques', '1 fois par jour : cécité/surdité, flou, déguisement ; protégé en permanence par antidétection.'],
+      ['Ajustement de niveau +3', 'Compte comme 3 niveaux de plus pour l\'expérience.'],
+    ],
+  },
+  aasimar: {
+    nom: 'Aasimar', rare: true, taille: 'M', vitesse: 9, ajust: '+2 Sag, +2 Cha', ajNiv: 1, classeFav: 'Paladin', langues: 'Commun, céleste',
+    comp: { perception: 2, detection: 2 }, res: { acide: 5, froid: 5, electricite: 5 },
+    traits: [
+      ['Ascendance céleste', 'Un ancêtre venu des plans du Bien.'],
+      ['Vision dans le noir', 'Jusqu\'à 18 m.'],
+      ['Résistances', 'Résistance 5 à l\'acide, au froid et à l\'électricité.'],
+      ['Pouvoir magique', '1 fois par jour : lumière du jour.'],
+      ['Ajustement de niveau +1', 'Compte comme 1 niveau de plus pour l\'expérience.'],
+    ],
+  },
+  tieffelin: {
+    nom: 'Tieffelin', rare: true, taille: 'M', vitesse: 9, ajust: '+2 Dex, +2 Int, −2 Cha', ajNiv: 1, classeFav: 'Roublard', langues: 'Commun, infernal',
+    comp: { bluff: 2, discretion: 2 }, res: { froid: 5, electricite: 5, feu: 5 },
+    traits: [
+      ['Ascendance infernale', 'Un ancêtre venu des plans du Mal.'],
+      ['Vision dans le noir', 'Jusqu\'à 18 m.'],
+      ['Résistances', 'Résistance 5 au froid, à l\'électricité et au feu.'],
+      ['Pouvoir magique', '1 fois par jour : ténèbres.'],
+      ['Ajustement de niveau +1', 'Compte comme 1 niveau de plus pour l\'expérience.'],
+    ],
+  },
+  'genasi-air': {
+    nom: 'Génasi de l\'air', rare: true, taille: 'M', vitesse: 9, ajust: '+2 Dex, +2 Int, −2 Sag, −2 Cha', ajNiv: 1, classeFav: 'Guerrier', langues: 'Commun, aérien',
+    comp: {},
+    traits: [['Vision dans le noir', 'Jusqu\'à 18 m.'], ['Souffle', 'N\'a pas besoin de respirer.'], ['Pouvoir magique', '1 fois par jour : lévitation.'], ['Ajustement de niveau +1', 'Compte comme 1 niveau de plus pour l\'expérience.']],
+  },
+  'genasi-terre': {
+    nom: 'Génasi de la terre', rare: true, taille: 'M', vitesse: 9, ajust: '+2 For, +2 Con, −2 Sag, −2 Cha', ajNiv: 1, classeFav: 'Guerrier', langues: 'Commun, terreux',
+    comp: {},
+    traits: [['Vision dans le noir', 'Jusqu\'à 18 m.'], ['Pouvoir magique', '1 fois par jour : passage sans trace.'], ['Ajustement de niveau +1', 'Compte comme 1 niveau de plus pour l\'expérience.']],
+  },
+  'genasi-feu': {
+    nom: 'Génasi du feu', rare: true, taille: 'M', vitesse: 9, ajust: '+2 Int, −2 Cha', ajNiv: 1, classeFav: 'Guerrier', langues: 'Commun, igné',
+    comp: {}, res: { feu: 5 },
+    traits: [['Vision dans le noir', 'Jusqu\'à 18 m.'], ['Résistance', 'Résistance 5 au feu.'], ['Pouvoir magique', '1 fois par jour : contrôle des flammes.'], ['Ajustement de niveau +1', 'Compte comme 1 niveau de plus pour l\'expérience.']],
+  },
+  'genasi-eau': {
+    nom: 'Génasi de l\'eau', rare: true, taille: 'M', vitesse: 9, ajust: '+2 Con, −2 Cha', ajNiv: 1, classeFav: 'Guerrier', langues: 'Commun, aquatique',
+    comp: {}, res: { acide: 5 },
+    traits: [['Vision dans le noir', 'Jusqu\'à 18 m.'], ['Amphibie', 'Respire sous l\'eau ; vitesse de nage de 9 m.'], ['Pouvoir magique', '1 fois par jour : création d\'eau.'], ['Ajustement de niveau +1', 'Compte comme 1 niveau de plus pour l\'expérience.']],
+  },
+  hobgobelin: {
+    nom: 'Hobgobelin', rare: true, taille: 'M', vitesse: 9, ajust: '+2 Dex, +2 Con', ajNiv: 1, classeFav: 'Guerrier', langues: 'Commun, gobelin',
+    comp: { 'deplacement-silencieux': 4 },
+    traits: [['Vision dans le noir', 'Jusqu\'à 18 m.'], ['Discret', '+4 en Déplacement silencieux.'], ['Ajustement de niveau +1', 'Compte comme 1 niveau de plus pour l\'expérience.']],
+  },
+  gobelin: {
+    nom: 'Gobelin', rare: true, taille: 'P', vitesse: 9, ajust: '−2 For, +2 Dex, −2 Cha', classeFav: 'Roublard', langues: 'Gobelin, commun',
+    comp: { 'deplacement-silencieux': 4, equitation: 4 },
+    traits: [['Petite taille', '+1 à la CA et aux attaques, +4 en Discrétion, −4 en lutte.'], ['Vision dans le noir', 'Jusqu\'à 18 m.'], ['Discret', '+4 en Déplacement silencieux et en Équitation.']],
+  },
+  kobold: {
+    nom: 'Kobold', rare: true, taille: 'P', vitesse: 9, ajust: '−4 For, +2 Dex, −2 Con', classeFav: 'Ensorceleur', langues: 'Draconien',
+    comp: { artisanat: 2, fouille: 2 },
+    traits: [['Petite taille', '+1 à la CA et aux attaques, +4 en Discrétion, −4 en lutte.'], ['Vision dans le noir', 'Jusqu\'à 18 m.'], ['Armure naturelle', '+1 à la CA (à ajouter dans les ajustements).'], ['Sensibilité à la lumière', 'Ébloui en pleine lumière : −1 aux attaques.'], ['Artisan', '+2 en Artisanat (pièges) et en Fouille.']],
+  },
+  orque: {
+    nom: 'Orque', rare: true, taille: 'M', vitesse: 9, ajust: '+4 For, −2 Int, −2 Sag, −2 Cha', classeFav: 'Barbare', langues: 'Orque, commun',
+    comp: {},
+    traits: [['Vision dans le noir', 'Jusqu\'à 18 m.'], ['Sensibilité à la lumière', 'Ébloui en pleine lumière : −1 aux attaques.']],
+  },
 };
 
 /* ---------- Compétences ---------- */
