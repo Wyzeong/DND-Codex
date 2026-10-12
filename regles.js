@@ -895,3 +895,20 @@ R.classePerso = d => PR({
   aptitudes: (d.aptitudes || []).filter(a => a.nom).map(a => A(num0(a.niv) || 1, a.nom, a.texte || '')),
 });
 const num0 = v => Number(String(v ?? '').replace(',', '.')) || 0;
+
+/* Autres noms des dons (traductions non officielles, noms anglais francisés, noms de jeux vidéo)
+   pour les retrouver quelle que soit la façon dont on les cherche. */
+R.ALIAS_DONS = {
+  'efficacite-sorts': 'pénétration des sorts, pénétration magique, surpassement magique, percée magique',
+  'efficacite-sorts-superieure': 'pénétration des sorts supérieure, pénétration magique supérieure, surpassement magique supérieur',
+  'ecole-renforcee': 'focalisation de sort, spécialisation dans une école, focus de sort',
+  'ecole-superieure': 'focalisation de sort supérieure, focus de sort supérieur',
+  'attaques-reflexes': 'réflexes de combat',
+  'mobilite': 'mobilité',
+  'science-mains-nues': 'combat à mains nues amélioré, frappe à mains nues',
+  'coup-etourdissant': 'poing étourdissant, frappe étourdissante',
+  'attaque-finesse': 'arme en finesse, finesse',
+  'arme-predilection': 'focalisation martiale, focalisation d\'arme',
+  'tir-precision': 'tir précis',
+  'robustesse': 'résistance, ténacité',
+};

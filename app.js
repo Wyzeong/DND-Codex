@@ -2524,6 +2524,21 @@ function tableSorts(sp) {
   </table></div>`;
 }
 
+/* Recherche tolérante : tous les mots d'abord, puis au moins un mot significatif ;
+   cherche dans le nom, le nom anglais, l'effet et les autres noms connus du don. */
+function rechercherDons(liste, q) {
+  const mots = norm(q).split(/[\s'’-]+/).filter(m => m.length > 1);
+  if (!mots.length) return [];
+  const score = d => {
+    const h = norm([d.nom, d.vo, d.texte, R.ALIAS_DONS[d.id]].join(' '));
+    const tous = mots.every(m => h.includes(m));
+    const un = mots.filter(m => m.length >= 4 && h.includes(m)).length;
+    const nom = norm(d.nom + ' ' + (R.ALIAS_DONS[d.id] || '')).includes(norm(q)) ? 4 : 0;
+    return tous ? 10 + nom : un ? un + nom : 0;
+  };
+  return liste.map(d => [d, score(d)]).filter(([, sc]) => sc > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].nom.localeCompare(b[0].nom, 'fr')).map(([d]) => d);
+}
 function resultatsDons(champ) {
   const p = state.ctx, q = norm(champ.value).trim();
   const zone = champ.parentElement.querySelector(`.don-resultats[data-pour="${champ.dataset.path}"]`);
@@ -2532,14 +2547,11 @@ function resultatsDons(champ) {
   const n = Number(champ.dataset.n);
   const e = etat(p, n, true, { niveau: n, champ: champ.dataset.champ });
   const ids = champ.dataset.liste ? champ.dataset.liste.split(',') : null;
-  const dons = (ids ? ids.map(id => R.DON[id]) : R.DONS).filter(Boolean)
-    .filter(d => norm(d.nom).includes(q) || norm(d.vo).includes(q) || norm(d.texte).includes(q))
-    .sort((a, b) => (norm(b.nom).startsWith(q) - norm(a.nom).startsWith(q)) || a.nom.localeCompare(b.nom, 'fr'))
-    .slice(0, 12);
+  const dons = rechercherDons((ids ? ids.map(id => R.DON[id]) : R.DONS).filter(Boolean), q).slice(0, 12);
   zone.innerHTML = dons.length ? dons.map(d => {
     const ok = champ.dataset.libre || prerequis(d, e, p).ok;
     return `<button class="don-choix ${ok ? '' : 'ko'}" data-action="choisir-don" data-path="${champ.dataset.path}" data-id="${d.id}">
-      <b>${esc(d.nom)}</b> <span class="type-don">${R.TYPES_DONS[d.type]}${ok ? '' : ', prérequis manquants'}</span>
+      <b>${esc(d.nom)}</b> <span class="type-don">${R.TYPES_DONS[d.type]}${d.vo ? ` · ${esc(d.vo)}` : ''}${ok ? '' : ', prérequis manquants'}</span>
       <small>${esc(d.texte)}</small></button>`;
   }).join('') : '<p class="empty">Aucun don ne correspond.</p>';
 }
@@ -2808,14 +2820,19 @@ function blocSortsNiveau(p, l, i, cl, k, avant, apres) {
     B.forEach((v, niv) => { const nb = v - (A[niv] || 0); if (nb > 0) blocs.push({ cle: String(niv), titre: `${nb} nouveau${nb > 1 ? 'x' : ''} sort${nb > 1 ? 's' : ''} connu${nb > 1 ? 's' : ''} de niveau ${niv}`, quota: nb, min: niv, max: niv }); });
   } else if (cid === 'magicien' && abr) {
     if (effB === 1) {
+      blocs.push({ cle: 'ecoles', ecoles: true });
       blocs.push({ cle: 'zero', titre: 'Grimoire : tous les sorts de niveau 0', tous: 0 });
       const q = 3 + Math.max(0, apres.mods.int);
       blocs.push({ cle: '1', titre: `Grimoire : ${q} sorts de niveau 1 (3 + mod Int)`, quota: q, min: 1, max: 1 });
     } else blocs.push({ cle: 'max', titre: `2 nouveaux sorts pour le grimoire (niveau ${nivMax} au plus)`, quota: 2, min: 1, max: nivMax });
   }
+  const interdites = new Set(cid === 'magicien' ? (p.ecolesInterdites || []) : []);
   const html = blocs.map(bl => {
+    if (bl.ecoles) return `<div class="choix-sorts"><p class="lbl">Magicienne spécialisée ? Écoles interdites</p>
+      <div class="chips">${['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation'].map(ec => `<button class="chip ${interdites.has(ec) ? 'on interdite' : ''}" data-action="ecole-interdite" data-e="${ec}" ${mod ? '' : 'disabled'}>${ec}</button>`).join('')}</div>
+      <p class="hint">Une magicienne spécialisée renonce à une ou deux écoles : leurs sorts sont exclus de son grimoire et des choix ci-dessous. Une magicienne universaliste n'en coche aucune.</p></div>`;
     if (bl.tous != null) {
-      const zero = sortsDeClasse(abr, 0, 0);
+      const zero = sortsDeClasse(abr, 0, 0).filter(x => !interdites.has(x.ecole));
       const manquants = zero.filter(x => !(p.sorts || []).some(y => y.id === x.id));
       return `<div class="choix-sorts"><p class="lbl">${esc(bl.titre)} <span class="quota ${manquants.length ? '' : 'ok'}">${zero.length - manquants.length} / ${zero.length}</span></p>
         ${manquants.length && mod ? `<button class="btn ghost" data-action="prog-sorts-zero" data-abr="${abr}">Ajouter les ${manquants.length} sorts de niveau 0</button>` : ''}</div>`;
@@ -2824,7 +2841,7 @@ function blocSortsNiveau(p, l, i, cl, k, avant, apres) {
     return `<div class="choix-sorts">
       <p class="lbl">${esc(bl.titre)} <span class="quota ${choisis.length >= bl.quota ? 'ok' : ''}">${choisis.length} / ${bl.quota}</span></p>
       <div class="chips">${choisis.map(x => { const sp = findSort(x.id); return `<span class="chip on">${esc(sp ? sp.nom : x.id)}${mod ? `<button class="chip-x" data-action="prog-sort-suppr" data-i="${i}" data-id="${x.id}" aria-label="Retirer">✕</button>` : ''}</span>`; }).join('')}</div>
-      ${choisis.length < bl.quota && mod ? `<input type="search" class="prog-sort-q" data-i="${i}" data-bloc="${bl.cle}" data-abr="${abr}" data-min="${bl.min}" data-max="${bl.max}" placeholder="Chercher un sort (nom, effet, usage : offensif, soin…)" aria-label="Chercher un sort à apprendre">
+      ${choisis.length < bl.quota && mod ? `<input type="search" class="prog-sort-q" data-i="${i}" data-bloc="${bl.cle}" data-interdites="${[...interdites].join('|')}" data-abr="${abr}" data-min="${bl.min}" data-max="${bl.max}" placeholder="Chercher un sort (nom, effet, usage : offensif, soin…)" aria-label="Chercher un sort à apprendre">
         <div class="prog-sort-res" data-pour="${i}-${bl.cle}"></div>` : ''}
     </div>`;
   }).join('');
@@ -4116,6 +4133,7 @@ document.addEventListener('input', ev => {
     const p2 = state.ctx;
     const deja = new Set((p2.sorts || []).map(x => x.id));
     const res = !q ? [] : sortsDeClasse(d.abr, num(d.min), num(d.max))
+      .filter(x => !(d.interdites || '').split('|').includes(x.ecole))
       .filter(x => !deja.has(x.id) && (norm(x.nom).includes(q) || norm(x.description).includes(q) || usagesSort(x).some(u => norm(USAGES_SORT[u]).includes(q))))
       .sort(byNom).slice(0, 15);
     zone.innerHTML = res.map(x => `<button class="don-choix" data-action="prog-sort-ajout" data-i="${d.i}" data-bloc="${d.bloc}" data-id="${x.id}">
@@ -5194,8 +5212,15 @@ document.addEventListener('click', ev => {
     }
     case 'prog-sorts-zero': {
       const deja = new Set((p.sorts || []).map(x => x.id));
-      const nv = sortsDeClasse(b.dataset.abr, 0, 0).filter(x => !deja.has(x.id)).map(x => ({ id: x.id, statut: 'Connu', notes: 'Grimoire (niveau 0)' }));
+      const interdites = new Set(p.ecolesInterdites || []);
+      const nv = sortsDeClasse(b.dataset.abr, 0, 0).filter(x => !deja.has(x.id) && !interdites.has(x.ecole)).map(x => ({ id: x.id, statut: 'Connu', notes: 'Grimoire (niveau 0)' }));
       p.sorts = [...(p.sorts || []), ...nv]; save(); render(); toast(`${nv.length} sorts de niveau 0 ajoutés`);
+      break;
+    }
+    case 'ecole-interdite': {
+      const l = new Set(p.ecolesInterdites || []);
+      if (l.has(b.dataset.e)) l.delete(b.dataset.e); else l.add(b.dataset.e);
+      p.ecolesInterdites = [...l]; save(); render();
       break;
     }
     case 'replis-tout': {
