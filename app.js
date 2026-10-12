@@ -537,13 +537,18 @@ function stats(p, e) {
   const bonusMoine = mCA ? Math.max(0, e.mods.sag) + Math.floor(mCA / 5) : 0;
   const armure = num(a.armure), bouclier = num(a.bouclier), nat = num(a.naturelle), parade = num(a.parade), div = num(a.caDivers);
   const dexCA = e.objets.maxDex == null ? e.mods.dex : Math.min(e.mods.dex, e.objets.maxDex);
-  const ca = 10 + dexCA + t.ca + armure + bouclier + nat + parade + div + bonusMoine + (ob.caArmure || 0) + (ob.caParade || 0);
-  const contact = 10 + dexCA + t.ca + parade + div + bonusMoine + (ob.caParade || 0);
+  const caPrestige = Object.entries(e.classes).reduce((tt, [id, k]) => tt + R.valeurPalier(R.CLASSES[id].caPaliers, k), 0);
+  const ca = 10 + dexCA + t.ca + armure + bouclier + nat + parade + div + bonusMoine + caPrestige + (ob.caArmure || 0) + (ob.caParade || 0);
+  const contact = 10 + dexCA + t.ca + parade + div + bonusMoine + caPrestige + (ob.caParade || 0);
   const esquiveInst = (e.classes.barbare || 0) >= 2 || (e.classes.roublard || 0) >= 4;
   const depourvu = esquiveInst ? ca : ca - Math.max(0, dexCA);
   let vitesse = e.race ? e.race.vitesse : 9;
   const notesVit = [];
   if (mVit >= 3) { vitesse += 3 * Math.floor(mVit / 3); notesVit.push('déplacement accéléré du moine inclus'); }
+  for (const [id, k] of Object.entries(e.classes)) {
+    const v = R.valeurPalier(R.CLASSES[id].vitPaliers, k);
+    if (v) { vitesse += v; notesVit.push(`bonus de vitesse de ${R.CLASSES[id].nom.toLowerCase()} inclus`); }
+  }
   if (e.classes.barbare) { vitesse += 3; notesVit.push('déplacement accéléré du barbare inclus'); }
   vitesse += num(a.vitesse) + (ob.vitesse || 0);
   const bba = e.bba + num(a.bba) + (ob.attaque || 0);
@@ -1237,6 +1242,12 @@ function infosMainsNues(p, e, st) {
 function ressources(p, e) {
   const res = [];
   const c = e.classes, niv = e.niveau;
+  for (const [id, k] of Object.entries(c)) {
+    (R.CLASSES[id].ressourcesPerso || []).forEach((r, j) => {
+      const max = R.valeurPalier(r.paliers, k);
+      if (max > 0) res.push({ id: `${id}-${j}`, nom: r.nom, max, unite: 'fois', action: r.action || R.CLASSES[id].nom, texte: r.texte || '' });
+    });
+  }
   const moine = c.moine || 0;
   if (e.dons.has('coup-etourdissant')) {
     const n = moine ? moine + Math.floor((niv - moine) / 4) : Math.floor(niv / 4);
@@ -2712,6 +2723,20 @@ function carteClassesPrestige(p) {
         <label class="f"><span>Progression des sorts</span><select data-classebind="${b('sortsType')}" data-rerender><option value="">Aucune</option><option value="divin" ${d.sortsType === 'divin' ? 'selected' : ''}>+1 niveau de lanceur divin</option><option value="profane" ${d.sortsType === 'profane' ? 'selected' : ''}>+1 niveau de lanceur profane</option><option value="les deux" ${d.sortsType === 'les deux' ? 'selected' : ''}>Les deux</option></select></label>
         ${d.sortsType ? `<label class="f"><span>À quels niveaux (ex. 1,2,3,5,6,7,9,10)</span><input type="text" data-classebind="${b('sortsNiveaux')}" data-recalc value="${esc(d.sortsNiveaux)}"></label>` : ''}
       </div>
+      <div class="grid">
+        <label class="f"><span>Bonus de CA propre (niveau:bonus)</span><input type="text" data-classebind="${b('caPaliers')}" value="${esc(d.caPaliers)}" placeholder="1:1, 5:2, 10:3"></label>
+        <label class="f"><span>Bonus de vitesse en m (niveau:bonus)</span><input type="text" data-classebind="${b('vitPaliers')}" value="${esc(d.vitPaliers)}" placeholder="3:3"></label>
+      </div>
+      <p class="hint">Format « niveau:valeur », séparés par des virgules : « 1:1, 5:2, 10:3 » veut dire +1 dès le niveau 1, +2 dès le 5, +3 au 10. Ces bonus s'ajoutent à la CA et à la vitesse de la fiche.</p>
+      <p class="lbl">Capacités à utilisations par jour (compteurs dans « En combat »)</p>
+      ${(d.ressources || []).map((r, j) => `<div class="row butin-ligne">
+        <input type="text" data-classebind="${b('ressources')}.${j}.nom" value="${esc(r.nom)}" placeholder="Nom (ex. Flamme sacrée)">
+        <input type="text" class="s" data-classebind="${b('ressources')}.${j}.paliers" value="${esc(r.paliers)}" placeholder="4:1, 8:2" aria-label="Utilisations par jour selon le niveau">
+        <button class="icon" data-action="pp-res-suppr" data-i="${i}" data-j="${j}" aria-label="Retirer">✕</button>
+        <input type="text" class="ligne-entiere" data-classebind="${b('ressources')}.${j}.action" value="${esc(r.action)}" placeholder="Type d'action (ex. action libre)">
+        <input type="text" class="ligne-entiere" data-classebind="${b('ressources')}.${j}.texte" value="${esc(r.texte)}" placeholder="Ce qu'elle fait">
+      </div>`).join('')}
+      <div class="btns"><button class="lien" data-action="pp-res-ajout" data-i="${i}">+ Capacité par jour</button></div>
       <label class="f"><span>Prérequis (un par ligne, à vérifier avec le MJ)</span><textarea data-classebind="${b('prerequis')}" rows="3" placeholder="Bonus de base à l'attaque +4&#10;Science du combat à mains nues">${esc(d.prerequis)}</textarea></label>
       <div class="f"><span class="lbl">Compétences de classe</span><div class="vis-grille">${R.COMPETENCES.map(c => `<label class="check"><input type="checkbox" data-action="pp-comp" data-i="${i}" data-c="${c.id}" ${(d.comp || []).includes(c.id) ? 'checked' : ''}> ${esc(c.nom)}</label>`).join('')}</div></div>
       <p class="lbl">Aptitudes par niveau</p>
@@ -4355,7 +4380,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -5274,6 +5299,14 @@ document.addEventListener('click', ev => {
     }
     case 'pp-apt-ajout': {
       const d = classesCommunes()[Number(b.dataset.i)]; d.aptitudes = [...(d.aptitudes || []), { niv: '', nom: '', texte: '' }]; sauverClasse(d); render();
+      break;
+    }
+    case 'pp-res-ajout': {
+      const d = classesCommunes()[Number(b.dataset.i)]; d.ressources = [...(d.ressources || []), { nom: '', paliers: '', action: '', texte: '' }]; sauverClasse(d); render();
+      break;
+    }
+    case 'pp-res-suppr': {
+      const d = classesCommunes()[Number(b.dataset.i)]; d.ressources.splice(Number(b.dataset.j), 1); sauverClasse(d); render();
       break;
     }
     case 'pp-apt-suppr': {

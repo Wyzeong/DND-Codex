@@ -893,7 +893,12 @@ R.classePerso = d => PR({
   prerequis: d.prerequis ? String(d.prerequis).split('\n').filter(Boolean).map(t => [t.trim(), null]) : [],
   sortsPlus: d.sortsType ? { type: d.sortsType, niveaux: String(d.sortsNiveaux || '').split(/[,; ]+/).map(Number).filter(Boolean) } : null,
   aptitudes: (d.aptitudes || []).filter(a => a.nom).map(a => A(num0(a.niv) || 1, a.nom, a.texte || '')),
+  /* « 1:1, 5:2, 10:3 » : valeur selon le niveau dans la classe */
+  caPaliers: R.paliers(d.caPaliers), vitPaliers: R.paliers(d.vitPaliers),
+  ressourcesPerso: (d.ressources || []).filter(r => r.nom).map(r => ({ nom: r.nom, texte: r.texte || '', action: r.action || '', paliers: R.paliers(r.paliers) })),
 });
+R.paliers = txt => String(txt || '').split(/[,;]+/).map(x => x.split(':').map(y => num0(y))).filter(x => x.length === 2 && x[0] > 0).sort((a, b) => a[0] - b[0]);
+R.valeurPalier = (paliers, k) => (paliers || []).reduce((v, [n, x]) => k >= n ? x : v, 0);
 const num0 = v => Number(String(v ?? '').replace(',', '.')) || 0;
 
 /* Autres noms des dons (traductions non officielles, noms anglais francisés, noms de jeux vidéo)
