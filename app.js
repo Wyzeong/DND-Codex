@@ -1426,7 +1426,9 @@ function ficheCombat(p, e) {
     <h4>Lancer un sort</h4>
     ${sorts.length ? `<div class="sorts-combat">${sorts.map(({ x, i, s }) => {
       const infini = !!x.illimite, max = infini ? 0 : num(x.max), reste = Math.max(0, max - num(x.utilises));
-      return `<div class="sort-c ${ecoleClass(s.ecole)}">
+      const ef = etatFocal(p, x);
+      return `<div class="sort-c ${ecoleClass(s.ecole)} ${ef !== 'ok' ? 'bloque' : ''}">
+        ${ef === 'ok' ? `<p class="focal-sort">✦ ${esc(nomFocal(p, x))}</p>` : `<p class="focal-alerte">${ef === 'absent' ? `⚠ ${esc(nomFocal(p, x))} absent : sort inutilisable` : '⚠ Relie ce sort à un focalisateur (onglet Sorts)'}</p>`}
         <div class="sort-c-tete"><b>${esc(s.nom)}</b>
           ${infini ? '<span class="reste">∞ à volonté</span>' : max ? `<span class="reste">${reste} / ${max}</span>` : ''}</div>
         <p class="usages">${tagsUsages(s)}</p>
@@ -1437,7 +1439,7 @@ function ficheCombat(p, e) {
         <div class="sort-c-pied">
           ${infini ? '' : `<label class="mini">Par jour <input type="text" inputmode="numeric" data-bind="sorts.${i}.max" data-recalc value="${esc(x.max)}" placeholder="—"></label>`}
           <button class="chip ${infini ? 'on' : ''}" data-action="sort-infini" data-idx="${i}" title="Utilisable sans limite" aria-pressed="${infini}">∞</button>
-          ${max ? `<button class="btn" data-action="sort-use" data-idx="${i}" ${reste ? '' : 'disabled'}>Lancer</button>${num(x.utilises) ? `<button class="lien" data-action="sort-annuler" data-idx="${i}">Annuler</button>` : ''}` : ''}
+          ${max ? `<button class="btn" data-action="sort-use" data-idx="${i}" ${reste && ef === 'ok' ? '' : 'disabled'}>Lancer</button>${num(x.utilises) ? `<button class="lien" data-action="sort-annuler" data-idx="${i}">Annuler</button>` : ''}` : ''}
         </div>
       </div>`;
     }).join('')}</div>` : '<p class="empty">Aucun sort. Ajoute ceux de ta baguette dans l\'onglet Sorts.</p>'}
@@ -1651,6 +1653,7 @@ function carteBaguette(p) {
       </div>
       ${ta(p, 'baguette.description', 'Description', { rows: 4, ph: 'Aspect, couleur, sensations quand on la tient…' })}
       ${ta(p, 'baguette.histoire', 'Histoire et légende', { rows: 5, ph: 'D\'où vient-elle ? Qui l\'a fabriquée ? Que raconte-t-on à son sujet ?' })}
+      <label class="check"><input type="checkbox" data-bind="baguette.possedee" data-rerender ${b.possedee === false ? '' : 'checked'}> En sa possession (décoche si elle est perdue ou confisquée : ses sorts deviennent inutilisables)</label>
       <div class="btns">
         <button class="btn" data-action="baguette-fin">Terminé</button>
         ${fe ? `<button class="btn ghost" data-action="baguette-encyclo">Reprendre la fiche « ${esc(fe.nom)} » de l'encyclopédie</button>` : ''}
@@ -1671,6 +1674,7 @@ function carteBaguette(p) {
       ${meta.length ? `<dl class="baguette-meta">${meta.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
       ${sortA ? `<p class="baguette-sort">Sort ancré : <a href="#/sort/${sortA.id}">${esc(sortA.nom)}</a></p>` : ''}
     </div>` : ''}
+    ${b.possedee === false ? '<p class="focal-alerte centre">⚠ Baguette perdue : les sorts qui lui sont reliés sont inutilisables.</p>' : ''}
     ${b.description ? `<div class="recit-texte baguette-texte">${formaterRecit(b.description)}</div>` : ''}
     ${b.histoire ? `<details class="effet baguette-histoire" open><summary>Histoire et légende</summary><div class="recit-texte">${formaterRecit(b.histoire)}</div></details>` : ''}
     ${vide ? '<p class="empty">Décris ici ta baguette : son nom, sa photo, sa taille, son histoire.</p>' : ''}
@@ -2134,6 +2138,7 @@ function pageObjetsMJ() {
         <button class="image-cadre petite" data-action="img-choisir" data-type="mjobjet" data-id="${it.id}" aria-label="${it.image ? 'Changer' : 'Ajouter'} l'image">${it.image ? `<img src="${it.image}" alt="">` : '<span>+ Image</span>'}</button>
         ${it.image ? `<button class="lien" data-action="img-retirer" data-type="mjobjet" data-id="${it.id}">Retirer l'image</button>` : ''}
       </div>
+      ${it.type === 'vente' ? `<label class="f"><span>Marché</span><select data-mjbind="objets.${i}.marcheId">${listeMarches().map(m => `<option value="${m.id}" ${(it.marcheId || listeMarches()[0].id) === m.id ? 'selected' : ''}>${esc(m.nom)}</option>`).join('')}</select></label>` : ''}
       ${it.cat === 'magique' ? `<label class="check"><input type="checkbox" data-mjbind="objets.${i}.focalisateur" ${it.focalisateur ? 'checked' : ''}> ✦ Focalisateur</label>` : ''}
       <div class="btns"><button class="btn" data-action="mj-edit-fin">Terminé</button><button class="btn danger" data-action="mj-obj-suppr" data-i="${i}">Supprimer</button></div>
     </div>`;
@@ -2155,6 +2160,7 @@ function pageObjetsMJ() {
       <div class="objets">${objets.filter(it => (it.detenteur || '') === g).map(ligne).join('')}</div>`).join('') || '<p class="empty">Aucun objet en attente.</p>'}
     <div class="btns" style="margin-top:.6rem"><button class="btn ghost" data-action="mj-obj-ajout">+ Préparer un objet</button><button class="btn ghost" data-action="mj-obj-ajout" data-type="vente">+ Préparer un objet à vendre</button></div>
   </section>
+  ${carteMarchesMJ()}
   <section class="card"><h3>Donner des pièces</h3>
     <label class="f"><span>À</span><select id="argent-cible"><option value="__commune__">La bourse commune</option>${cibles.filter(estMembre).map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select></label>
     ${champsPieces('mjp')}
@@ -2597,10 +2603,12 @@ function journalLocal(qui, quoi, delta) {
 async function chargerMarche() {
   if (!enLigne()) return;
   try {
-    const ch = await lignesChangees('marche', 'marche', 'id,data,maj', id => (db.marche || []).some(a => a.id === id));
-    const parId = new Map((db.marche || []).map(a => [a.id, a]));
+    const ch = await lignesChangees('marche', 'marche', 'id,data,maj', id => (db.marche || []).some(a => a.id === id) || (db.marches || []).some(m => m.id === id));
+    const parId = new Map([...(db.marche || []), ...(db.marches || [])].map(a => [a.id, a]));
     for (const x of ch.lignes) parId.set(x.id, { ...x.data, id: x.id });
-    db.marche = [...parId.values()].filter(a => ch.tous.has(a.id));
+    const tous = [...parId.values()].filter(a => ch.tous.has(a.id));
+    db.marche = tous.filter(a => a.kind !== 'marche');
+    db.marches = tous.filter(a => a.kind === 'marche');
     ch.valider();
     saveNow();
   } catch (e) { console.warn('Marché indisponible (base pas encore en v7 ?)', e); }
@@ -2612,39 +2620,110 @@ function sauverArticle(a) {
   clearTimeout(marcheTimers[a.id]);
   marcheTimers[a.id] = setTimeout(() => rpc('mj_marche_sauver', { p_code: db.codeMJ, p_id: a.id, p_data: a }).catch(e => statutSync('Marché non enregistré : ' + e.message, true)), 700);
 }
+/* ===== Les marchés : chacun a son décor ; les articles sont posés sur les étals des marchands ===== */
+const TYPES_MARCHE = { port: 'Marché du port', ville: 'Marché en ville', noir: 'Marché noir', ambulant: 'Marchand ambulant' };
+const MARCHES_DEFAUT = [
+  { id: 'm-port', kind: 'marche', nom: 'Marché du port', type: 'port', image: 'images/marche-port.jpg', ouvert: true, ordre: 1 },
+  { id: 'm-ville', kind: 'marche', nom: 'Marché de la ville', type: 'ville', image: 'images/marche-ville.jpg', ouvert: true, ordre: 2 },
+  { id: 'm-noir', kind: 'marche', nom: 'Marché noir', type: 'noir', image: 'images/marche-noir.jpg', ouvert: true, ordre: 3 },
+  { id: 'm-ambulant', kind: 'marche', nom: 'Marchand ambulant', type: 'ambulant', image: 'images/marche-ambulant.jpg', ouvert: true, ordre: 4 },
+];
+const listeMarches = () => ((db.marches || []).length ? db.marches : MARCHES_DEFAUT).slice().sort((x, y) => num(x.ordre) - num(y.ordre));
+const marcheDe = a => listeMarches().find(m => m.id === a.marcheId) || listeMarches()[0];
+const ICONES_CAT = { arme: '⚔️', armure: '🛡️', bouclier: '🛡️', vetement: '👘', magique: '💍', munition: '🏹', consommable: '🧪', fourniture: '🕯️', ration: '🍞', tresor: '💎', babiole: '🎲', '': '📦' };
+function sauverMarcheDef(m) {
+  /* Première personnalisation : on enregistre aussi les marchés par défaut */
+  if (!(db.marches || []).length) db.marches = MARCHES_DEFAUT.map(x => ({ ...x }));
+  const i = db.marches.findIndex(x => x.id === m.id);
+  if (i >= 0) db.marches[i] = m; else db.marches.push(m);
+  saveNow();
+  if (!enLigne() || !estMJ()) return;
+  const aEnvoyer = db.marches.filter(x => x.id === m.id || !x._envoye);
+  for (const x of aEnvoyer) {
+    const { _envoye, ...donnees } = x;
+    rpc('mj_marche_sauver', { p_code: db.codeMJ, p_id: x.id, p_data: donnees }).then(() => { x._envoye = true; }).catch(e => statutSync('Marché non enregistré : ' + e.message, true));
+  }
+}
+function supprimerMarcheDef(id) {
+  if (!(db.marches || []).length) db.marches = MARCHES_DEFAUT.map(x => ({ ...x }));
+  db.marches = db.marches.filter(x => x.id !== id);
+  saveNow();
+  if (enLigne() && estMJ()) {
+    rpc('mj_marche_suppr', { p_code: db.codeMJ, p_id: id }).catch(() => {});
+    for (const x of db.marches) if (!x._envoye) sauverMarcheDef(x);
+  }
+}
 function pageMarche() {
   const mj = estMJ();
-  const articles = (db.marche || []).filter(a => mj || a.aVendre);
+  const marches = listeMarches().filter(m => mj || m.ouvert !== false);
+  const sel = marches.find(m => m.id === state.marcheSel) || marches.find(m => (db.marche || []).some(a => marcheDe(a).id === m.id && (mj || a.aVendre))) || marches[0];
+  if (!sel) return '<section class="card intro"><p class="empty">Aucun marché ouvert pour l\'instant.</p></section>';
+  const articles = (db.marche || []).filter(a => marcheDe(a).id === sel.id && (mj || a.aVendre));
   const mes = db.personnages.filter(x => !x._public && estMembre(x) && (enLigne() ? !!(db.cles || {})[x.id] || mj : true));
-  const vendeurs = [...new Set(articles.map(a => a.vendeur || 'Marchand ambulant'))];
-  const carte = a => {
+  const vendeurs = [...new Set(articles.map(a => a.vendeur || 'Étal du marché'))];
+  const marchandise = a => {
     const i = db.marche.indexOf(a);
     const epuise = num(a.stock) <= 0;
-    return `<div class="article ${a.aVendre ? '' : 'retire'} ${epuise ? 'epuise' : ''}">
-      ${a.image ? `<button class="article-image" data-action="img-zoom" data-src="${a.image}" aria-label="Agrandir l'image"><img src="${a.image}" alt=""></button>` : ''}
-      <div class="objet-vue-tete"><b>${esc(a.nom || 'Article')}</b>${a.cat ? `<span class="tag-cat cat-${a.cat}">${CATS_OBJET[a.cat] || ''}</span>` : ''}${a.focalisateur ? '<span class="tag-cat focal">✦ focalisateur</span>' : ''}</div>
-      ${a.notes ? `<p class="objet-det">${esc(a.notes)}</p>` : ''}
-      ${(a.bonus || []).filter(x => x.cible && num(x.val)).length ? `<p class="objet-bonus">${a.bonus.filter(x => x.cible && num(x.val)).map(x => `<span class="bonus-objet">${R.signe(num(x.val))} ${esc(NOM_CIBLE[x.cible] || x.cible)}</span>`).join('')}</p>` : ''}
-      <p class="prix"><b>${esc(prixTxt(a.prix, a.unite))}</b> <span>${epuise ? 'épuisé' : `stock : ${esc(a.stock)}`}</span></p>
-      ${mj ? `<div class="row mj-article">
+    const ouvert = state.achatOuvert === a.id;
+    const bonus = (a.bonus || []).filter(x => x.cible && num(x.val));
+    return `<div class="marchandise ${a.aVendre ? '' : 'retire'} ${epuise ? 'epuise' : ''}">
+      <button class="marchandise-visuel" ${a.image ? `data-action="img-zoom" data-src="${a.image}"` : 'disabled'} aria-label="Voir ${esc(a.nom || 'l\'article')}">
+        ${a.image ? `<img src="${a.image}" alt="">` : `<span class="icone">${ICONES_CAT[a.cat || ''] || '📦'}</span>`}
+        <span class="etiquette">${esc(prixTxt(a.prix, a.unite))}</span>
+      </button>
+      <b class="marchandise-nom">${esc(a.nom || 'Article')}${a.focalisateur ? ' ✦' : ''}</b>
+      <small class="marchandise-stock">${epuise ? 'épuisé' : num(a.stock) > 1 ? `${esc(a.stock)} en stock` : 'dernier exemplaire'}${!a.aVendre ? ' · caché aux joueurs' : ''}</small>
+      ${a.notes || bonus.length ? `<details class="marchandise-detail"><summary>Détails</summary>${a.notes ? `<p>${esc(a.notes)}</p>` : ''}${bonus.length ? `<p class="objet-bonus">${bonus.map(x => `<span class="${x.cond ? 'bonus-cond' : 'bonus-objet'}">${R.signe(num(x.val))} ${esc(NOM_CIBLE[x.cible] || x.cible)}</span>`).join('')}</p>` : ''}</details>` : ''}
+      ${!epuise && a.aVendre && mes.length ? (ouvert ? `<div class="achat">
+          <input type="text" inputmode="numeric" class="s" id="qte-${a.id}" value="1" aria-label="Quantité">
+          <select id="payeur-${a.id}" aria-label="Payer avec">${mes.map(x => `<option value="${x.id}|0">Bourse de ${esc(x.nom)}</option><option value="${x.id}|1">Bourse commune (${esc(x.nom)})</option>`).join('')}</select>
+          <button class="btn" data-action="acheter" data-id="${a.id}">Payer</button>
+        </div>` : `<button class="btn ghost achat-btn" data-action="achat-ouvrir" data-id="${a.id}">Acheter</button>`) : ''}
+      ${mj ? `<div class="mj-article">
           <input type="text" inputmode="decimal" class="s" data-marche="${i}.prix" value="${esc(a.prix)}" aria-label="Prix">
           ${selUnite(`data-marche="${i}.unite"`, a.unite)}
           <input type="text" inputmode="numeric" class="s" data-marche="${i}.stock" value="${esc(a.stock)}" aria-label="Stock">
           <label class="check"><input type="checkbox" data-marche="${i}.aVendre" ${a.aVendre ? 'checked' : ''}> À vendre</label>
-          <button class="lien" data-action="marche-retirer" data-id="${a.id}">Retirer du marché</button>
-        </div>` : ''}
-      ${!epuise && a.aVendre && mes.length ? `<div class="row achat">
-          <input type="text" inputmode="numeric" class="s" id="qte-${a.id}" value="1" aria-label="Quantité">
-          <select id="payeur-${a.id}" aria-label="Payer avec">${mes.map(x => `<option value="${x.id}|0">Bourse de ${esc(x.nom)}</option><option value="${x.id}|1">Bourse commune (achat par ${esc(x.nom)})</option>`).join('')}</select>
-          <button class="btn" data-action="acheter" data-id="${a.id}">Acheter</button>
+          <select data-marche="${i}.marcheId" aria-label="Marché">${listeMarches().map(m => `<option value="${m.id}" ${marcheDe(a).id === m.id ? 'selected' : ''}>${esc(m.nom)}</option>`).join('')}</select>
+          <button class="lien" data-action="marche-retirer" data-id="${a.id}">Retirer</button>
         </div>` : ''}
     </div>`;
   };
-  return `<div class="pagehead"><div><h1>Marché</h1><p class="sub">Ce que les marchands proposent</p></div></div>
-    ${!mes.length && !mj ? '<p class="hint">Associe ton personnage à cet appareil (sur sa fiche) pour pouvoir acheter.</p>' : ''}
-    ${mes.length ? `<p class="hint">Ta bourse : ${mes.map(x => `${esc(x.nom)} ${esc(piecesTxt(x.argent))}`).join(' · ')}. Bourse commune : ${esc(piecesTxt(bc().bourse))}.</p>` : ''}
-    ${vendeurs.map(v => `<section class="card"><h3>${esc(v)}</h3><div class="articles">${articles.filter(a => (a.vendeur || 'Marchand ambulant') === v).map(carte).join('')}</div></section>`).join('')
-      || `<section class="card intro"><p class="empty">Aucun article en vente pour l'instant.${mj ? ' Prépare des objets « À vendre » dans l\'espace MJ, onglet Objets, puis envoie-les au marché.' : ''}</p></section>`}`;
+  return `<div class="marche-fond" style="background-image:url('${esc(sel.image || '')}')"></div>
+  <div class="marche-contenu type-${esc(sel.type || 'ville')}">
+    <div class="marche-tete">
+      <h1>${esc(sel.nom)}</h1>
+      ${marches.length > 1 ? `<nav class="marche-onglets">${marches.map(m => `<button class="${m.id === sel.id ? 'on' : ''}" data-action="marche-choisir" data-id="${m.id}">${esc(m.nom)}${mj && m.ouvert === false ? ' (fermé)' : ''}</button>`).join('')}</nav>` : ''}
+      ${mes.length ? `<p class="marche-bourse">${mes.map(x => `${esc(x.nom)} : ${esc(piecesTxt(x.argent))}`).join(' · ')} · Coffre commun : ${esc(piecesTxt(bc().bourse))}</p>` : (!mj ? '<p class="marche-bourse">Associe ton personnage à cet appareil pour acheter.</p>' : '')}
+      ${mj ? '<p class="marche-bourse"><a href="#/mj" data-action="mj-onglet" data-o="objets">Gérer les marchés et préparer des articles (espace MJ)</a></p>' : ''}
+    </div>
+    ${vendeurs.map(v => `<section class="stand">
+      <div class="auvent" aria-hidden="true"></div>
+      <div class="enseigne">${esc(v)}</div>
+      <div class="etal">${articles.filter(a => (a.vendeur || 'Étal du marché') === v).map(marchandise).join('')}</div>
+      <div class="comptoir" aria-hidden="true"></div>
+    </section>`).join('') || `<section class="stand vide"><div class="auvent" aria-hidden="true"></div><div class="enseigne">Étals vides</div><p class="empty">Rien à vendre ici pour l'instant.${mj ? ' Prépare des objets « À vendre » dans l\'espace MJ, onglet Objets, puis envoie-les vers ce marché.' : ''}</p></section>`}
+  </div>`;
+}
+
+/* Gestion des marchés dans l'espace MJ */
+function carteMarchesMJ() {
+  const ms = listeMarches();
+  return `<section class="card"><h3>Marchés</h3>
+    <p class="hint">Chaque marché a son nom, son ambiance et son image de fond. Un marché fermé reste invisible aux joueurs.</p>
+    <div class="marches-mj">${ms.map(m => `<div class="marche-mj">
+      <button class="marche-mj-image" data-action="marche-image" data-id="${m.id}" style="background-image:url('${esc(m.image || '')}')" aria-label="Changer l'image de ${esc(m.nom)}"><span>Changer l'image</span></button>
+      <div class="grid">
+        <label class="f span2"><span>Nom</span><input type="text" data-marchedef="${m.id}.nom" value="${esc(m.nom)}"></label>
+        <label class="f"><span>Ambiance</span><select data-marchedef="${m.id}.type">${Object.entries(TYPES_MARCHE).map(([k, l]) => `<option value="${k}" ${m.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="f"><span>Ordre</span><input type="text" inputmode="numeric" data-marchedef="${m.id}.ordre" value="${esc(m.ordre)}"></label>
+      </div>
+      <div class="row"><label class="check"><input type="checkbox" data-marchedef="${m.id}.ouvert" ${m.ouvert === false ? '' : 'checked'}> Ouvert aux joueurs</label>
+        <span class="hint">${(db.marche || []).filter(a => marcheDe(a).id === m.id).length} article(s)</span>
+        <button class="lien danger" data-action="marche-suppr" data-id="${m.id}">Supprimer</button></div>
+    </div>`).join('')}</div>
+    <button class="btn ghost" data-action="marche-ajout">+ Nouveau marché</button>
+  </section>`;
 }
 
 /* Achat hors ligne (sans base) : même logique que la fonction de la base */
@@ -2817,12 +2896,29 @@ function optionsDons(e, p, cur, filtre = () => true, liste = null, sansPrerequis
     `<optgroup label="${R.TYPES_DONS[t]}">${l.sort((a, b) => a.nom.localeCompare(b.nom, 'fr')).map(opt).join('')}</optgroup>`).join('');
 }
 
+/* ---------- Focalisateurs : chaque sort passe par un objet ---------- */
+/* La baguette du personnage et les objets magiques marqués « focalisateur » */
+function focalisateurs(p) {
+  const l = (p.equipement || []).filter(it => it.focalisateur).map(it => ({ id: it.id, nom: it.nom || 'Focalisateur', present: it.equipe !== false }));
+  if (p.baguette && (p.baguette.nom || p.baguette.photo)) l.unshift({ id: 'baguette', nom: 'Baguette : ' + (p.baguette.nom || 'sans nom'), present: p.baguette.possedee !== false });
+  return l;
+}
+/* 'ok', 'non-relie' ou 'absent' */
+function etatFocal(p, x) {
+  if (!x.focal) return 'non-relie';
+  const f = focalisateurs(p).find(y => y.id === x.focal);
+  return f && f.present ? 'ok' : 'absent';
+}
+const nomFocal = (p, x) => focalisateurs(p).find(y => y.id === x.focal)?.nom || 'focalisateur disparu';
+
 /* ---------- Sorts du personnage ---------- */
 function ongletSorts(p) {
   const items = (p.sorts || []).map((e, i) => ({ e, i, s: findSort(e.id) }))
     .sort((a, b) => String(a.s?.nom ?? '').localeCompare(String(b.s?.nom ?? ''), 'fr'));
+  const focs = focalisateurs(p);
+  const nonRelies = items.filter(({ e }) => etatFocal(p, e) === 'non-relie').length;
   const linked = items.map(({ e, i, s }) => `
-    <div class="item ${ecoleClass(s?.ecole)}">
+    <div class="item ${ecoleClass(s?.ecole)} focal-${etatFocal(p, e)}">
       <div>${s ? `<a href="#/sort/${s.id}">${esc(s.nom)}</a><span class="meta">${esc(s.ecole)}, ${esc(niveauxTxt(s))}</span><span class="usages">${tagsUsages(s)}</span>`
         : '<em>Sort supprimé du grimoire</em>'}</div>
       <select data-bind="sorts.${i}.statut" aria-label="Statut">
@@ -2830,9 +2926,21 @@ function ongletSorts(p) {
       </select>
       <button class="icon" data-action="del-sort-perso" data-idx="${i}" aria-label="Retirer le sort">✕</button>
       <input type="text" class="notes" data-bind="sorts.${i}.notes" value="${esc(e.notes)}" placeholder="Notes (charges de la baguette, préparé ×2…)">
+      <label class="focal-choix"><span>${etatFocal(p, e) === 'ok' ? '✦' : '⚠'}</span><select data-bind="sorts.${i}.focal" data-rerender aria-label="Focalisateur du sort">
+        <option value="">— Relier à un focalisateur —</option>${focs.map(f => `<option value="${f.id}" ${e.focal === f.id ? 'selected' : ''}>${esc(f.nom)}${f.present ? '' : ' (absent)'}</option>`).join('')}
+        ${e.focal && !focs.some(f => f.id === e.focal) ? `<option value="${e.focal}" selected>Focalisateur disparu</option>` : ''}
+      </select>${etatFocal(p, e) === 'absent' ? '<small class="focal-alerte">Focalisateur absent : sort inutilisable</small>' : ''}</label>
     </div>`).join('');
+  const blocFocal = items.length ? `<div class="focal-bandeau ${nonRelies ? 'alerte' : ''}">
+    ${focs.length
+      ? `<p>${nonRelies ? `<b>${nonRelies} sort${nonRelies > 1 ? 's' : ''} non relié${nonRelies > 1 ? 's' : ''}</b> à un focalisateur : ${nonRelies > 1 ? 'ils sont inutilisables' : 'il est inutilisable'} tant que ce n'est pas fait.` : 'Tous tes sorts sont reliés à un focalisateur.'}</p>
+         ${nonRelies ? `<div class="row"><select id="focal-tous">${focs.map(f => `<option value="${f.id}">${esc(f.nom)}</option>`).join('')}</select><button class="btn ghost" data-action="focal-tous">Relier les sorts non reliés</button></div>` : ''}`
+      : '<p><b>Aucun focalisateur.</b> Pour lancer des sorts, il faut une baguette (case Baguette de la fiche) ou un objet magique marqué « Focalisateur » dans l\'inventaire.</p>'}
+    <p class="hint">Sans son focalisateur (baguette perdue, objet rangé ou retiré de l'inventaire), un sort ne peut plus être lancé.</p>
+  </div>` : '';
   return `
   <section class="card"><h3>Sorts du personnage</h3>
+    ${blocFocal}
     <div class="linked">${linked || '<p class="empty">Aucun sort lié. Ajoute-les depuis le grimoire ci-dessous.</p>'}</div>
   </section>
   <section class="card"><h3>Ajouter un sort</h3>
@@ -4458,12 +4566,22 @@ document.addEventListener('input', ev => {
     if (t.hasAttribute('data-rerender')) render();
     return;
   }
+  if (t.dataset.marchedef) {
+    if (!estMJ()) return;
+    const [id, champ] = t.dataset.marchedef.split('.');
+    const m = { ...listeMarches().find(x => x.id === id) };
+    m[champ] = t.type === 'checkbox' ? t.checked : t.value;
+    delete m._envoye;
+    sauverMarcheDef(m);
+    if (t.type === 'checkbox' || t.tagName === 'SELECT') render();
+    return;
+  }
   if (t.dataset.marche) {
     const [i, champ] = t.dataset.marche.split('.');
     const a = db.marche[Number(i)];
     a[champ] = t.type === 'checkbox' ? t.checked : t.value;
     sauverArticle(a);
-    if (t.type === 'checkbox') render();
+    if (t.type === 'checkbox' || t.tagName === 'SELECT') render();
     return;
   }
   if (t.dataset.mjbind) {
@@ -4571,7 +4689,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -5183,7 +5301,9 @@ document.addEventListener('click', ev => {
       break;
     }
     case 'mj-onglet':
-      ev.preventDefault(); state.mjOnglet = b.dataset.o; state.mjEdit = null; render(); window.scrollTo(0, 0);
+      ev.preventDefault(); state.mjOnglet = b.dataset.o; state.mjEdit = null;
+      if (!/^#\/mj/.test(location.hash)) go('#/mj'); else render();
+      window.scrollTo(0, 0);
       break;
     case 'mj-edit':
       state.mjEdit = b.dataset.cle; render();
@@ -5350,7 +5470,7 @@ document.addEventListener('click', ev => {
     case 'mj-vers-marche': {
       const i = Number(b.dataset.i), obj = mjd().objets[i];
       const { type, source, qte, valeur, valeurUnite, detenteur, ...reste } = obj;
-      const article = { ...reste, id: uid(), prix: valeur || '0', unite: valeurUnite || 'po', stock: qte || '1', vendeur: detenteur || '', aVendre: false };
+      const article = { ...reste, id: uid(), prix: valeur || '0', unite: valeurUnite || 'po', stock: qte || '1', vendeur: detenteur || '', aVendre: false, marcheId: obj.marcheId || listeMarches()[0].id };
       const fini = () => { db.marche = [...(db.marche || []), article]; mjd().objets.splice(i, 1); saveMJ('objets'); render(); toast('Envoyé au marché : coche « À vendre » quand tu veux l\'ouvrir aux joueurs'); };
       if (enLigne()) rpc('mj_marche_sauver', { p_code: db.codeMJ, p_id: article.id, p_data: article }).then(fini).catch(e => alert('Impossible : ' + e.message));
       else fini();
@@ -5570,6 +5690,38 @@ document.addEventListener('click', ev => {
       saveMJ('combat'); publierCombat(); render();
       break;
     }
+    case 'focal-tous': {
+      const f = $('#focal-tous').value;
+      (p.sorts || []).forEach(x => { if (!x.focal) x.focal = f; });
+      save(); render(); toast('Sorts reliés');
+      break;
+    }
+    case 'marche-image':
+      if (!estMJ()) break;
+      state.imgType = 'marche'; state.imgObjet = b.dataset.id;
+      $('#imginput').value = ''; $('#imginput').click();
+      break;
+    case 'marche-choisir':
+      state.marcheSel = b.dataset.id; state.achatOuvert = null; render(); window.scrollTo(0, 0);
+      break;
+    case 'achat-ouvrir':
+      state.achatOuvert = b.dataset.id; render();
+      break;
+    case 'marche-ajout': {
+      if (!estMJ()) break;
+      const m = { id: 'm-' + uid(), kind: 'marche', nom: 'Nouveau marché', type: 'ville', image: 'images/marche-ville.jpg', ouvert: false, ordre: listeMarches().length + 1 };
+      sauverMarcheDef(m); render(); toast('Marché créé (fermé aux joueurs pour l\'instant)');
+      break;
+    }
+    case 'marche-suppr': {
+      if (!estMJ()) break;
+      const m = listeMarches().find(x => x.id === b.dataset.id);
+      const n = (db.marche || []).filter(a => marcheDe(a).id === m.id).length;
+      if (listeMarches().length <= 1) { alert('Il faut garder au moins un marché.'); break; }
+      if (!confirm(`Supprimer « ${m.nom} » ?${n ? ` Ses ${n} article(s) passeront dans le premier marché restant.` : ''}`)) break;
+      supprimerMarcheDef(m.id); render();
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -5707,6 +5859,11 @@ $('#imginput').addEventListener('change', async ev => {
   const p = state.ctx;
   if (!file || !state.imgType) return;
   /* Images d'objets : petites vignettes (256 px) pour garder les fiches légères */
+  if (state.imgType === 'marche') {
+    const m = { ...listeMarches().find(x => x.id === state.imgObjet) };
+    if (m.id) { m.image = await reduireImage(file, 1280, 'image/jpeg'); delete m._envoye; sauverMarcheDef(m); render(); toast('Image du marché changée'); }
+    return;
+  }
   if (state.imgType === 'sessionimg') {
     const ss = sessionMJ(state.mjSession);
     const et = ss && (ss.etapes || []).find(x => x.id === state.imgObjet);

@@ -1236,3 +1236,78 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .sorts-domaine { margin: .3rem 0 0; padding-left: 1.4rem; font-size: .88rem; color: var(--muted); }
 .sorts-domaine li.accessible, .sorts-domaine li.accessible a { color: var(--ivoire); font-weight: 600; }
 .domaine-nouveau { margin: .4rem 0 0; padding: .35rem .55rem; border-left: 3px solid var(--bronze); background: var(--inset); border-radius: 0 var(--radius-s) var(--radius-s) 0; font-size: .9rem; }
+
+/* ===== Le marché : décor, étals et marchandises ===== */
+.marche-fond { position: fixed; inset: 0; z-index: 0; background-size: cover; background-position: center; pointer-events: none; }
+.marche-fond::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6, 14, 22, .55) 0%, rgba(6, 14, 22, .35) 30%, rgba(6, 14, 22, .82) 100%); }
+.marche-contenu { position: relative; z-index: 1; }
+.marche-tete { text-align: center; padding: .6rem 0 1rem; text-shadow: 0 2px 10px rgba(0, 0, 0, .8); }
+.marche-tete h1 { font-size: clamp(1.6rem, 6vw, 2.3rem); letter-spacing: .06em; color: #F3E6C8; margin: .2rem 0 .6rem; }
+.marche-onglets { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; margin-bottom: .5rem; }
+.marche-onglets button { font: inherit; font-size: .85rem; cursor: pointer; padding: .35rem .8rem; border-radius: 99px; color: #F3E6C8; background: rgba(11, 30, 45, .7); border: 1px solid rgba(243, 230, 200, .35); backdrop-filter: blur(4px); }
+.marche-onglets button.on { background: var(--bronze); color: var(--nuit); border-color: var(--bronze); font-weight: 700; }
+.marche-bourse { margin: .2rem 0; font-size: .85rem; color: #E9DFC7; }
+.marche-bourse a { color: var(--bronze-clair); }
+
+/* Un stand : auvent, enseigne, étal, comptoir */
+.stand { position: relative; margin: 0 0 1.6rem; padding-top: 34px; filter: drop-shadow(0 12px 24px rgba(0, 0, 0, .45)); }
+.auvent { position: absolute; top: 0; left: -6px; right: -6px; height: 44px; border-radius: 6px 6px 0 0;
+  background: repeating-linear-gradient(90deg, var(--toile-a) 0 34px, var(--toile-b) 34px 68px);
+  -webkit-mask: radial-gradient(18px 12px at 17px 100%, transparent 98%, #000) 0 0 / 34px 100%;
+          mask: radial-gradient(18px 12px at 17px 100%, transparent 98%, #000) 0 0 / 34px 100%; }
+.enseigne { position: relative; z-index: 2; width: max-content; max-width: 86%; margin: 0 auto -14px; padding: .35rem 1.2rem; font-family: var(--font-titre); font-weight: 700; letter-spacing: .06em; color: #F3E6C8;
+  background: linear-gradient(180deg, #6B4A2B, #4A3119); border: 2px solid #2E1E0F; border-radius: 6px; box-shadow: 0 3px 0 #2E1E0F, inset 0 1px 0 rgba(255, 255, 255, .15); text-shadow: 0 1px 0 #000; }
+.etal { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .9rem .7rem; padding: 1.6rem .8rem 1rem;
+  background: linear-gradient(180deg, rgba(31, 22, 14, .88), rgba(22, 16, 10, .92)); border-left: 6px solid #3A2715; border-right: 6px solid #3A2715; }
+.comptoir { height: 18px; background: repeating-linear-gradient(90deg, #6E4C2C 0 120px, #5E4024 120px 124px); border-top: 2px solid #8A6339; border-radius: 0 0 6px 6px; box-shadow: inset 0 -4px 0 rgba(0, 0, 0, .3); }
+/* Ambiances */
+.type-port { --toile-a: #D9C7A3; --toile-b: #B79E74; }
+.type-ville { --toile-a: #EDE6D6; --toile-b: #3C6EA5; }
+.type-noir { --toile-a: #2B2F36; --toile-b: #1C1F24; }
+.type-noir .enseigne { background: linear-gradient(180deg, #2E2A2F, #1B181C); border-color: #0E0C0F; color: #C9B98F; }
+.type-noir .etal { background: linear-gradient(180deg, rgba(12, 12, 16, .9), rgba(8, 8, 10, .94)); }
+.type-ambulant { --toile-a: #EADBC0; --toile-b: #A4442F; }
+/* Une marchandise posée sur l'étal */
+.marchandise { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .25rem; }
+.marchandise.retire { opacity: .55; }
+.marchandise.epuise { opacity: .45; }
+.marchandise-visuel { position: relative; width: 100%; aspect-ratio: 1; padding: 0; border: 1px solid rgba(243, 230, 200, .18); border-radius: 10px; overflow: visible; cursor: zoom-in;
+  background: radial-gradient(70% 60% at 50% 40%, rgba(255, 230, 180, .16), rgba(0, 0, 0, .25)); box-shadow: inset 0 -10px 18px rgba(0, 0, 0, .35); }
+.marchandise-visuel:disabled { cursor: default; }
+.marchandise-visuel img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; filter: drop-shadow(0 6px 6px rgba(0, 0, 0, .5)); }
+.marchandise-visuel .icone { font-size: 3rem; line-height: 1; display: grid; place-items: center; height: 100%; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .6)); }
+.etiquette { position: absolute; right: -6px; bottom: 10px; transform: rotate(-6deg); padding: .1rem .5rem; font-weight: 700; font-size: .85rem; color: #2E1E0F;
+  background: #F1E3BF; border-radius: 3px 10px 10px 3px; box-shadow: 0 2px 4px rgba(0, 0, 0, .5); }
+.etiquette::before { content: ""; position: absolute; left: -5px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: #2E1E0F; }
+.marchandise-nom { font-family: var(--font-titre); color: #F3E6C8; font-size: .95rem; line-height: 1.2; }
+.marchandise-stock { color: #CDBF9E; font-size: .75rem; }
+.marchandise-detail { width: 100%; font-size: .8rem; color: #E9DFC7; text-align: left; }
+.marchandise-detail summary { text-align: center; color: var(--bronze-clair); }
+.marchandise .achat { display: flex; flex-direction: column; gap: .3rem; width: 100%; }
+.marchandise .achat select, .marchandise .achat input { width: 100%; font-size: .8rem; }
+.achat-btn { padding: .3rem .7rem; font-size: .85rem; background: rgba(11, 30, 45, .6); }
+.marchandise .mj-article { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem; border-top: 1px dashed rgba(243, 230, 200, .25); padding-top: .35rem; width: 100%; }
+.marchandise .mj-article input.s { max-width: 3.6rem; }
+.marchandise .mj-article select { max-width: 100%; font-size: .78rem; }
+.stand.vide .etal, .stand.vide > .empty { background: rgba(22, 16, 10, .85); margin: 0; padding: 1.4rem 1rem; text-align: center; color: #E9DFC7; }
+@media (max-width: 420px) { .etal { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Gestion des marchés (MJ) */
+.marches-mj { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .6rem; margin-bottom: .6rem; }
+.marche-mj { border: 1px solid var(--line); border-radius: var(--radius-s); overflow: hidden; background: var(--inset); }
+.marche-mj .grid, .marche-mj .row { padding: 0 .6rem; }
+.marche-mj .row { align-items: center; justify-content: space-between; padding-bottom: .5rem; }
+.marche-mj-image { display: block; width: 100%; height: 110px; border: none; cursor: pointer; background-size: cover; background-position: center; position: relative; }
+.marche-mj-image span { position: absolute; right: .4rem; bottom: .4rem; font-size: .75rem; background: rgba(0, 0, 0, .6); color: #fff; padding: .1rem .4rem; border-radius: 4px; }
+.lien.danger { color: var(--rouge-clair); }
+/* Focalisateurs */
+.focal-bandeau { border: 1px solid var(--line); border-radius: var(--radius-s); padding: .5rem .7rem; margin-bottom: .6rem; background: var(--inset); }
+.focal-bandeau.alerte { border-color: var(--rouge); background: rgba(139, 74, 61, .15); }
+.focal-bandeau p { margin: .2rem 0; }
+.focal-choix { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; grid-column: 1 / -1; }
+.focal-choix select { flex: 1 1 200px; font-size: .85rem; }
+.item.focal-non-relie, .item.focal-absent { border-color: var(--rouge); }
+.focal-alerte { color: var(--rouge-clair); font-size: .82rem; margin: .1rem 0; }
+.focal-sort { color: #9FD4F0; font-size: .78rem; margin: 0 0 .15rem; }
+.sort-c.bloque { opacity: .75; }
+.centre { text-align: center; }
+.marchandise .achat select, .marchandise .achat input, .marchandise .achat .btn { flex: none; }
