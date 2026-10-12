@@ -304,8 +304,71 @@ function appliquerAugment(p, l) {
   l.augmentApplique = voulu && ajuste(voulu, 1) ? voulu : null;
   if (l.augmentApplique) toast(`+1 ${R.CARACS.find(c => c.k === voulu).n} reporté sur la fiche`);
 }
+/* ===== Classes de prestige saisies depuis un livre : communes à toute la campagne ===== */
+const classesCommunes = () => (db.classesPerso = db.classesPerso || []);
+function enregistrerClassesCommunes() {
+  for (const d of classesCommunes()) R.CLASSES['pp-' + d.id] = R.classePerso(d);
+}
 function enregistrerPrestigesPerso(p) {
-  for (const d of p.prestigePerso || []) R.CLASSES['pp-' + d.id] = R.classePerso(d);
+  enregistrerClassesCommunes();
+  /* anciennes classes rangées dans une fiche (avant qu'elles deviennent communes) */
+  for (const d of p.prestigePerso || []) if (!R.CLASSES['pp-' + d.id]) R.CLASSES['pp-' + d.id] = R.classePerso(d);
+}
+const classesAttente = new Set();
+let classesTimer;
+/* Qui signe l'enregistrement : la fiche ouverte (code personnel), sinon le MJ ou l'administrateur */
+function signataireClasses() {
+  const p = state.ctx && db.personnages.includes(state.ctx) ? state.ctx : null;
+  if (p && peutModifier(p) && !p.pnjMJ && codePour(p)) return { p_perso: p.id, p_code: codePour(p) };
+  if (db.codeMJ) return { p_perso: null, p_code: db.codeMJ };
+  if (db.codeCampagne) return { p_perso: null, p_code: db.codeCampagne };
+  const mien = db.personnages.find(x => (db.cles || {})[x.id]);
+  return mien ? { p_perso: mien.id, p_code: db.cles[mien.id] } : null;
+}
+const peutModifierClasses = () => !enLigne() || !!signataireClasses();
+function sauverClasse(d) {
+  enregistrerClassesCommunes();
+  saveNow();
+  if (!enLigne()) return;
+  classesAttente.add(d.id);
+  clearTimeout(classesTimer);
+  classesTimer = setTimeout(envoyerClasses, 800);
+}
+async function envoyerClasses() {
+  const sig = signataireClasses();
+  if (!sig) return;
+  for (const id of [...classesAttente]) {
+    const d = classesCommunes().find(x => x.id === id);
+    try {
+      if (d) await rpc('sauver_classe_prestige', { ...sig, p_id: id, p_data: d });
+      else await rpc('supprimer_classe_prestige', { ...sig, p_id: id });
+      classesAttente.delete(id);
+    } catch (e) { statutSync('Classe de prestige non enregistrée (base en v9 ?) : ' + e.message, true); return; }
+  }
+}
+async function chargerClasses() {
+  if (!enLigne()) return;
+  try {
+    const ch = await lignesChangees('classes_prestige', 'classes', 'id,data,maj', id => classesCommunes().some(d => d.id === id));
+    const parId = new Map(classesCommunes().map(d => [d.id, d]));
+    for (const l of ch.lignes) if (!classesAttente.has(l.id)) parId.set(l.id, { ...l.data, id: l.id });
+    db.classesPerso = [...parId.values()].filter(d => ch.tous.has(d.id) || classesAttente.has(d.id));
+    ch.valider();
+    enregistrerClassesCommunes();
+    saveNow();
+  } catch (e) { console.warn('Classes de prestige communes indisponibles (base pas encore en v9 ?)', e); }
+}
+/* Reprise des classes créées dans une fiche avant cette version */
+function migrerClassesDesFiches() {
+  let n = 0;
+  for (const p of db.personnages) {
+    if (!(p.prestigePerso || []).length || p._public) continue;
+    for (const d of p.prestigePerso) {
+      if (!classesCommunes().some(x => x.id === d.id)) { classesCommunes().push({ ...d }); classesAttente.add(d.id); n++; }
+    }
+    if (peutModifier(p)) { p.prestigePerso = []; p.maj = Date.now(); persoModifie(p); }
+  }
+  if (n) { saveNow(); enregistrerClassesCommunes(); if (enLigne()) envoyerClasses(); }
 }
 function etat(p, n, prevus = false, sauf = null) {
   enregistrerPrestigesPerso(p);
@@ -1643,7 +1706,6 @@ function projectionPublique(p) {
   if (v.langues) pub.langues = p.langues;
   if (v.bourse) pub.argent = p.argent;
   pub.membreGroupe = !!p.membreGroupe;
-  if (pub.progression) pub.prestigePerso = p.prestigePerso;
   pub.equipement = (p.equipement || []).filter(it => it.visibleJoueurs);
   return pub;
 }
@@ -2629,45 +2691,45 @@ function ongletProgression(p) {
 
 /* Classes de prestige : celles du Guide du Maître sont prêtes ; les autres (Poing sacré…) se saisissent depuis le livre */
 function carteClassesPrestige(p) {
-  const mod = peutModifier(p);
-  const defs = p.prestigePerso || [];
+  const mod = peutModifierClasses();
+  const defs = classesCommunes();
   const e = etat(p);
   const formulaire = (d, i) => {
-    const b = f => `prestigePerso.${i}.${f}`;
+    const b = f => `${i}.${f}`;
     return `<div class="pnj en-edition">
       <div class="grid">
-        <label class="f span2"><span>Nom</span><input type="text" data-bind="${b('nom')}" value="${esc(d.nom)}" placeholder="Ex. : Poing sacré"></label>
-        <label class="f"><span>Dé de vie</span><select data-bind="${b('dv')}" data-rerender>${[4, 6, 8, 10, 12].map(v => `<option value="${v}" ${num(d.dv) === v ? 'selected' : ''}>d${v}</option>`).join('')}</select></label>
-        <label class="f"><span>Bonus de base à l'attaque</span><select data-bind="${b('bba')}" data-rerender>${[['fort', 'Bon (comme le guerrier)'], ['moyen', 'Moyen (comme le moine)'], ['faible', 'Faible (comme le magicien)']].map(([v, t]) => `<option value="${v}" ${(d.bba || 'moyen') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-        <label class="f"><span>Points de compétence / niveau</span><input type="text" inputmode="numeric" data-bind="${b('pc')}" data-recalc value="${esc(d.pc)}" placeholder="2"></label>
-        <label class="f"><span>Nombre de niveaux</span><input type="text" inputmode="numeric" data-bind="${b('max')}" data-recalc value="${esc(d.max)}" placeholder="10"></label>
+        <label class="f span2"><span>Nom</span><input type="text" data-classebind="${b('nom')}" value="${esc(d.nom)}" placeholder="Ex. : Poing sacré"></label>
+        <label class="f"><span>Dé de vie</span><select data-classebind="${b('dv')}" data-rerender>${[4, 6, 8, 10, 12].map(v => `<option value="${v}" ${num(d.dv) === v ? 'selected' : ''}>d${v}</option>`).join('')}</select></label>
+        <label class="f"><span>Bonus de base à l'attaque</span><select data-classebind="${b('bba')}" data-rerender>${[['fort', 'Bon (comme le guerrier)'], ['moyen', 'Moyen (comme le moine)'], ['faible', 'Faible (comme le magicien)']].map(([v, t]) => `<option value="${v}" ${(d.bba || 'moyen') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="f"><span>Points de compétence / niveau</span><input type="text" inputmode="numeric" data-classebind="${b('pc')}" data-recalc value="${esc(d.pc)}" placeholder="2"></label>
+        <label class="f"><span>Nombre de niveaux</span><input type="text" inputmode="numeric" data-classebind="${b('max')}" data-recalc value="${esc(d.max)}" placeholder="10"></label>
       </div>
-      <div class="f"><span class="lbl">Bons jets de sauvegarde</span><div class="chips">${[['vig', 'Vigueur'], ['ref', 'Réflexes'], ['vol', 'Volonté']].map(([k2, t]) => `<label class="check"><input type="checkbox" data-bind="${b(k2)}" data-rerender ${d[k2] ? 'checked' : ''}> ${t}</label>`).join('')}</div></div>
+      <div class="f"><span class="lbl">Bons jets de sauvegarde</span><div class="chips">${[['vig', 'Vigueur'], ['ref', 'Réflexes'], ['vol', 'Volonté']].map(([k2, t]) => `<label class="check"><input type="checkbox" data-classebind="${b(k2)}" data-rerender ${d[k2] ? 'checked' : ''}> ${t}</label>`).join('')}</div></div>
       <div class="f cumul-moine"><span class="lbl">Ses niveaux s'ajoutent à ceux de moine pour :</span>
-        <div class="vis-grille">${[['mn', 'Dégâts à mains nues'], ['ca', 'Bonus de CA du moine'], ['deluge', 'Déluge de coups'], ['vitesse', 'Déplacement accéléré']].map(([k2, t]) => `<label class="check"><input type="checkbox" data-bind="${b('cumul')}.${k2}" data-rerender ${(d.cumul ? d.cumul[k2] : d.cumulMoine) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
+        <div class="vis-grille">${[['mn', 'Dégâts à mains nues'], ['ca', 'Bonus de CA du moine'], ['deluge', 'Déluge de coups'], ['vitesse', 'Déplacement accéléré']].map(([k2, t]) => `<label class="check"><input type="checkbox" data-classebind="${b('cumul')}.${k2}" data-rerender ${(d.cumul ? d.cumul[k2] : d.cumulMoine) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
         <p class="hint">Coche seulement ce que le livre indique. Pour le poing sacré : les dégâts à mains nues.</p></div>
       <div class="grid">
-        <label class="f"><span>Progression des sorts</span><select data-bind="${b('sortsType')}" data-rerender><option value="">Aucune</option><option value="divin" ${d.sortsType === 'divin' ? 'selected' : ''}>+1 niveau de lanceur divin</option><option value="profane" ${d.sortsType === 'profane' ? 'selected' : ''}>+1 niveau de lanceur profane</option><option value="les deux" ${d.sortsType === 'les deux' ? 'selected' : ''}>Les deux</option></select></label>
-        ${d.sortsType ? `<label class="f"><span>À quels niveaux (ex. 1,2,3,5,6,7,9,10)</span><input type="text" data-bind="${b('sortsNiveaux')}" data-recalc value="${esc(d.sortsNiveaux)}"></label>` : ''}
+        <label class="f"><span>Progression des sorts</span><select data-classebind="${b('sortsType')}" data-rerender><option value="">Aucune</option><option value="divin" ${d.sortsType === 'divin' ? 'selected' : ''}>+1 niveau de lanceur divin</option><option value="profane" ${d.sortsType === 'profane' ? 'selected' : ''}>+1 niveau de lanceur profane</option><option value="les deux" ${d.sortsType === 'les deux' ? 'selected' : ''}>Les deux</option></select></label>
+        ${d.sortsType ? `<label class="f"><span>À quels niveaux (ex. 1,2,3,5,6,7,9,10)</span><input type="text" data-classebind="${b('sortsNiveaux')}" data-recalc value="${esc(d.sortsNiveaux)}"></label>` : ''}
       </div>
-      <label class="f"><span>Prérequis (un par ligne, à vérifier avec le MJ)</span><textarea data-bind="${b('prerequis')}" rows="3" placeholder="Bonus de base à l'attaque +4&#10;Science du combat à mains nues">${esc(d.prerequis)}</textarea></label>
+      <label class="f"><span>Prérequis (un par ligne, à vérifier avec le MJ)</span><textarea data-classebind="${b('prerequis')}" rows="3" placeholder="Bonus de base à l'attaque +4&#10;Science du combat à mains nues">${esc(d.prerequis)}</textarea></label>
       <div class="f"><span class="lbl">Compétences de classe</span><div class="vis-grille">${R.COMPETENCES.map(c => `<label class="check"><input type="checkbox" data-action="pp-comp" data-i="${i}" data-c="${c.id}" ${(d.comp || []).includes(c.id) ? 'checked' : ''}> ${esc(c.nom)}</label>`).join('')}</div></div>
       <p class="lbl">Aptitudes par niveau</p>
       ${(d.aptitudes || []).map((a, j) => `<div class="row butin-ligne">
-        <input type="text" inputmode="numeric" class="s" data-bind="${b('aptitudes')}.${j}.niv" value="${esc(a.niv)}" placeholder="Niv." aria-label="Niveau">
-        <input type="text" data-bind="${b('aptitudes')}.${j}.nom" value="${esc(a.nom)}" placeholder="Nom de l'aptitude">
+        <input type="text" inputmode="numeric" class="s" data-classebind="${b('aptitudes')}.${j}.niv" value="${esc(a.niv)}" placeholder="Niv." aria-label="Niveau">
+        <input type="text" data-classebind="${b('aptitudes')}.${j}.nom" value="${esc(a.nom)}" placeholder="Nom de l'aptitude">
         <button class="icon" data-action="pp-apt-suppr" data-i="${i}" data-j="${j}" aria-label="Retirer">✕</button>
-        <input type="text" class="ligne-entiere" data-bind="${b('aptitudes')}.${j}.texte" value="${esc(a.texte)}" placeholder="Ce qu'elle fait">
+        <input type="text" class="ligne-entiere" data-classebind="${b('aptitudes')}.${j}.texte" value="${esc(a.texte)}" placeholder="Ce qu'elle fait">
       </div>`).join('')}
       <div class="btns"><button class="lien" data-action="pp-apt-ajout" data-i="${i}">+ Aptitude</button></div>
       <div class="btns"><button class="btn" data-action="pp-fin">Terminé</button><button class="btn danger" data-action="pp-suppr" data-i="${i}">Supprimer</button></div>
     </div>`;
   };
   return `<section class="card"><h3>Classes de prestige</h3>
-    <p class="hint">Les classes de prestige du Guide du Maître sont déjà dans le menu « Classe » de chaque niveau, avec leurs prérequis vérifiés : défenseur nain, danseur de l'ombre, duelliste, théurge mystique, chevalier occulte, archer-mage. Une classe d'un autre livre (Poing sacré du Codex divin, par exemple) se saisit ici à partir du livre ; elle apparaît ensuite dans le même menu.</p>
+    <p class="hint"><b>Communes à toute la campagne</b> : une classe saisie ici apparaît dans le menu « Classe » de tous les personnages. Les classes de prestige du Guide du Maître sont déjà dans le menu « Classe » de chaque niveau, avec leurs prérequis vérifiés : défenseur nain, danseur de l'ombre, duelliste, théurge mystique, chevalier occulte, archer-mage. Une classe d'un autre livre (Poing sacré du Codex divin, par exemple) se saisit ici à partir du livre ; elle apparaît ensuite dans le même menu.</p>
     ${defs.map((d, i) => mod && state.editPrestige === d.id ? formulaire(d, i) : `<div class="pnj">
       <div class="pnj-tete"><b>${esc(d.nom || 'Sans nom')}</b>${mod ? `<button class="lien" data-action="pp-edit" data-id="${d.id}">Modifier</button>` : ''}</div>
-      <p class="pnj-stats">d${esc(d.dv || 8)} · BBA ${esc(d.bba || 'moyen')} · ${esc(d.max || 10)} niveaux${(() => { const c = d.cumul || (d.cumulMoine ? { mn: 1, ca: 1, deluge: 1, vitesse: 1 } : {}); const l = [['mn', 'mains nues'], ['ca', 'CA'], ['deluge', 'déluge'], ['vitesse', 'vitesse']].filter(([k2]) => c[k2]).map(([, t]) => t); return l.length ? ' · cumule avec le moine : ' + l.join(', ') : ''; })()}${(e.classes['pp-' + d.id]) ? ` · niveau ${e.classes['pp-' + d.id]} atteint` : ''}</p>
+      <p class="pnj-stats">d${esc(d.dv || 8)} · BBA ${esc(d.bba || 'moyen')} · ${esc(d.max || 10)} niveaux${(() => { const c = d.cumul || (d.cumulMoine ? { mn: 1, ca: 1, deluge: 1, vitesse: 1 } : {}); const l = [['mn', 'mains nues'], ['ca', 'CA'], ['deluge', 'déluge'], ['vitesse', 'vitesse']].filter(([k2]) => c[k2]).map(([, t]) => t); return l.length ? ' · cumule avec le moine : ' + l.join(', ') : ''; })()}${(e.classes['pp-' + d.id]) ? ` · niveau ${e.classes['pp-' + d.id]} pour ce personnage` : ''}${(() => { const n = db.personnages.filter(x => (x.progression || []).some(l => l.classe === 'pp-' + d.id)).map(x => x.nom); return n.length ? ` · utilisée par ${esc(n.join(', '))}` : ''; })()}</p>
     </div>`).join('')}
     ${mod ? '<button class="btn ghost" data-action="pp-ajout">+ Saisir une classe de prestige</button>' : ''}
   </section>`;
@@ -2684,7 +2746,7 @@ function carteNiveau(p, l, i, estProchain) {
   const resume = cl ? `${cl.nom} ${k}` : 'Classe à choisir';
   const donsDuNiveau = [l.donRace, l.don, ...(l.donsBonus || [])].filter(Boolean).map(d => R.DON[d]?.nom).filter(Boolean);
   const opt = (id, c, extra = '') => `<option value="${id}" ${l.classe === id ? 'selected' : ''}>${esc(c.nom)}${extra}</option>`;
-  const prestiges = Object.entries(R.CLASSES).filter(([id, c]) => c.prestige && (!c.perso || (p.prestigePerso || []).some(d => 'pp-' + d.id === id)));
+  const prestiges = Object.entries(R.CLASSES).filter(([id, c]) => c.prestige && (!c.perso || classesCommunes().some(d => 'pp-' + d.id === id) || (p.prestigePerso || []).some(d => 'pp-' + d.id === id)));
   const classeOptsHTML = `<optgroup label="Classes de base">${Object.entries(R.CLASSES).filter(([, c]) => !c.prestige).map(([id, c]) => opt(id, c)).join('')}</optgroup>
     ${prestiges.length ? `<optgroup label="Classes de prestige">${prestiges.map(([id, c]) => {
       const pr = prerequisPrestige(c, avant, p);
@@ -4170,6 +4232,16 @@ document.addEventListener('input', ev => {
     return;
   }
   if (t.id === 'carnet') { state.carnet = t.value; render(); return; }
+  if (t.dataset.classebind) {
+    if (!peutModifierClasses()) return;
+    const [i, ...chemin] = t.dataset.classebind.split('.');
+    const d = classesCommunes()[Number(i)];
+    if (!d) return;
+    setP(d, chemin.join('.'), t.type === 'checkbox' ? t.checked : t.value);
+    sauverClasse(d);
+    if (t.hasAttribute('data-rerender')) render();
+    return;
+  }
   if (t.dataset.marche) {
     const [i, champ] = t.dataset.marche.split('.');
     const a = db.marche[Number(i)];
@@ -4283,7 +4355,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -5173,35 +5245,41 @@ document.addEventListener('click', ev => {
       state.mjTiroir = null; render();
       break;
     case 'pp-ajout': {
+      if (!peutModifierClasses()) { alert('Associe un de tes personnages à cet appareil (avec son code) pour saisir une classe commune.'); break; }
       const d = { id: uid(), nom: '', dv: 8, bba: 'moyen', pc: 2, max: 10, comp: [], aptitudes: [] };
-      p.prestigePerso = [...(p.prestigePerso || []), d]; state.editPrestige = d.id; save(); render();
+      classesCommunes().push(d); state.editPrestige = d.id; sauverClasse(d); render();
       break;
     }
     case 'pp-edit':
       state.editPrestige = b.dataset.id; render();
       break;
     case 'pp-fin':
-      state.editPrestige = null; save(); render();
+      state.editPrestige = null; saveNow(); if (enLigne()) envoyerClasses(); render();
       break;
     case 'pp-suppr': {
-      const d = p.prestigePerso[Number(b.dataset.i)];
-      if ((p.progression || []).some(l => l.classe === 'pp-' + d.id)) { alert('Des niveaux utilisent encore cette classe : change-les d\'abord.'); break; }
-      if (confirm('Supprimer cette classe de prestige ?')) { p.prestigePerso.splice(Number(b.dataset.i), 1); delete R.CLASSES['pp-' + d.id]; state.editPrestige = null; save(); render(); }
+      const d = classesCommunes()[Number(b.dataset.i)];
+      const qui = db.personnages.filter(x => (x.progression || []).some(l => l.classe === 'pp-' + d.id)).map(x => x.nom);
+      if (qui.length) { alert(`Des niveaux utilisent encore cette classe (${qui.join(', ')}) : change-les d'abord.`); break; }
+      if (confirm('Supprimer cette classe de prestige pour toute la campagne ?')) {
+        db.classesPerso = classesCommunes().filter(x => x.id !== d.id); delete R.CLASSES['pp-' + d.id];
+        state.editPrestige = null; sauverClasse(d); render();
+      }
       break;
     }
     case 'pp-comp': {
-      const d = p.prestigePerso[Number(b.dataset.i)];
+      const d = classesCommunes()[Number(b.dataset.i)];
       const l = new Set(d.comp || []); if (b.checked) l.add(b.dataset.c); else l.delete(b.dataset.c);
-      d.comp = [...l]; save();
+      d.comp = [...l]; sauverClasse(d);
       break;
     }
     case 'pp-apt-ajout': {
-      const d = p.prestigePerso[Number(b.dataset.i)]; d.aptitudes = [...(d.aptitudes || []), { niv: '', nom: '', texte: '' }]; save(); render();
+      const d = classesCommunes()[Number(b.dataset.i)]; d.aptitudes = [...(d.aptitudes || []), { niv: '', nom: '', texte: '' }]; sauverClasse(d); render();
       break;
     }
-    case 'pp-apt-suppr':
-      p.prestigePerso[Number(b.dataset.i)].aptitudes.splice(Number(b.dataset.j), 1); save(); render();
+    case 'pp-apt-suppr': {
+      const d = classesCommunes()[Number(b.dataset.i)]; d.aptitudes.splice(Number(b.dataset.j), 1); sauverClasse(d); render();
       break;
+    }
     case 'prog-sort-ajout': {
       const l = p.progression[Number(b.dataset.i)];
       l.sortsAppris = [...(l.sortsAppris || []), { id: b.dataset.id, bloc: b.dataset.bloc }];
@@ -5424,6 +5502,7 @@ async function actualiser(manuel = false) {
     await chargerPersosMJ();
     await chargerMJ();
     await chargerMarche();
+    await chargerClasses();
     if (manuel) statutSync(state.syncErreur ? 'Hors ligne' : 'À jour');
     /* On ne redessine pas sous les doigts de quelqu'un qui est en train d'écrire */
     if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette && !state.mjEdit) render();
@@ -5451,6 +5530,8 @@ setInterval(() => {
   await chargerPersosMJ();
   await chargerMJ();
   await chargerMarche();
+  await chargerClasses();
+  migrerClassesDesFiches();
   render();
   if (enLigne()) {
     await envoyerPersos();
