@@ -1066,3 +1066,50 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .focal-image { display: block; max-width: 160px; max-height: 160px; margin: .3rem auto .5rem; object-fit: contain; border-radius: var(--radius-s); border: 1px solid #5E9ED6; }
 .zoom { position: fixed; inset: 0; z-index: 100; background: rgba(4, 12, 20, .9); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 1rem; cursor: zoom-out; }
 .zoom img { max-width: min(92vw, 520px); max-height: 75vh; object-fit: contain; border: 1px solid var(--bronze); border-radius: var(--radius-m); background: var(--nuit-profonde); image-rendering: auto; }
+
+/* ---------- Sessions de scénario ---------- */
+.sessions-liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .5rem; margin-bottom: .8rem; }
+.session-prep { font: inherit; text-align: left; cursor: pointer; color: var(--ink); background: var(--inset); border: 1px solid var(--line); border-left: 3px solid var(--bronze); border-radius: var(--radius-s); padding: .6rem .75rem; display: flex; flex-direction: column; gap: .2rem; }
+.session-prep:hover { border-color: var(--line-bronze); }
+.session-prep .recit-num { margin: 0; }
+.session-prep b { font-family: var(--font-titre); font-size: 1.05rem; }
+.session-prep small { color: var(--muted); }
+.session-prep .barre { margin-top: .3rem; height: .35rem; }
+.session-titre { margin: .1rem 0 .4rem; }
+.session-compteurs { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; color: var(--muted); font-size: .88rem; margin: .5rem 0 .4rem; }
+.etapes { display: flex; flex-direction: column; gap: .55rem; margin-bottom: 1rem; position: relative; }
+.etape { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--te, var(--bronze)); border-radius: var(--radius-m); padding: .65rem .8rem; }
+.etape.faite { opacity: .6; }
+.etape.type-scene { --te: var(--bronze); } .etape.type-dialogue { --te: #9C82D3; } .etape.type-rencontre { --te: var(--rouge-clair); }
+.etape.type-objet { --te: #DCCB86; } .etape.type-quete { --te: #4FAA90; } .etape.type-image { --te: #5E9ED6; } .etape.type-note { --te: var(--muted); }
+.etape-tete { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.etape-tete b { font-family: var(--font-titre); font-weight: 600; font-size: 1.02rem; flex: 1; }
+.etape-ico { font-size: 1.1rem; }
+.etape-fait { padding: 0; }
+.etape-fait input { width: 1.25rem; height: 1.25rem; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.xp-chip { font-weight: 700; }
+.xp-chip.on { background: var(--emeraude); border-color: var(--emeraude); color: var(--ivoire); }
+.etape .recit-texte { margin-top: .4rem; }
+.etape .recit-texte p:first-child::first-letter { all: unset; }
+.dialogue { margin: .5rem 0 0; padding: .5rem .8rem; border-left: 3px solid #9C82D3; background: rgba(156, 130, 211, .08); border-radius: 0 var(--radius-s) var(--radius-s) 0; font-style: italic; line-height: 1.6; }
+.dialogue b { font-style: normal; color: #C9A9F0; }
+.illustration { display: block; width: 100%; padding: 0; border: 1px solid #5E9ED6; border-radius: var(--radius-m); overflow: hidden; cursor: zoom-in; background: var(--nuit-profonde); margin-top: .5rem; }
+.illustration img { display: block; width: 100%; max-height: 420px; object-fit: contain; }
+.rencontre { margin-top: .5rem; display: flex; flex-direction: column; gap: .35rem; }
+.rencontre .btn { align-self: flex-start; }
+.objet-donne { color: #8FD3C0; margin: .4rem 0 0; font-size: .9rem; }
+.quete-etape { margin: .45rem 0 0; display: flex; align-items: center; gap: .5rem; }
+.quete-lancement { border-color: var(--bronze); color: var(--bronze-clair); }
+.quete-progression { border-color: var(--brume); color: #9FD4F0; }
+.quete-fin { border-color: var(--emeraude); color: #8FD3C0; }
+.etape.en-edition { display: flex; flex-direction: column; gap: .2rem; }
+.etape-outils { display: flex; align-items: center; gap: .3rem; }
+.etape-type { flex: 1; font-weight: 600; color: var(--bronze-clair); font-size: .9rem; }
+.xp-etape input { max-width: 8rem; }
+.image-cadre.petite.large { width: 160px; height: 100px; }
+.ajout-etapes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .45rem; }
+.ajout-etape { font: inherit; color: var(--ink); text-align: left; cursor: pointer; background: var(--inset); border: 1px dashed var(--line-bronze); border-radius: var(--radius-s); padding: .5rem .6rem; display: grid; grid-template-columns: auto 1fr; column-gap: .45rem; align-items: center; }
+.ajout-etape span { grid-row: 1 / span 2; font-size: 1.3rem; }
+.ajout-etape small { color: var(--muted); font-size: .74rem; line-height: 1.3; }
+.ajout-etape:hover { border-style: solid; border-color: var(--bronze); }

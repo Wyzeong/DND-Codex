@@ -1582,7 +1582,15 @@ const estMJ = () => !!db.codeMJ;
 async function chargerPersosMJ() {
   if (!enLigne() || !estMJ()) return;
   try {
-    const liste = await rpc('lire_persos_mj', { p_code: db.codeMJ }) || [];
+    let liste;
+    let vers = null;
+    try { vers = (await rpc('mj_versions', { p_code: db.codeMJ }))?.persos_mj; } catch (e) { /* base pas encore en v8 */ }
+    if (vers) {
+      const connus = versions('persosMJcomplets');
+      const ids = Object.keys(vers).filter(id => { const l = findPerso(id); return connus[id] !== vers[id] || !l || l._public; });
+      liste = ids.length ? await rpc('lire_persos_mj_ids', { p_code: db.codeMJ, p_ids: ids }) || [] : [];
+      db.versions.persosMJcomplets = { ...vers };
+    } else liste = await rpc('lire_persos_mj', { p_code: db.codeMJ }) || [];
     const attente = new Set(db.enAttente || []);
     for (const d of liste) {
       if (attente.has(d.id)) continue;
@@ -1718,9 +1726,25 @@ async function envoyerMJ() {
 async function chargerMJ() {
   if (!enLigne() || !estMJ()) return;
   try {
-    const d = await rpc('mj_lire', { p_code: db.codeMJ }) || {};
     const m = mjd();
-    for (const [k, v] of Object.entries(d)) if (!mjAttente.has(k)) m[k] = v;
+    let v = null;
+    try { v = await rpc('mj_versions', { p_code: db.codeMJ }); } catch (e) { /* base pas encore en v8 */ }
+    if (!v) {
+      const d = await rpc('mj_lire', { p_code: db.codeMJ }) || {};
+      for (const [k, x] of Object.entries(d)) if (!mjAttente.has(k)) m[k] = x;
+      saveNow(); return;
+    }
+    const connus = versions('mj');
+    const serveur = v.donnees || {};
+    const cles = Object.keys(serveur).filter(k => !mjAttente.has(k) && (connus[k] !== serveur[k] || !(k in m)));
+    if (cles.length) {
+      const d = await rpc('mj_lire_cles', { p_code: db.codeMJ, p_cles: cles }) || {};
+      for (const [k, x] of Object.entries(d)) m[k] = x;
+    }
+    /* Sessions supprimées depuis un autre appareil */
+    for (const k of Object.keys(m)) if (k.startsWith('session:') && !(k in serveur) && !mjAttente.has(k) && k in connus) delete m[k];
+    db.versions.mj = { ...serveur };
+    db.versions.persosMJ = v.persos_mj || {};
     saveNow();
   } catch (e) { console.warn('Préparation MJ indisponible (base pas encore en v6 ?)', e); }
 }
@@ -1917,14 +1941,166 @@ function pageObjetsMJ() {
   </section>`;
 }
 
+/* ===== Sessions : le scénario, séance par séance =====
+   Chaque session est rangée sous sa propre clé (« session:<id> ») dans les données privées du MJ,
+   pour n'envoyer et ne télécharger que la session modifiée. */
+const TYPES_ETAPE = {
+  scene: ['Scène', '📜', 'Ce qui se passe, description, ambiance'],
+  dialogue: ['Dialogue', '💬', 'Texte préparé pour un PNJ'],
+  rencontre: ['Rencontre', '⚔', 'Combat préparé ou rencontre avec des PNJ'],
+  objet: ['Objets', '🎁', 'Récompenses à distribuer'],
+  quete: ['Quête', '🧭', 'Lancement, progression ou fin d\'une quête'],
+  image: ['Illustration', '🖼', 'Image à montrer aux joueurs'],
+  note: ['Note', '📌', 'Rappel pour le MJ'],
+};
+const ACTIONS_QUETE = { lancement: 'Lancement', progression: 'Progression', fin: 'Achèvement' };
+const cleSession = id => 'session:' + id;
+const sessionsMJ = () => Object.entries(mjd()).filter(([k, v]) => k.startsWith('session:') && v).map(([, v]) => v)
+  .sort((a, b) => num(a.numero) - num(b.numero));
+const sessionMJ = id => mjd()[cleSession(id)];
+const xpSession = s => (s.etapes || []).reduce((t, e) => t + num(e.xp), 0);
+const xpDonne = s => (s.etapes || []).filter(e => e.xpDonne).reduce((t, e) => t + num(e.xp), 0);
+
+function pageSessionsMJ() {
+  if (state.mjSession && sessionMJ(state.mjSession)) return pageSessionMJ(sessionMJ(state.mjSession));
+  const ls = sessionsMJ();
+  return `<section class="card"><h3>Sessions</h3>
+    <p class="hint">Prépare le scénario séance par séance : scènes, dialogues, rencontres, objets, quêtes, XP et illustrations, dans l'ordre où ils arriveront.</p>
+    <div class="sessions-liste">${ls.map(s => {
+      const n = (s.etapes || []).length, faits = (s.etapes || []).filter(e => e.fait).length;
+      return `<button class="session-prep" data-action="mj-session-ouvrir" data-id="${s.id}">
+        <span class="recit-num">Session ${esc(s.numero)}</span>
+        <b>${esc(s.titre || 'Sans titre')}</b>
+        <small>${n} étape${n > 1 ? 's' : ''}${xpSession(s) ? ` · ${xpSession(s)} XP prévus` : ''}${s.date ? ` · ${dateFr(s.date)}` : ''}</small>
+        ${n ? `<span class="barre"><span style="width:${Math.round(faits / n * 100)}%"></span></span>` : ''}
+      </button>`;
+    }).join('') || '<p class="empty">Aucune session préparée.</p>'}</div>
+    <button class="btn" data-action="mj-session-ajout">+ Préparer une session</button>
+  </section>`;
+}
+
+function etapeEdition(s, e, i) {
+  const k = cleSession(s.id), base = `${k}.etapes.${i}`;
+  const m = mjd();
+  const quetes = fichesToutes().filter(f => f.type === 'quete');
+  const nomsPNJ = [...new Set([...m.pnj.map(x => x.nom), ...fichesToutes().filter(f => f.type === 'pnj').map(f => f.nom)])];
+  let propre = '';
+  if (e.type === 'dialogue') propre = `<label class="f"><span>PNJ qui parle</span><input type="text" list="noms-pnj" data-mjbind="${base}.pnj" value="${esc(e.pnj)}" placeholder="Ex. : Gaby"></label>
+    <datalist id="noms-pnj">${nomsPNJ.map(n => `<option value="${esc(n)}">`).join('')}</datalist>`;
+  if (e.type === 'rencontre') propre = `<label class="f"><span>Combat préparé (onglet Préparation)</span><select data-mjbind="${base}.combatId" data-rerender><option value="">— Aucun : rencontre sans combat —</option>${m.combats.map(c => `<option value="${c.id}" ${e.combatId === c.id ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select></label>`;
+  if (e.type === 'objet') propre = `<div class="f"><span class="lbl">Objets en attente à distribuer ici</span>
+    ${m.objets.filter(o => o.type !== 'vente').length ? m.objets.filter(o => o.type !== 'vente').map(o => `<label class="check"><input type="checkbox" data-action="mj-etape-objet" data-s="${s.id}" data-i="${i}" data-o="${o.id}" ${(e.objets || []).includes(o.id) ? 'checked' : ''}> ${esc(o.nom || 'Objet')}${o.detenteur ? ` <small>(${esc(o.detenteur)})</small>` : ''}</label>`).join('') : '<p class="empty">Aucun objet en attente : prépare-les dans l\'onglet Objets.</p>'}</div>`;
+  if (e.type === 'quete') propre = `<div class="grid">
+    <label class="f"><span>Quête (encyclopédie)</span><select data-mjbind="${base}.queteId" data-rerender><option value="">— Choisir —</option>${quetes.map(f => `<option value="${f.id}" ${e.queteId === f.id ? 'selected' : ''}>${esc(f.nom)}</option>`).join('')}</select></label>
+    <label class="f"><span>Étape</span><select data-mjbind="${base}.queteAction">${Object.entries(ACTIONS_QUETE).map(([v, l]) => `<option value="${v}" ${e.queteAction === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+  </div>`;
+  if (e.type === 'image') propre = `<div class="objet-image">
+    <button class="image-cadre petite large" data-action="img-choisir" data-type="sessionimg" data-id="${e.id}" aria-label="${e.image ? 'Changer' : 'Ajouter'} l'illustration">${e.image ? `<img src="${e.image}" alt="">` : '<span>+ Illustration</span>'}</button>
+    ${e.image ? `<button class="lien" data-action="mj-etape-image-suppr" data-s="${s.id}" data-i="${i}">Retirer</button>` : ''}
+  </div>`;
+  return `<div class="etape en-edition type-${e.type}">
+    <div class="etape-outils">
+      <span class="etape-type">${TYPES_ETAPE[e.type][1]} ${TYPES_ETAPE[e.type][0]}</span>
+      <button class="icon" data-action="mj-etape-monter" data-s="${s.id}" data-i="${i}" aria-label="Monter" ${i ? '' : 'disabled'}>↑</button>
+      <button class="icon" data-action="mj-etape-descendre" data-s="${s.id}" data-i="${i}" aria-label="Descendre" ${i < s.etapes.length - 1 ? '' : 'disabled'}>↓</button>
+      <button class="icon" data-action="mj-etape-suppr" data-s="${s.id}" data-i="${i}" aria-label="Supprimer l'étape">✕</button>
+    </div>
+    <label class="f"><span>Titre</span><input type="text" data-mjbind="${base}.titre" value="${esc(e.titre)}" placeholder="${esc(TYPES_ETAPE[e.type][2])}"></label>
+    ${propre}
+    <label class="f"><span>${e.type === 'dialogue' ? 'Texte du PNJ' : e.type === 'image' ? 'Légende ou description' : 'Texte'}</span><textarea data-mjbind="${base}.texte" rows="${e.type === 'scene' || e.type === 'dialogue' ? 5 : 3}">${esc(e.texte)}</textarea></label>
+    <label class="f xp-etape"><span>XP à attribuer à cette étape</span><input type="text" inputmode="numeric" data-mjbind="${base}.xp" value="${esc(e.xp)}" placeholder="0"></label>
+  </div>`;
+}
+
+function etapeJeu(s, e, i) {
+  const m = mjd();
+  const t = TYPES_ETAPE[e.type] || TYPES_ETAPE.note;
+  let propre = '';
+  if (e.type === 'dialogue') propre = `<blockquote class="dialogue">${e.pnj ? `<b>${lienFiche(e.pnj)}</b> : ` : ''}${formaterRecit(e.texte).replace(/^<p>|<\/p>$/g, '') || ''}</blockquote>`;
+  else if (e.type === 'image') propre = `${e.image ? `<button class="illustration" data-action="img-zoom" data-src="${e.image}" aria-label="Montrer en plein écran"><img src="${e.image}" alt=""></button>` : '<p class="empty">Pas encore d\'image.</p>'}${e.texte ? `<p class="hint">${esc(e.texte)}</p>` : ''}`;
+  else propre = e.texte ? `<div class="recit-texte">${formaterRecit(e.texte)}</div>` : '';
+  if (e.type === 'rencontre' && e.combatId) {
+    const c = m.combats.find(x => x.id === e.combatId);
+    if (c) {
+      const part = (c.participants || []).filter(y => num(y.nombre) > 0).map(y => ({ y, t: m.pnj.find(x => x.id === y.pnjId) })).filter(o => o.t);
+      propre += `<div class="rencontre">
+        ${part.map(({ y, t: pnj }) => `<details class="effet"><summary>${y.nombre} × ${esc(pnj.nom)} <small>PV ${esc(pnj.pvMax || '?')}, CA ${esc(pnj.ca || '?')}</small></summary>
+          ${pnj.attaques ? `<p><b>Attaques :</b> ${esc(pnj.attaques)}</p>` : ''}${pnj.caracs ? `<p>${esc(pnj.caracs)}</p>` : ''}${pnj.notes ? `<p class="hint">${esc(pnj.notes)}</p>` : ''}</details>`).join('')}
+        <button class="btn" data-action="mj-etape-combat" data-id="${c.id}">⚔ Lancer ce combat</button>
+      </div>`;
+    }
+  }
+  if (e.type === 'objet') {
+    const cibles = db.personnages.filter(x => !x._public && (!enLigne() || x.publie));
+    propre += (e.objets || []).map(oid => {
+      const i2 = m.objets.findIndex(o => o.id === oid);
+      if (i2 < 0) return `<p class="objet-donne">✓ ${esc((e.donnes || {})[oid] || 'Objet déjà distribué')}</p>`;
+      const o = m.objets[i2];
+      return `<div class="objet-vue ${o.image ? 'avec-image' : ''}">
+        ${o.image ? `<button class="vignette" data-action="img-zoom" data-src="${o.image}" aria-label="Agrandir"><img src="${o.image}" alt=""></button>` : ''}
+        <div class="objet-vue-tete"><b>${esc(o.nom || 'Objet')}</b>${num(o.qte) > 1 ? ` <span class="qte">× ${esc(o.qte)}</span>` : ''}${o.cat ? `<span class="tag-cat cat-${o.cat}">${CATS_OBJET[o.cat]}</span>` : ''}</div>
+        ${o.notes ? `<p class="objet-det">${esc(o.notes)}</p>` : ''}
+        <div class="row donner"><select id="cible-${o.id}" aria-label="Donner à">${cibles.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
+          <button class="btn ghost" data-action="mj-donner" data-i="${i2}" data-session="${s.id}" data-etape="${i}">Donner</button></div>
+      </div>`;
+    }).join('');
+  }
+  if (e.type === 'quete' && e.queteId) {
+    const f = findFiche(e.queteId);
+    propre = `<p class="quete-etape"><span class="tag-cat quete-${e.queteAction || 'lancement'}">${ACTIONS_QUETE[e.queteAction || 'lancement']}</span> ${f ? `<a href="#/fiche/${f.id}">${esc(f.nom)}</a>` : 'Quête supprimée'}</p>` + propre;
+  }
+  return `<article class="etape type-${e.type} ${e.fait ? 'faite' : ''}">
+    <div class="etape-tete">
+      <label class="check etape-fait"><input type="checkbox" data-mjbind="${cleSession(s.id)}.etapes.${i}.fait" data-rerender ${e.fait ? 'checked' : ''}><span class="sr">Fait</span></label>
+      <span class="etape-ico" aria-hidden="true">${t[1]}</span>
+      <b>${esc(e.titre || t[0])}</b>
+      ${num(e.xp) ? `<button class="chip xp-chip ${e.xpDonne ? 'on' : ''}" data-action="mj-etape-xp" data-s="${s.id}" data-i="${i}" title="${e.xpDonne ? 'Annuler l\'attribution' : 'Ajouter à l\'XP du groupe'}">${e.xpDonne ? '✓ ' : '+'}${num(e.xp)} XP</button>` : ''}
+    </div>
+    ${propre}
+  </article>`;
+}
+
+function pageSessionMJ(s) {
+  const prep = state.mjSessionMode === 'prep';
+  const etapes = s.etapes || [];
+  const faits = etapes.filter(e => e.fait).length;
+  const k = cleSession(s.id);
+  return `<p><button class="lien" data-action="mj-session-fermer">← Toutes les sessions</button></p>
+  <section class="card session-tete">
+    ${prep ? `<div class="grid">
+      ${champMJ(`${k}.numero`, 'Numéro', { num: true })}
+      <label class="f"><span>Date prévue</span><input type="date" data-mjbind="${k}.date" value="${esc(s.date)}"></label>
+      ${champMJ(`${k}.titre`, 'Titre', { span: true })}
+    </div>
+    ${champMJ(`${k}.resume`, 'Résumé et objectifs de la session', { area: true, rows: 3 })}`
+    : `<p class="recit-num">Session ${esc(s.numero)}${s.date ? ` · ${dateFr(s.date)}` : ''}</p><h2 class="session-titre">${esc(s.titre || 'Sans titre')}</h2>
+      ${s.resume ? `<p>${esc(s.resume)}</p>` : ''}`}
+    <div class="session-compteurs">
+      <span>${faits} / ${etapes.length} étapes jouées</span>
+      <span>XP : ${xpDonne(s)} attribués sur ${xpSession(s)} prévus</span>
+    </div>
+    ${etapes.length ? `<div class="barre"><span style="width:${etapes.length ? Math.round(faits / etapes.length * 100) : 0}%"></span></div>` : ''}
+    <div class="btns">
+      <button class="btn ${prep ? 'ghost' : ''}" data-action="mj-session-mode" data-mode="jeu">▶ Jouer</button>
+      <button class="btn ${prep ? '' : 'ghost'}" data-action="mj-session-mode" data-mode="prep">✎ Préparer</button>
+    </div>
+  </section>
+  <div class="etapes">${etapes.map((e, i) => prep ? etapeEdition(s, e, i) : etapeJeu(s, e, i)).join('') || '<p class="empty">Aucune étape. Passe en mode Préparer pour construire le scénario.</p>'}</div>
+  ${prep ? `<section class="card"><h3>Ajouter une étape</h3>
+    <div class="ajout-etapes">${Object.entries(TYPES_ETAPE).map(([t, [l, ico, d]]) => `<button class="ajout-etape" data-action="mj-etape-ajout" data-s="${s.id}" data-type="${t}"><span>${ico}</span><b>${l}</b><small>${d}</small></button>`).join('')}</div>
+    <div class="btns" style="margin-top:1rem"><button class="btn danger" data-action="mj-session-suppr" data-id="${s.id}">Supprimer la session</button></div>
+  </section>` : ''}`;
+}
+
 /* ----- Page MJ à onglets ----- */
 function pageMJ2() {
   if (!estMJ()) return pageMJReelle();
   const o = state.mjOnglet || 'groupe';
   const m = mjd();
-  const onglets = [['groupe', 'Groupe'], ['combat', m.combat ? 'Combat ⚔' : 'Combat'], ['prepa', 'Préparation'], ['objets', `Objets${m.objets.length ? ' (' + m.objets.length + ')' : ''}`], ['notes', 'Notes']];
+  const onglets = [['groupe', 'Groupe'], ['sessions', 'Sessions'], ['combat', m.combat ? 'Combat ⚔' : 'Combat'], ['prepa', 'Préparation'], ['objets', `Objets${m.objets.length ? ' (' + m.objets.length + ')' : ''}`], ['notes', 'Notes']];
   let corps;
   if (o === 'combat') corps = pageCombatMJ();
+  else if (o === 'sessions') corps = pageSessionsMJ();
   else if (o === 'objets') corps = pageObjetsMJ();
   else if (o === 'notes') corps = `<section class="card"><h3>Notes secrètes</h3>${champMJ('notes', 'Rien que pour toi', { area: true, rows: 14 })}</section>`;
   else if (o === 'prepa') {
@@ -1999,8 +2175,11 @@ function journalLocal(qui, quoi, delta) {
 async function chargerMarche() {
   if (!enLigne()) return;
   try {
-    const l = await api('marche?select=id,data');
-    db.marche = (l || []).map(x => ({ ...x.data, id: x.id }));
+    const ch = await lignesChangees('marche', 'marche', 'id,data,maj', id => (db.marche || []).some(a => a.id === id));
+    const parId = new Map((db.marche || []).map(a => [a.id, a]));
+    for (const x of ch.lignes) parId.set(x.id, { ...x.data, id: x.id });
+    db.marche = [...parId.values()].filter(a => ch.tous.has(a.id));
+    ch.valider();
     saveNow();
   } catch (e) { console.warn('Marché indisponible (base pas encore en v7 ?)', e); }
 }
@@ -2831,8 +3010,11 @@ async function chargerFiches() {
   try {
     let pub;
     if (enLigne()) {
-      pub = await api('fiches?select=id,nom,type,role,lieu,statut,alias,description,maj&order=nom.asc') || [];
-      pub = pub.map(f => ({ ...f, role: f.role || '', lieu: f.lieu || '', statut: f.statut || '', alias: f.alias || '', description: f.description || '' }));
+      const ch = await lignesChangees('fiches', 'fiches', 'id,nom,type,role,lieu,statut,alias,description,maj', id => fichesPubliees().some(f => f.id === id));
+      const parId = new Map(fichesPubliees().map(f => [f.id, f]));
+      for (const f of ch.lignes) parId.set(f.id, { ...f, role: f.role || '', lieu: f.lieu || '', statut: f.statut || '', alias: f.alias || '', description: f.description || '' });
+      pub = [...parId.values()].filter(f => ch.tous.has(f.id));
+      ch.valider();
     } else {
       const res = await fetch('fiches.json', { cache: 'no-store' });
       pub = res.ok ? ((await res.json()).fiches || []) : [];
@@ -3238,15 +3420,38 @@ function statutSync(txt, persistant = false) {
 }
 
 /* Personnages : la version en ligne fait foi, sauf modification locale pas encore envoyée */
+/* ===== Téléchargement économe : d'abord les dates de modification (quelques octets),
+   puis seulement les lignes qui ont changé depuis la dernière fois ===== */
+const msDe = t => (typeof t === 'number' ? t : Date.parse(t)) || 0;
+const versions = cache => ((db.versions = db.versions || {})[cache] = db.versions[cache] || {});
+async function lignesChangees(table, cache, champs, present = () => true) {
+  const vers = await api(`${table}?select=id,maj`) || [];
+  const connus = versions(cache);
+  const ids = vers.filter(v => connus[v.id] !== msDe(v.maj) || !present(v.id)).map(v => v.id);
+  const lignes = [];
+  for (let i = 0; i < ids.length; i += 40) {
+    const lot = ids.slice(i, i + 40).map(id => `"${String(id).replace(/"/g, '')}"`).join(',');
+    lignes.push(...(await api(`${table}?select=${champs}&id=in.(${encodeURIComponent(lot)})`) || []));
+  }
+  return {
+    tous: new Set(vers.map(v => v.id)),
+    lignes,
+    valider: () => { db.versions[cache] = Object.fromEntries(vers.map(v => [v.id, msDe(v.maj)])); },
+  };
+}
+
 async function chargerPersos() {
   if (!enLigne()) return false;
   try {
-    const lignes = await api('persos?select=id,data,maj') || [];
-    const enLigneIds = new Set(lignes.map(l => l.id));
+    const ch = await lignesChangees('persos', 'persos', 'id,data,maj', id => !!findPerso(id));
+    const enLigneIds = ch.tous;
+    const recus = new Map(ch.lignes.map(l => [l.id, l]));
     const attente = new Set(db.enAttente || []);
     const res = [];
-    for (const l of lignes) {
-      const local = findPerso(l.id);
+    for (const id of enLigneIds) {
+      const l = recus.get(id);
+      const local = findPerso(id);
+      if (!l) { if (local) res.push(local); continue; }
       if (local && attente.has(l.id)) { res.push(local); continue; }
       /* Personnage du MJ : le MJ garde sa version complète, les autres reçoivent la version publique */
       if (l.data.pnjMJ && local && local.pnjMJ && !local._public && estMJ()) { res.push(local); continue; }
@@ -3258,6 +3463,7 @@ async function chargerPersos() {
     /* Gardés : les personnages jamais mis en ligne. Retirés : ceux supprimés en ligne par leur propriétaire. */
     for (const p of db.personnages) if (!enLigneIds.has(p.id) && (!p.publie || attente.has(p.id))) res.push(p);
     db.personnages = res;
+    ch.valider();
     state.syncErreur = '';
     state.persosCharges = Date.now();
     saveNow();
@@ -3287,10 +3493,14 @@ async function envoyerPersos() {
         await rpc('sauver_perso_mj', { p_code: codePour(p), p_id: id, p_data: { ...p, publie: true } });
       } else {
         /* Le MJ a pu changer les PV, les rations ou recharger la journée entre-temps : on reprend ses valeurs */
-        const srv = await api(`persos?id=eq.${encodeURIComponent(id)}&select=data`).catch(() => null);
-        const d = srv && srv[0] && srv[0].data;
-        if (d && num(d.mjMaj) > num(p.mjMaj)) fusionMJ(p, d);
-        await rpc('sauver_perso', { p_id: id, p_code: codePour(p), p_data: { ...p, publie: true } });
+        const v = await api(`persos?id=eq.${encodeURIComponent(id)}&select=mjMaj:data->mjMaj`).catch(() => null);
+        if (v && v[0] && num(v[0].mjMaj) > num(p.mjMaj)) {
+          const srv = await api(`persos?id=eq.${encodeURIComponent(id)}&select=data`).catch(() => null);
+          const d = srv && srv[0] && srv[0].data;
+          if (d) fusionMJ(p, d);
+        }
+        const maj = await rpc('sauver_perso', { p_id: id, p_code: codePour(p), p_data: { ...p, publie: true } });
+        if (maj) versions('persos')[id] = msDe(maj);
       }
       db.enAttente = db.enAttente.filter(x => x !== id);
       state.syncErreur = '';
@@ -3725,7 +3935,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -4401,6 +4611,10 @@ document.addEventListener('click', ev => {
       const { source, type, detenteur, ...propre } = obj;
       const item = { ...propre, id: uid() };
       const fini = () => {
+        if (b.dataset.session) {
+          const ss = sessionMJ(b.dataset.session), et = ss && ss.etapes[Number(b.dataset.etape)];
+          if (et) { et.donnes = { ...(et.donnes || {}), [obj.id]: `${obj.nom || 'Objet'} → ${cible.nom}` }; saveMJ(cleSession(ss.id)); }
+        }
         cible.equipement = [...(cible.equipement || []), { ...item, donMJ: Date.now() }];
         cible.mjMaj = Date.now();
         mjd().objets.splice(i, 1); saveMJ('objets'); render();
@@ -4495,6 +4709,77 @@ document.addEventListener('click', ev => {
       d.innerHTML = `<img src="${b.dataset.src}" alt=""><button class="btn ghost" aria-label="Fermer">Fermer</button>`;
       d.addEventListener('click', () => d.remove());
       document.body.appendChild(d);
+      break;
+    }
+    case 'mj-session-ajout': {
+      const n = Math.max(0, ...sessionsMJ().map(x => num(x.numero)), ...recapsTous().map(r => num(r.numero))) + 1;
+      const ss = { id: uid(), numero: n, titre: '', date: '', resume: '', etapes: [] };
+      mjd()[cleSession(ss.id)] = ss; saveMJ(cleSession(ss.id));
+      state.mjSession = ss.id; state.mjSessionMode = 'prep'; render(); window.scrollTo(0, 0);
+      break;
+    }
+    case 'mj-session-ouvrir':
+      state.mjSession = b.dataset.id; state.mjSessionMode = 'jeu'; render(); window.scrollTo(0, 0);
+      break;
+    case 'mj-session-fermer':
+      state.mjSession = null; render(); window.scrollTo(0, 0);
+      break;
+    case 'mj-session-mode':
+      state.mjSessionMode = b.dataset.mode; render();
+      break;
+    case 'mj-session-suppr': {
+      const ss = sessionMJ(b.dataset.id);
+      if (!ss || !confirm(`Supprimer la session ${ss.numero} et tout son scénario ?`)) break;
+      delete mjd()[cleSession(ss.id)]; saveNow();
+      if (enLigne()) rpc('mj_supprimer_cle', { p_code: db.codeMJ, p_cle: cleSession(ss.id) }).catch(e => alert('Suppression en ligne impossible (base en v8 ?) : ' + e.message));
+      state.mjSession = null; render();
+      break;
+    }
+    case 'mj-etape-ajout': {
+      const ss = sessionMJ(b.dataset.s);
+      ss.etapes = [...(ss.etapes || []), { id: uid(), type: b.dataset.type, titre: '', texte: '', xp: '', objets: [] }];
+      saveMJ(cleSession(ss.id)); render();
+      setTimeout(() => { const l = document.querySelectorAll('.etape.en-edition'); l[l.length - 1]?.scrollIntoView({ block: 'center' }); l[l.length - 1]?.querySelector('input')?.focus(); }, 60);
+      break;
+    }
+    case 'mj-etape-monter':
+    case 'mj-etape-descendre': {
+      const ss = sessionMJ(b.dataset.s), i = Number(b.dataset.i), j = a === 'mj-etape-monter' ? i - 1 : i + 1;
+      if (j < 0 || j >= ss.etapes.length) break;
+      [ss.etapes[i], ss.etapes[j]] = [ss.etapes[j], ss.etapes[i]];
+      saveMJ(cleSession(ss.id)); render();
+      break;
+    }
+    case 'mj-etape-suppr': {
+      const ss = sessionMJ(b.dataset.s);
+      if (confirm('Supprimer cette étape ?')) { ss.etapes.splice(Number(b.dataset.i), 1); saveMJ(cleSession(ss.id)); render(); }
+      break;
+    }
+    case 'mj-etape-objet': {
+      const ss = sessionMJ(b.dataset.s), et = ss.etapes[Number(b.dataset.i)];
+      const l = new Set(et.objets || []);
+      if (b.checked) l.add(b.dataset.o); else l.delete(b.dataset.o);
+      et.objets = [...l]; saveMJ(cleSession(ss.id));
+      break;
+    }
+    case 'mj-etape-image-suppr': {
+      const ss = sessionMJ(b.dataset.s); delete ss.etapes[Number(b.dataset.i)].image; saveMJ(cleSession(ss.id)); render();
+      break;
+    }
+    case 'mj-etape-xp': {
+      const ss = sessionMJ(b.dataset.s), et = ss.etapes[Number(b.dataset.i)], m = mjd();
+      const v = num(et.xp);
+      m.xp = { valeur: Math.max(0, num(m.xp.valeur) + (et.xpDonne ? -v : v)) };
+      et.xpDonne = !et.xpDonne;
+      saveMJ('xp'); saveMJ(cleSession(ss.id)); render();
+      toast(et.xpDonne ? `+${v} XP pour le groupe` : `${v} XP retirés`);
+      break;
+    }
+    case 'mj-etape-combat': {
+      const c = mjd().combats.find(x => x.id === b.dataset.id);
+      if (!c) break;
+      if (mjd().combat && !confirm('Un combat est déjà en cours. Le remplacer ?')) break;
+      lancerCombat(c); state.mjOnglet = 'combat'; render(); window.scrollTo(0, 0);
       break;
     }
     case 'replis-tout': {
@@ -4634,6 +4919,12 @@ $('#imginput').addEventListener('change', async ev => {
   const p = state.ctx;
   if (!file || !state.imgType) return;
   /* Images d'objets : petites vignettes (256 px) pour garder les fiches légères */
+  if (state.imgType === 'sessionimg') {
+    const ss = sessionMJ(state.mjSession);
+    const et = ss && (ss.etapes || []).find(x => x.id === state.imgObjet);
+    if (et) { et.image = await reduireImage(file, 1024, 'image/jpeg'); saveMJ(cleSession(ss.id)); render(); toast('Illustration ajoutée'); }
+    return;
+  }
   if (state.imgType === 'mjobjet') {
     const it = mjd().objets.find(x => x.id === state.imgObjet);
     if (it) { it.image = await reduireImage(file, 256, 'image/webp'); saveMJ('objets'); render(); toast('Image ajoutée'); }
