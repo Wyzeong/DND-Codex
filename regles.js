@@ -889,7 +889,7 @@ R.PRESTIGES = Object.keys(R.CLASSES).filter(id => R.CLASSES[id].prestige);
 R.classePerso = d => PR({
   nom: d.nom || 'Classe de prestige', perso: true, dv: num0(d.dv) || 8, bba: d.bba || 'moyen',
   js: { vig: d.vig ? 1 : 0, ref: d.ref ? 1 : 0, vol: d.vol ? 1 : 0 }, pc: num0(d.pc) || 2, max: num0(d.max) || 10,
-  comp: d.comp || [], cumulMoine: !!d.cumulMoine,
+  comp: d.comp || [], cumulMoine: !d.cumul && !!d.cumulMoine, cumul: d.cumul || null,
   prerequis: d.prerequis ? String(d.prerequis).split('\n').filter(Boolean).map(t => [t.trim(), null]) : [],
   sortsPlus: d.sortsType ? { type: d.sortsType, niveaux: String(d.sortsNiveaux || '').split(/[,; ]+/).map(Number).filter(Boolean) } : null,
   aptitudes: (d.aptitudes || []).filter(a => a.nom).map(a => A(num0(a.niv) || 1, a.nom, a.texte || '')),
@@ -911,4 +911,5 @@ R.ALIAS_DONS = {
   'arme-predilection': 'focalisation martiale, focalisation d\'arme',
   'tir-precision': 'tir précis',
   'robustesse': 'résistance, ténacité',
+  'talent': 'science des compétences, focalisation de compétence, spécialisation de compétence',
 };

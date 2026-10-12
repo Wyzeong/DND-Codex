@@ -349,7 +349,11 @@ function etat(p, n, prevus = false, sauf = null) {
     for (const s of ['vig', 'ref', 'vol']) e.js[s] += R.jsClasse(cl.js[s], k);
   }
   /* Moine : les classes de prestige qui « cumulent » ajoutent leurs niveaux pour la CA, les mains nues, le déluge et la vitesse */
-  e.moineEff = (e.classes.moine || 0) + Object.entries(e.classes).filter(([id]) => R.CLASSES[id].cumulMoine).reduce((t, [, k]) => t + k, 0);
+  const cumul = cle => (e.classes.moine || 0) + Object.entries(e.classes)
+    .filter(([id]) => { const c = R.CLASSES[id]; return c.cumulMoine === true || !!c.cumul?.[cle]; })
+    .reduce((t, [, k]) => t + k, 0);
+  e.moineCumul = { mn: cumul('mn'), ca: cumul('ca'), deluge: cumul('deluge'), vitesse: cumul('vitesse') };
+  e.moineEff = Math.max(...Object.values(e.moineCumul));
   /* Progression des sorts apportée par les classes de prestige */
   e.lanceurBonus = {};
   for (const [id, k] of Object.entries(e.classes)) {
@@ -457,7 +461,7 @@ function pointsComp(p, e) {
 /* Valeurs calculées pour la fiche */
 function stats(p, e) {
   const a = p.ajust || {}, t = R.TAILLES[e.taille] || R.TAILLES.M;
-  const moine = e.moineEff || 0;
+  const moine = e.classes.moine || 0, mCA = e.moineCumul.ca, mVit = e.moineCumul.vitesse;
   const js = { ...e.js };
   js.vig += e.mods.con + (e.dons.has('vigueur-surhumaine') ? 2 : 0);
   js.ref += e.mods.dex + (e.dons.has('reflexes-surhumains') ? 2 : 0);
@@ -467,7 +471,7 @@ function stats(p, e) {
   if ((e.classes.paladin || 0) >= 2) { js.vig += e.mods.cha; js.ref += e.mods.cha; js.vol += e.mods.cha; notesJs.push('Grâce divine incluse'); }
   const ob = e.objets.tot;
   for (const s of ['vig', 'ref', 'vol']) js[s] += num(a[s]) + (ob[s] || 0) + (ob.js || 0);
-  const bonusMoine = moine ? Math.max(0, e.mods.sag) + Math.floor(moine / 5) : 0;
+  const bonusMoine = mCA ? Math.max(0, e.mods.sag) + Math.floor(mCA / 5) : 0;
   const armure = num(a.armure), bouclier = num(a.bouclier), nat = num(a.naturelle), parade = num(a.parade), div = num(a.caDivers);
   const dexCA = e.objets.maxDex == null ? e.mods.dex : Math.min(e.mods.dex, e.objets.maxDex);
   const ca = 10 + dexCA + t.ca + armure + bouclier + nat + parade + div + bonusMoine + (ob.caArmure || 0) + (ob.caParade || 0);
@@ -476,7 +480,7 @@ function stats(p, e) {
   const depourvu = esquiveInst ? ca : ca - Math.max(0, dexCA);
   let vitesse = e.race ? e.race.vitesse : 9;
   const notesVit = [];
-  if (moine >= 3) { vitesse += 3 * Math.floor(moine / 3); notesVit.push('déplacement accéléré du moine inclus'); }
+  if (mVit >= 3) { vitesse += 3 * Math.floor(mVit / 3); notesVit.push('déplacement accéléré du moine inclus'); }
   if (e.classes.barbare) { vitesse += 3; notesVit.push('déplacement accéléré du barbare inclus'); }
   vitesse += num(a.vitesse) + (ob.vitesse || 0);
   const bba = e.bba + num(a.bba) + (ob.attaque || 0);
@@ -1145,7 +1149,7 @@ const tagsUsages = s => usagesSort(s).map(k => `<span class="usage usage-${k}">$
 const CATS_OBJET = { '': 'Objet', arme: 'Arme', armure: 'Armure', bouclier: 'Bouclier', vetement: 'Vêtement', magique: 'Objet magique', munition: 'Munition', consommable: 'Potion / élixir', fourniture: 'Fourniture', ration: 'Ration', tresor: 'Trésor', babiole: 'Babiole' };
 
 function infosMainsNues(p, e, st) {
-  const moine = e.moineEff || 0;
+  const moine = e.moineCumul.mn || 0, mDel = e.classes.moine ? e.moineCumul.deluge : 0;
   if (!moine && !e.dons.has('science-mains-nues')) return null;
   const petit = e.taille === 'P';
   const de = moine ? R.palier(moine, petit
@@ -1156,11 +1160,11 @@ function infosMainsNues(p, e, st) {
   const degats = `${de}${bonD ? R.signe(bonD) : ''}`;
   const toucher = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods.for + (R.TAILLES[e.taille]?.ca || 0));
   let deluge = null;
-  if (moine) {
-    const pen = moine < 5 ? -2 : moine < 9 ? -1 : 0;
+  if (mDel) {
+    const pen = mDel < 5 ? -2 : mDel < 9 ? -1 : 0;
     const base = toucher.map(x => x + pen);
     const liste = [base[0], ...base];
-    if (moine >= 11) liste.unshift(base[0]);
+    if (mDel >= 11) liste.unshift(base[0]);
     deluge = { liste, pen };
   }
   return { de, degats, toucher, deluge };
@@ -1242,7 +1246,7 @@ function carteArmeCombat(p, e, st, it, munitions) {
   const bonusDeg = bonusFo + spe + (e.objets.tot.degats || 0);
   const de = it.degats || ref?.deg || '?';
   const deg = `${de}${bonusDeg ? R.signe(bonusDeg) : ''}`;
-  const moine = e.moineEff || 0;
+  const moine = e.classes.moine ? e.moineCumul.deluge : 0;
   const liees = [];
   if (moine && ref?.moine && !dist) {
     const pen = moine < 5 ? -2 : moine < 9 ? -1 : 0;
@@ -1354,7 +1358,7 @@ function ficheCombat(p, e) {
 function explications(p, e) {
   const st = stats(p, e);
   const mn = infosMainsNues(p, e, st);
-  const moine = e.moineEff || 0;
+  const moine = e.moineCumul.ca || 0;
   return {
     'Bonus à la CA': `Sans rien faire, tu ajoutes ta Sagesse (${R.signe(Math.max(0, e.mods.sag))}) et ton bonus de moine (+${Math.floor(moine / 5)}) à ta CA. C'est déjà compté : ta CA est de ${st.ca}.`,
     'Déluge de coups': mn?.deluge ? `Au lieu d'attaquer une fois, tu frappes ${mn.deluge.liste.length} fois dans le même tour : jets pour toucher à ${R.attTxt(mn.deluge.liste)}, et ${mn.degats} dégâts par coup qui touche. Le malus${mn.deluge.pen ? ` de ${R.signe(mn.deluge.pen)}` : ''} est déjà inclus dans ces chiffres. Ça prend tout ton tour : tu restes sur place ou fais un pas de 1,5 m.` : null,
@@ -2639,7 +2643,9 @@ function carteClassesPrestige(p) {
         <label class="f"><span>Nombre de niveaux</span><input type="text" inputmode="numeric" data-bind="${b('max')}" data-recalc value="${esc(d.max)}" placeholder="10"></label>
       </div>
       <div class="f"><span class="lbl">Bons jets de sauvegarde</span><div class="chips">${[['vig', 'Vigueur'], ['ref', 'Réflexes'], ['vol', 'Volonté']].map(([k2, t]) => `<label class="check"><input type="checkbox" data-bind="${b(k2)}" data-rerender ${d[k2] ? 'checked' : ''}> ${t}</label>`).join('')}</div></div>
-      <label class="check membre"><input type="checkbox" data-bind="${b('cumulMoine')}" data-rerender ${d.cumulMoine ? 'checked' : ''}> <span>Ses niveaux <b>s'ajoutent à ceux de moine</b> pour la CA, les dégâts à mains nues, le déluge de coups et la vitesse</span></label>
+      <div class="f cumul-moine"><span class="lbl">Ses niveaux s'ajoutent à ceux de moine pour :</span>
+        <div class="vis-grille">${[['mn', 'Dégâts à mains nues'], ['ca', 'Bonus de CA du moine'], ['deluge', 'Déluge de coups'], ['vitesse', 'Déplacement accéléré']].map(([k2, t]) => `<label class="check"><input type="checkbox" data-bind="${b('cumul')}.${k2}" data-rerender ${(d.cumul ? d.cumul[k2] : d.cumulMoine) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
+        <p class="hint">Coche seulement ce que le livre indique. Pour le poing sacré : les dégâts à mains nues.</p></div>
       <div class="grid">
         <label class="f"><span>Progression des sorts</span><select data-bind="${b('sortsType')}" data-rerender><option value="">Aucune</option><option value="divin" ${d.sortsType === 'divin' ? 'selected' : ''}>+1 niveau de lanceur divin</option><option value="profane" ${d.sortsType === 'profane' ? 'selected' : ''}>+1 niveau de lanceur profane</option><option value="les deux" ${d.sortsType === 'les deux' ? 'selected' : ''}>Les deux</option></select></label>
         ${d.sortsType ? `<label class="f"><span>À quels niveaux (ex. 1,2,3,5,6,7,9,10)</span><input type="text" data-bind="${b('sortsNiveaux')}" data-recalc value="${esc(d.sortsNiveaux)}"></label>` : ''}
@@ -2661,7 +2667,7 @@ function carteClassesPrestige(p) {
     <p class="hint">Les classes de prestige du Guide du Maître sont déjà dans le menu « Classe » de chaque niveau, avec leurs prérequis vérifiés : défenseur nain, danseur de l'ombre, duelliste, théurge mystique, chevalier occulte, archer-mage. Une classe d'un autre livre (Poing sacré du Codex divin, par exemple) se saisit ici à partir du livre ; elle apparaît ensuite dans le même menu.</p>
     ${defs.map((d, i) => mod && state.editPrestige === d.id ? formulaire(d, i) : `<div class="pnj">
       <div class="pnj-tete"><b>${esc(d.nom || 'Sans nom')}</b>${mod ? `<button class="lien" data-action="pp-edit" data-id="${d.id}">Modifier</button>` : ''}</div>
-      <p class="pnj-stats">d${esc(d.dv || 8)} · BBA ${esc(d.bba || 'moyen')} · ${esc(d.max || 10)} niveaux${d.cumulMoine ? ' · cumule avec le moine' : ''}${(e.classes['pp-' + d.id]) ? ` · niveau ${e.classes['pp-' + d.id]} atteint` : ''}</p>
+      <p class="pnj-stats">d${esc(d.dv || 8)} · BBA ${esc(d.bba || 'moyen')} · ${esc(d.max || 10)} niveaux${(() => { const c = d.cumul || (d.cumulMoine ? { mn: 1, ca: 1, deluge: 1, vitesse: 1 } : {}); const l = [['mn', 'mains nues'], ['ca', 'CA'], ['deluge', 'déluge'], ['vitesse', 'vitesse']].filter(([k2]) => c[k2]).map(([, t]) => t); return l.length ? ' · cumule avec le moine : ' + l.join(', ') : ''; })()}${(e.classes['pp-' + d.id]) ? ` · niveau ${e.classes['pp-' + d.id]} atteint` : ''}</p>
     </div>`).join('')}
     ${mod ? '<button class="btn ghost" data-action="pp-ajout">+ Saisir une classe de prestige</button>' : ''}
   </section>`;
@@ -2689,7 +2695,7 @@ function carteNiveau(p, l, i, estProchain) {
   const blocPrestige = cl && cl.prestige ? (() => {
     const pr = prerequisPrestige(cl, avant, p);
     return `<div class="prestige-info">
-      <p><b>Classe de prestige</b> · ${cl.max} niveaux · DV d${cl.dv} · BBA ${({ fort: 'bon', moyen: 'moyen', faible: 'faible' })[cl.bba]} · bons jets : ${['vig', 'ref', 'vol'].filter(x => cl.js[x]).map(x => ({ vig: 'Vigueur', ref: 'Réflexes', vol: 'Volonté' })[x]).join(', ') || 'aucun'}${cl.cumulMoine ? ' · cumule avec le moine' : ''}</p>
+      <p><b>Classe de prestige</b> · ${cl.max} niveaux · DV d${cl.dv} · BBA ${({ fort: 'bon', moyen: 'moyen', faible: 'faible' })[cl.bba]} · bons jets : ${['vig', 'ref', 'vol'].filter(x => cl.js[x]).map(x => ({ vig: 'Vigueur', ref: 'Réflexes', vol: 'Volonté' })[x]).join(', ') || 'aucun'}${cl.cumulMoine || Object.values(cl.cumul || {}).some(Boolean) ? ' · cumule avec le moine (' + (cl.cumulMoine ? 'tout' : [['mn', 'mains nues'], ['ca', 'CA'], ['deluge', 'déluge'], ['vitesse', 'vitesse']].filter(([k2]) => cl.cumul[k2]).map(([, t]) => t).join(', ')) + ')' : ''}</p>
       ${pr.length ? `<ul class="prerequis-liste">${pr.map(x => `<li class="${x.ok === false ? 'ko' : x.ok ? 'ok' : ''}">${x.ok === false ? '✗' : x.ok ? '✓' : '•'} ${esc(x.texte)}</li>`).join('')}</ul>` : ''}
       ${k > cl.max ? `<p class="alerte-obligatoire">Cette classe n'a que ${cl.max} niveaux.</p>` : ''}
       ${pr.some(x => x.ok === false) ? '<p class="hint">Les prérequis doivent être remplis avant de prendre le premier niveau, sauf accord du MJ.</p>' : ''}
