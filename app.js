@@ -632,13 +632,15 @@ function pagePersos() {
       <div class="banniere-in">
         <div class="banniere-img">${p.portrait
           ? `<img class="fond" src="${p.portrait}" alt=""><img class="photo" src="${p.portrait}" alt="">`
-          : `<div class="silhouette">${SILHOUETTE_SVG}</div>`}</div>
+          : `<div class="silhouette">${SILHOUETTE_SVG}</div>`}
+          ${(() => { const et = (p.etats || []).filter(x => x.actif !== false); return et.length ? `<span class="pastille-etat" title="${esc(et.map(x => x.nom).join(', '))}">⚠ ${et.length > 1 ? et.length : esc(et[0].nom)}</span>` : ''; })()}
+          ${bc().porteur_id === p.id ? '<span class="pastille-coffre" title="Porte le coffre commun">💰</span>' : ''}
+        </div>
+        ${p.embleme ? `<img class="embleme-banniere" src="${p.embleme}" alt="Emblème">` : '<span class="sans-embleme" aria-hidden="true"></span>'}
         <h2>${esc(p.nom || 'Sans nom')}</h2>
-        <p>${esc([raceNom(p), classesTxt(e)].filter(Boolean).join(', ') || 'À compléter')}</p>
-        ${(p.etats || []).some(x => x.actif !== false) ? `<p class="banniere-etat">⚠ ${esc((p.etats || []).filter(x => x.actif !== false).map(x => x.nom).join(', '))}</p>` : ''}
-        ${p.pnjMJ ? `<p class="tag-pnj">${p.membreGroupe ? 'Joué par le MJ' : 'Personnage du MJ'}</p>` : p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
-        ${bc().porteur_id === p.id ? '<p class="tag-coffre">Porte le coffre commun</p>' : ''}
-        ${p.embleme ? `<img class="embleme-banniere" src="${p.embleme}" alt="">` : '<span class="losange" aria-hidden="true"></span>'}
+        <p class="ligne-1">${esc([raceNom(p), classesTxt(e)].filter(Boolean).join(', ') || 'À compléter')}</p>
+        ${p.pnjMJ ? `<p class="ligne-1 tag-pnj">${p.membreGroupe ? 'Joué par le MJ' : 'Personnage du MJ'}</p>` : p.joueur ? `<p class="ligne-1">${esc(p.joueur)}</p>` : ''}
+        <span class="losange" aria-hidden="true"></span>
       </div>
     </a>`;
   }).join('');
