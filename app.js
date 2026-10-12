@@ -500,7 +500,7 @@ function pagePersos() {
         <h2>${esc(p.nom || 'Sans nom')}</h2>
         <p>${esc([raceNom(p), classesTxt(e)].filter(Boolean).join(', ') || 'À compléter')}</p>
         ${(p.etats || []).some(x => x.actif !== false) ? `<p class="banniere-etat">⚠ ${esc((p.etats || []).filter(x => x.actif !== false).map(x => x.nom).join(', '))}</p>` : ''}
-        ${p.pnjMJ ? '<p class="tag-pnj">Personnage du MJ</p>' : p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
+        ${p.pnjMJ ? `<p class="tag-pnj">${p.membreGroupe ? 'Joué par le MJ' : 'Personnage du MJ'}</p>` : p.joueur ? `<p>${esc(p.joueur)}</p>` : ''}
         ${bc().porteur_id === p.id ? '<p class="tag-coffre">Porte le coffre commun</p>' : ''}
         ${p.embleme ? `<img class="embleme-banniere" src="${p.embleme}" alt="">` : '<span class="losange" aria-hidden="true"></span>'}
       </div>
@@ -1512,7 +1512,11 @@ function carteVitalite(p) {
   </section>`;
 }
 
-/* ===== Personnages du MJ : version publique filtrée ===== */
+/* ===== Personnages du MJ : version publique filtrée =====
+   « Membre du groupe » : joué par le MJ comme un personnage joueur (rations, jour suivant,
+   combats, bourse, marché), mais avec une fiche en partie secrète. */
+const estMembre = x => !!x && (!x.pnjMJ || !!x.membreGroupe);
+const pnjComplet = x => x.pnjMJ && !x._public;
 const VISIBILITE_SECTIONS = [
   ['portrait', 'Portrait et emblème'], ['classes', 'Race et classe'], ['niveau', 'Niveau'], ['apparence', 'Apparence et historique'],
   ['etats', 'États et blessures'], ['pv', 'Points de vie'], ['caracs', 'Caractéristiques'], ['combat', 'Défense et attaques'],
@@ -1536,6 +1540,7 @@ function projectionPublique(p) {
   if (v.baguette) pub.baguette = p.baguette;
   if (v.langues) pub.langues = p.langues;
   if (v.bourse) pub.argent = p.argent;
+  pub.membreGroupe = !!p.membreGroupe;
   pub.equipement = (p.equipement || []).filter(it => it.visibleJoueurs);
   return pub;
 }
@@ -1544,7 +1549,8 @@ function carteVisibilite(p) {
   const v = p.visibilite || {};
   return `<section class="card visibilite"><h3>Visible des joueurs</h3>
     <p class="hint">Personnage du MJ : les joueurs ne voient que ce qui est coché ici, plus les objets marqués « visible » dans l'inventaire. Le reste n'est jamais envoyé à leurs appareils.</p>
-    ${fi(p, 'xp', 'Expérience de ce personnage (visible du MJ seulement)', { type: 'number' })}
+    <label class="check membre"><input type="checkbox" data-bind="membreGroupe" data-rerender ${p.membreGroupe ? 'checked' : ''}> <span><b>Membre du groupe</b> : joué par le MJ comme un personnage joueur (rations, jour suivant, combats, bourse commune, marché)</span></label>
+    ${p.membreGroupe ? '' : fi(p, 'xp', 'Expérience de ce personnage (visible du MJ seulement)', { type: 'number' })}
     <div class="vis-grille">${VISIBILITE_SECTIONS.map(([k, l]) => `<label class="check"><input type="checkbox" data-bind="visibilite.${k}" data-rerender ${(k === 'portrait' ? v[k] !== false : v[k]) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
   </section>`;
 }
@@ -1648,15 +1654,17 @@ function pageMJReelle() {
       <div class="row"><input type="password" id="code-mj" autocomplete="off" placeholder="Code MJ" aria-label="Code MJ"><button class="btn" data-action="mj-entrer">Entrer</button></div>
     </section>`;
   }
-  const joueurs = db.personnages.filter(x => !x.pnjMJ && (!enLigne() || x.publie));
-  const pnj = db.personnages.filter(x => x.pnjMJ && !x._public);
-  const cartes = joueurs.map(x => {
+  const joueurs = db.personnages.filter(x => estMembre(x) && !x._public && (!enLigne() || x.publie));
+  const pnj = db.personnages.filter(x => pnjComplet(x) && !x.membreGroupe);
+  /* Le groupe : les personnages des joueurs, puis ceux du MJ (version complète) */
+  const cartes = [...joueurs, ...pnj].map(x => {
     const e = etat(x), st = stats(x, e), b = barrePV(x);
     const comp = id => { const c = R.COMPETENCES.find(y => y.id === id); const v = x.comp?.[id] || {}; return num(v.rangs) + (c.car ? e.mods[c.car] : 0) + bonusComp(id, e) + num(v.divers); };
     const r = rationDefaut(x), nbDv = nbDesVie(x.dv);
     return `<div class="mj-perso">
       <div class="mj-perso-tete">${x.portrait ? `<img src="${x.portrait}" alt="">` : '<span class="vide"></span>'}
-        <div><b>${esc(x.nom)}</b><small>${esc([x.joueur, raceNom(x), classesTxt(e)].filter(Boolean).join(', '))}</small></div></div>
+        <div><b>${esc(x.nom)}</b><small>${esc([x.pnjMJ ? '' : x.joueur, raceNom(x), classesTxt(e)].filter(Boolean).join(', '))}</small></div>
+        ${x.pnjMJ ? `<a class="tag-cat tag-mj" href="#/perso/${x.id}/fiche">${x.membreGroupe ? 'Joué par le MJ' : 'Personnage du MJ'}</a>` : ''}</div>
       <div class="mj-pv pv-${b.etat}">
         <button class="pv-btn" data-action="mj-pvj" data-id="${x.id}" data-d="-5" aria-label="−5 PV">−5</button>
         <button class="pv-btn" data-action="mj-pvj" data-id="${x.id}" data-d="-1" aria-label="−1 PV">−1</button>
@@ -1671,7 +1679,7 @@ function pageMJReelle() {
         <span>Détection<b>${R.signe(comp('detection'))}</b></span><span>Perception<b>${R.signe(comp('perception'))}</b></span><span>Psychologie<b>${R.signe(comp('psychologie'))}</b></span>
         <span>Dés de vie<b>${nbDv ? `${Math.max(0, nbDv - num(x.dvUtilises))}/${nbDv}` : '<i class="manque">?</i>'}</b></span>
       </div>
-      <p class="hint mj-rations">Rations : <b>${nbRations(x)}</b>${r ? ` (par défaut : ${esc(r.nom || 'ration')} × ${esc(r.qte || 0)})` : ' <span class="manque">aucune ration par défaut</span>'}</p>
+      ${!estMembre(x) ? '' : `<p class="hint mj-rations">Rations : <b>${nbRations(x)}</b>${r ? ` (par défaut : ${esc(r.nom || 'ration')} × ${esc(r.qte || 0)})` : ' <span class="manque">aucune ration par défaut</span>'}</p>`}
       ${(x.etats || []).filter(et => et.actif !== false).length ? `<div class="mj-etats">${(x.etats || []).filter(et => et.actif !== false).map(et => `<div class="mj-etat ${gravite(et)}"><b>${esc(et.nom)}</b>${et.duree === 'permanent' ? ' <small>permanent</small>' : ''}${et.description ? `<p>${esc(et.description)}</p>` : ''}</div>`).join('')}</div>` : ''}
     </div>`;
   }).join('');
@@ -1687,13 +1695,13 @@ function pageMJReelle() {
   </section>
 
   <section class="card"><h3>Le groupe</h3>
-    <p class="hint">Points de vie en direct (actualisés toutes les 15 secondes). Les boutons modifient la fiche du joueur.</p>
+    <p class="hint">Points de vie en direct (actualisés toutes les 15 secondes), personnages des joueurs puis personnages du MJ. Les boutons modifient directement la fiche.</p>
     <div class="mj-persos">${cartes || '<p class="empty">Aucun personnage joueur.</p>'}</div>
   </section>
 
   <section class="card"><h3>Personnages du MJ</h3>
-    <p class="hint">Visibles dans « Personnages », mais confidentiels : tu choisis sur chaque fiche ce que les joueurs peuvent voir.</p>
-    ${pnj.length ? `<div class="fiches">${pnj.map(x => { const b = barrePV(x); return `<a class="fiche-carte" href="#/perso/${x.id}/fiche"><span class="fiche-carte-tete"><b>${esc(x.nom)}</b><span class="statut-fiche">${b.max ? `${b.act}/${b.max} PV` : 'PNJ'}</span></span><small>${esc([raceNom(x), classesTxt(etat(x))].filter(Boolean).join(', ') || 'À compléter')}</small></a>`; }).join('')}</div>` : '<p class="empty">Aucun pour l\'instant.</p>'}
+    <p class="hint">Visibles dans « Personnages », mais confidentiels : tu choisis sur chaque fiche ce que les joueurs peuvent voir. Coche « Membre du groupe » sur la fiche d'un personnage que tu joues dans le groupe : il compte alors partout comme un personnage joueur.</p>
+    ${db.personnages.filter(pnjComplet).length ? `<div class="fiches">${db.personnages.filter(pnjComplet).map(x => { const b = barrePV(x); return `<a class="fiche-carte" href="#/perso/${x.id}/fiche"><span class="fiche-carte-tete"><b>${esc(x.nom)}</b><span class="statut-fiche">${b.max ? `${b.act}/${b.max} PV` : 'PNJ'}</span></span><small>${esc([raceNom(x), classesTxt(etat(x))].filter(Boolean).join(', ') || 'À compléter')}</small></a>`; }).join('')}</div>` : '<p class="empty">Aucun pour l\'instant.</p>'}
     <button class="btn ghost" data-action="mj-nouveau-perso" style="margin-top:.6rem">+ Créer un personnage MJ</button>
   </section>
 
@@ -1844,7 +1852,7 @@ function lancerCombat(prep) {
   const joueurs = db.personnages.filter(x => !x._public && (!x.pnjMJ || true) && (!enLigne() || x.publie));
   const combattants = [];
   for (const x of joueurs) {
-    combattants.push({ id: uid(), nom: x.nom, type: x.pnjMJ ? 'mj' : 'pj', persoId: x.id, init: '', bonusInit: stats(x, etat(x)).init, pv: pvActuels(x), pvMax: num(x.pvMax), ca: stats(x, etat(x)).ca, actif: !x.pnjMJ });
+    combattants.push({ id: uid(), nom: x.nom, type: estMembre(x) ? 'pj' : 'mj', persoId: x.id, init: '', bonusInit: stats(x, etat(x)).init, pv: pvActuels(x), pvMax: num(x.pvMax), ca: stats(x, etat(x)).ca, actif: estMembre(x) });
   }
   for (const y of (prep.participants || [])) {
     const t = m.pnj.find(x => x.id === y.pnjId);
@@ -1934,7 +1942,7 @@ function pageObjetsMJ() {
     <div class="btns" style="margin-top:.6rem"><button class="btn ghost" data-action="mj-obj-ajout">+ Préparer un objet</button><button class="btn ghost" data-action="mj-obj-ajout" data-type="vente">+ Préparer un objet à vendre</button></div>
   </section>
   <section class="card"><h3>Donner des pièces</h3>
-    <label class="f"><span>À</span><select id="argent-cible"><option value="__commune__">La bourse commune</option>${cibles.filter(x => !x.pnjMJ).map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select></label>
+    <label class="f"><span>À</span><select id="argent-cible"><option value="__commune__">La bourse commune</option>${cibles.filter(estMembre).map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select></label>
     ${champsPieces('mjp')}
     <button class="btn" data-action="mj-argent">Donner</button>
     <p class="hint">Un nombre négatif retire des pièces.</p>
@@ -2151,8 +2159,8 @@ const bc = () => (db.bourseCommune = { bourse: {}, porteur_id: '', journal: [], 
 function carteBourseCommune() {
   const b = bc();
   const porteur = findPerso(b.porteur_id);
-  const mes = db.personnages.filter(x => !x._public && !x.pnjMJ && (enLigne() ? !!(db.cles || {})[x.id] || estMJ() : true));
-  const tous = db.personnages.filter(x => !x.pnjMJ && (!enLigne() || x.publie));
+  const mes = db.personnages.filter(x => !x._public && estMembre(x) && (enLigne() ? !!(db.cles || {})[x.id] || estMJ() : true));
+  const tous = db.personnages.filter(x => estMembre(x) && (!enLigne() || x.publie));
   return `<section class="card bourse-commune"><h3>Bourse commune</h3>
     <p class="bc-total"><b>${esc(piecesTxt(b.bourse))}</b>${bourseEnPc(b.bourse) ? ` <small>(${prixTxt(Math.round(bourseEnPc(b.bourse)) / 100, 'po')} au total)</small>` : ''}</p>
     <p class="hint">${porteur ? `<b>${esc(porteur.nom)}</b> porte le coffre commun. Cet argent ne s'ajoute pas à sa bourse personnelle.` : 'Personne ne porte le coffre commun pour l\'instant.'}</p>
@@ -2193,7 +2201,7 @@ function sauverArticle(a) {
 function pageMarche() {
   const mj = estMJ();
   const articles = (db.marche || []).filter(a => mj || a.aVendre);
-  const mes = db.personnages.filter(x => !x._public && !x.pnjMJ && (enLigne() ? !!(db.cles || {})[x.id] || mj : true));
+  const mes = db.personnages.filter(x => !x._public && estMembre(x) && (enLigne() ? !!(db.cles || {})[x.id] || mj : true));
   const vendeurs = [...new Set(articles.map(a => a.vendeur || 'Marchand ambulant'))];
   const carte = a => {
     const i = db.marche.indexOf(a);
@@ -4495,8 +4503,10 @@ document.addEventListener('click', ev => {
     }
     case 'mj-ration': {
       if (!confirm('Chaque joueur consomme une ration (celle choisie par défaut). Continuer ?')) break;
-      if (enLigne()) rpc('mj_ration', { p_code: db.codeMJ }).then(n => { toast(`${n} ration(s) consommée(s)`); actualiser(); }).catch(e => alert('Impossible : ' + e.message));
-      else { const n = db.personnages.filter(x => !x.pnjMJ).filter(majLocaleRation).length; saveNow(); render(); toast(`${n} ration(s) consommée(s)`); }
+      /* Les membres du groupe joués par le MJ : leur version complète est sur cet appareil */
+      const membresMJ = () => db.personnages.filter(x => pnjComplet(x) && x.membreGroupe).filter(x => { const ok = majLocaleRation(x); if (ok) persoModifie(x); return ok; }).length;
+      if (enLigne()) rpc('mj_ration', { p_code: db.codeMJ }).then(n => { const m = membresMJ(); toast(`${n + m} ration(s) consommée(s)`); actualiser(); }).catch(e => alert('Impossible : ' + e.message));
+      else { const n = db.personnages.filter(estMembre).filter(majLocaleRation).length; saveNow(); render(); toast(`${n} ration(s) consommée(s)`); }
       break;
     }
     case 'mj-jour': {
@@ -4631,7 +4641,13 @@ document.addEventListener('click', ev => {
       const pieces = lirePieces('bc');
       if (!bourseEnPc(pieces)) { toast('Indique un montant'); break; }
       const delta = a === 'bc-deposer' ? pieces : Object.fromEntries(Object.entries(pieces).map(([k, v]) => [k, String(-num(v))]));
-      if (enLigne()) {
+      if (enLigne() && pnjComplet(x)) {
+        const moins = Object.fromEntries(Object.entries(delta).map(([k, v]) => [k, String(-num(v))]));
+        try { bourseLocalePlus(x.argent, moins); } catch (e) { alert(e.message); break; }
+        rpc('bourse_modifier', { p_code: db.codeMJ, p_delta: delta, p_motif: `${a === 'bc-deposer' ? 'dépôt' : 'retrait'} de ${x.nom}` })
+          .then(() => { x.argent = bourseLocalePlus(x.argent, moins); saveNow(); persoModifie(x); toast(a === 'bc-deposer' ? 'Déposé dans le coffre commun' : 'Pris dans le coffre commun'); return actualiser(); })
+          .catch(e => alert('Impossible : ' + e.message));
+      } else if (enLigne()) {
         rpc('bourse_transfert', { p_id: x.id, p_code: codePour(x), p_delta: delta })
           .then(() => { toast(a === 'bc-deposer' ? 'Déposé dans le coffre commun' : 'Pris dans le coffre commun'); return actualiser(); })
           .catch(e => alert('Impossible : ' + e.message));
@@ -4656,6 +4672,11 @@ document.addEventListener('click', ev => {
       if (!Object.values(pieces).some(v => num(v))) { toast('Indique un montant'); break; }
       const fini = () => { toast('Pièces données'); actualiser(); render(); };
       if (enLigne()) {
+        const cx = findPerso(cible);
+        if (cx && pnjComplet(cx)) {
+          try { cx.argent = bourseLocalePlus(cx.argent, pieces); saveNow(); persoModifie(cx); fini(); } catch (e) { alert(e.message); }
+          break;
+        }
         (cible === '__commune__' ? rpc('bourse_modifier', { p_code: db.codeMJ, p_delta: pieces, p_motif: 'don du MJ' }) : rpc('mj_donner_argent', { p_code: db.codeMJ, p_id: cible, p_delta: pieces }))
           .then(fini).catch(e => alert('Impossible : ' + e.message));
       } else {
@@ -4693,7 +4714,18 @@ document.addEventListener('click', ev => {
       const total = Math.round(nombre(art.prix) * (MULT_PC[art.unite || 'po'] || 100)) * qte;
       if (!confirm(`Acheter ${qte} × ${art.nom} pour ${prixTxt(total / 100, 'po')} avec ${commune === '1' ? 'la bourse commune' : 'la bourse de ' + x.nom} ?`)) break;
       b.disabled = true;
-      if (enLigne()) {
+      if (enLigne() && pnjComplet(x)) {
+        (async () => {
+          if (num(art.stock) < qte) throw new Error(`Stock insuffisant (il en reste ${num(art.stock)})`);
+          if (commune === '1') await rpc('bourse_modifier', { p_code: db.codeMJ, p_delta: { pc: String(-total) }, p_motif: `achat : ${art.nom} × ${qte} (${x.nom})` });
+          else x.argent = bourseLocalePlus(x.argent, { pc: -total });
+          const { aVendre, stock, prix: px, unite, vendeur, type, ...obj } = art;
+          x.equipement = [...(x.equipement || []), { ...obj, id: uid(), qte: String(qte), valeur: px, valeurUnite: unite || 'po' }];
+          art.stock = String(num(art.stock) - qte);
+          await rpc('mj_marche_sauver', { p_code: db.codeMJ, p_id: art.id, p_data: art });
+          saveNow(); persoModifie(x); toast(`${art.nom} acheté !`); await actualiser(); render();
+        })().catch(e => { b.disabled = false; alert('Achat impossible : ' + e.message); });
+      } else if (enLigne()) {
         rpc('acheter', { p_id: x.id, p_code: codePour(x), p_article: art.id, p_qte: qte, p_commune: commune === '1' })
           .then(() => { toast(`${art.nom} acheté !`); return actualiser(); })
           .catch(e => { b.disabled = false; alert('Achat impossible : ' + e.message); });
