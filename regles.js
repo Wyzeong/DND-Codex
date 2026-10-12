@@ -761,3 +761,137 @@ R.ARMURES = [
 ];
 R.ARMURE = Object.fromEntries(R.ARMURES.map(a => [a.id, a]));
 R.TYPES_ARMURES = { legere: 'Armures légères', intermediaire: 'Armures intermédiaires', lourde: 'Armures lourdes' };
+
+/* ---------- Classes de prestige (Guide du Maître, contenu libre SRD 3.5) ----------
+   prerequis : [texte, test(ctx)] où ctx = { e, p, rangs(id), don(id), sorts(type, niveau) }.
+   sortsPlus : niveaux de la classe de prestige qui donnent +1 niveau de lanceur à une classe déjà possédée.
+   cumulMoine : ses niveaux s'ajoutent à ceux de moine pour la CA, les mains nues, le déluge et la vitesse. */
+const PR = o => ({ prestige: true, max: 10, maitrises: 'Aucune nouvelle maîtrise d\'arme ou d\'armure.', valeurs: () => [], ...o });
+const tousDons = (...ids) => c => ids.every(id => c.don(id));
+Object.assign(R.CLASSES, {
+  'defenseur-nain': PR({
+    nom: 'Défenseur nain', dv: 12, bba: 'fort', js: { vig: 1, vol: 1 }, pc: 2,
+    comp: ['artisanat', 'perception', 'psychologie', 'detection'],
+    prerequis: [
+      ['Race : nain', c => c.p.race === 'nain'],
+      ['Bonus de base à l\'attaque +7', c => c.e.bba >= 7],
+      ['Dons : Esquive, Endurance, Robustesse', tousDons('esquive', 'endurance', 'robustesse')],
+      ['Alignement loyal', c => /^Loyal/.test(c.p.alignement || '')],
+    ],
+    aptitudes: [
+      A(1, 'Bonus à la CA', '+1 d\'esquive à la CA, puis +1 aux niveaux 4, 7 et 10.'),
+      A(1, 'Position défensive', 'Il s\'ancre au sol : +2 For, +4 Con, +2 à tous les jets de sauvegarde et +4 d\'esquive à la CA, mais il ne peut plus se déplacer. Dure 3 + mod Con rounds, puis fatigue.'),
+      A(2, 'Esquive instinctive', 'Garde son bonus de Dextérité à la CA quand il est pris au dépourvu.'),
+      A(4, 'Sens des pièges', '+1 aux jets de Réflexes et à la CA contre les pièges (+2 au niveau 8).'),
+      A(6, 'Réduction des dégâts', 'Ignore 3 points de dégâts de chaque attaque (6 au niveau 10).'),
+      A(6, 'Esquive instinctive supérieure', 'Ne peut plus être pris en tenaille.'),
+      A(8, 'Défense mobile', 'Peut faire un pas de 1,5 m par round sans perdre sa position défensive.'),
+    ],
+    valeurs: k => [
+      ['Bonus de CA', '+' + Math.floor((k + 2) / 3)],
+      ['Positions défensives', (1 + Math.floor((k - 1) / 2)) + '/jour'],
+      ['Sens des pièges', k < 4 ? null : '+' + (k < 8 ? 1 : 2)],
+      ['Réduction des dégâts', k < 6 ? null : (k < 10 ? 3 : 6) + '/—'],
+    ],
+  }),
+  'danseur-ombre': PR({
+    nom: 'Danseur de l\'ombre', dv: 8, bba: 'moyen', js: { ref: 1 }, pc: 6,
+    comp: ['equilibre', 'bluff', 'decryptage', 'diplomatie', 'deguisement', 'evasion', 'discretion', 'saut', 'perception', 'deplacement-silencieux', 'representation', 'profession', 'fouille', 'escamotage', 'detection', 'acrobaties', 'maitrise-cordes'],
+    prerequis: [
+      ['Déplacement silencieux : 8 rangs', c => c.rangs('deplacement-silencieux') >= 8],
+      ['Discrétion : 10 rangs', c => c.rangs('discretion') >= 10],
+      ['Représentation (danse) : 5 rangs', c => c.rangs('representation') >= 5],
+      ['Dons : Attaques réflexes, Esquive, Souplesse du serpent', tousDons('attaques-reflexes', 'esquive', 'mobilite')],
+    ],
+    aptitudes: [
+      A(1, 'Camouflage', 'Peut se cacher même observé, tant qu\'il se trouve à moins de 3 m d\'une ombre.'),
+      A(2, 'Esquive totale', 'Aucun dégât sur un jet de Réflexes réussi contre un effet de zone.'),
+      A(2, 'Vision dans le noir', 'Voit dans le noir jusqu\'à 18 m.'),
+      A(2, 'Esquive instinctive', 'Garde son bonus de Dextérité quand il est pris au dépourvu.'),
+      A(3, 'Illusion d\'ombre', 'Image silencieuse 1 fois par jour.'),
+      A(3, 'Convocation d\'ombre', 'Une ombre l\'accompagne et le sert.'),
+      A(3, 'Saut d\'ombre', 'Passe d\'une ombre à une autre (12 m par jour, doublé aux niveaux 6, 8 et 10).'),
+      A(4, 'Roulade défensive', 'Une fois par jour, réduit de moitié les dégâts d\'un coup qui l\'aurait mis hors de combat.'),
+      A(5, 'Esquive instinctive supérieure', 'Ne peut plus être pris en tenaille.'),
+      A(7, 'Esprit fuyant', 'Deuxième jet de sauvegarde contre les enchantements.'),
+      A(10, 'Esquive surnaturelle', 'Moitié des dégâts même en cas d\'échec au jet de Réflexes.'),
+    ],
+  }),
+  duelliste: PR({
+    nom: 'Duelliste', dv: 10, bba: 'fort', js: { ref: 1 }, pc: 4,
+    comp: ['equilibre', 'bluff', 'evasion', 'saut', 'perception', 'representation', 'psychologie', 'detection', 'acrobaties'],
+    prerequis: [
+      ['Bonus de base à l\'attaque +6', c => c.e.bba >= 6],
+      ['Représentation : 3 rangs', c => c.rangs('representation') >= 3],
+      ['Acrobaties : 5 rangs', c => c.rangs('acrobaties') >= 5],
+      ['Dons : Esquive, Souplesse du serpent, Attaque en finesse', tousDons('esquive', 'mobilite', 'attaque-finesse')],
+    ],
+    aptitudes: [
+      A(1, 'Défense intelligente', 'Sans armure ni bouclier, ajoute son mod d\'Intelligence (au plus son niveau de duelliste) à la CA.'),
+      A(2, 'Réaction améliorée', '+2 en initiative (+4 au niveau 8).'),
+      A(3, 'Mobilité accrue', '+4 à la CA supplémentaire contre les attaques d\'opportunité dues à ses déplacements.'),
+      A(4, 'Grâce', '+2 aux jets de Réflexes, sans armure ni bouclier.'),
+      A(5, 'Frappe précise', '+1d6 dégâts avec une arme perforante légère tenue d\'une main (+2d6 au niveau 10).'),
+      A(6, 'Charge acrobatique', 'Peut charger sur un terrain difficile.'),
+      A(7, 'Parade élaborée', 'En combat sur la défensive, ajoute la moitié de son niveau à la CA.'),
+      A(9, 'Parade de projectiles', 'Comme le don du même nom.'),
+    ],
+    valeurs: k => [['Réaction améliorée', k < 2 ? null : '+' + (k < 8 ? 2 : 4)], ['Frappe précise', k < 5 ? null : (k < 10 ? '+1d6' : '+2d6')]],
+  }),
+  'theurge-mystique': PR({
+    nom: 'Théurge mystique', dv: 4, bba: 'faible', js: { vol: 1 }, pc: 2,
+    comp: ['concentration', 'artisanat', 'decryptage', 'conn-mysteres', 'conn-religion', 'profession', 'psychologie', 'art-magie'],
+    prerequis: [
+      ['Connaissances (mystères) : 6 rangs', c => c.rangs('conn-mysteres') >= 6],
+      ['Connaissances (religion) : 6 rangs', c => c.rangs('conn-religion') >= 6],
+      ['Sorts profanes de niveau 2', c => c.sorts('profane', 2)],
+      ['Sorts divins de niveau 2', c => c.sorts('divin', 2)],
+    ],
+    sortsPlus: { type: 'les deux', niveaux: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    aptitudes: [A(1, 'Lanceur double', 'Chaque niveau compte comme un niveau de plus pour une classe de lanceur profane ET pour une classe de lanceur divin.')],
+  }),
+  'chevalier-occulte': PR({
+    nom: 'Chevalier occulte', dv: 6, bba: 'fort', js: { vig: 1 }, pc: 2,
+    comp: ['concentration', 'artisanat', 'decryptage', 'saut', 'conn-mysteres', 'conn-noblesse', 'equitation', 'psychologie', 'art-magie', 'natation'],
+    prerequis: [
+      ['Maîtrise de toutes les armes de guerre', c => Object.keys(c.e.classes).some(id => /guerrier|paladin|rodeur|barbare/.test(id)) || c.don('maniement-armes-guerre')],
+      ['Sorts profanes de niveau 3', c => c.sorts('profane', 3)],
+    ],
+    sortsPlus: { type: 'profane', niveaux: [2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    aptitudes: [
+      A(1, 'Don supplémentaire', 'Un don de guerrier au choix.'),
+      A(2, 'Progression des sorts', 'Du niveau 2 au niveau 10 : +1 niveau de lanceur dans sa classe profane.'),
+    ],
+  }),
+  'archer-mage': PR({
+    nom: 'Archer-mage', dv: 8, bba: 'fort', js: { vig: 1, ref: 1 }, pc: 4,
+    comp: ['artisanat', 'discretion', 'perception', 'deplacement-silencieux', 'equitation', 'detection', 'survie', 'maitrise-cordes'],
+    prerequis: [
+      ['Race : elfe ou demi-elfe', c => /elfe|drow/.test(c.p.race || '')],
+      ['Bonus de base à l\'attaque +6', c => c.e.bba >= 6],
+      ['Dons : Tir à bout portant, Tir de précision, Arme de prédilection (arc)', tousDons('tir-bout-portant', 'tir-precision', 'arme-predilection')],
+      ['Sorts profanes de niveau 1', c => c.sorts('profane', 1)],
+    ],
+    aptitudes: [
+      A(1, 'Flèches magiques', 'Ses flèches deviennent magiques : +1 (+1 aux niveaux 3, 5, 7 et 9).'),
+      A(2, 'Flèche à sort', 'Peut placer un sort de zone dans une flèche.'),
+      A(4, 'Flèche chercheuse', '1 fois par jour, une flèche contourne les obstacles vers une cible connue.'),
+      A(6, 'Flèche fantôme', '1 fois par jour, une flèche traverse les obstacles.'),
+      A(8, 'Pluie de flèches', '1 fois par jour, une flèche par niveau, sur autant de cibles.'),
+      A(10, 'Flèche de mort', '1 fois par jour, la cible touchée doit réussir un jet de Vigueur DD 20 ou mourir.'),
+    ],
+    valeurs: k => [['Bonus des flèches', '+' + Math.ceil(k / 2)]],
+  }),
+});
+R.PRESTIGES = Object.keys(R.CLASSES).filter(id => R.CLASSES[id].prestige);
+
+/* Classe de prestige saisie par le joueur (livre hors SRD : Poing sacré, etc.) */
+R.classePerso = d => PR({
+  nom: d.nom || 'Classe de prestige', perso: true, dv: num0(d.dv) || 8, bba: d.bba || 'moyen',
+  js: { vig: d.vig ? 1 : 0, ref: d.ref ? 1 : 0, vol: d.vol ? 1 : 0 }, pc: num0(d.pc) || 2, max: num0(d.max) || 10,
+  comp: d.comp || [], cumulMoine: !!d.cumulMoine,
+  prerequis: d.prerequis ? String(d.prerequis).split('\n').filter(Boolean).map(t => [t.trim(), null]) : [],
+  sortsPlus: d.sortsType ? { type: d.sortsType, niveaux: String(d.sortsNiveaux || '').split(/[,; ]+/).map(Number).filter(Boolean) } : null,
+  aptitudes: (d.aptitudes || []).filter(a => a.nom).map(a => A(num0(a.niv) || 1, a.nom, a.texte || '')),
+});
+const num0 = v => Number(String(v ?? '').replace(',', '.')) || 0;
