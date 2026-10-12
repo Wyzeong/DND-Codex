@@ -415,6 +415,7 @@ function etat(p, n, prevus = false, sauf = null) {
   const cumul = cle => (e.classes.moine || 0) + Object.entries(e.classes)
     .filter(([id]) => { const c = R.CLASSES[id]; return c.cumulMoine === true || !!c.cumul?.[cle]; })
     .reduce((t, [, k]) => t + k, 0);
+  e.domaines = e.classes.pretre ? domainesDe(p) : [];
   e.moineCumul = { mn: cumul('mn'), ca: cumul('ca'), deluge: cumul('deluge'), vitesse: cumul('vitesse') };
   e.moineEff = Math.max(...Object.values(e.moineCumul));
   /* Progression des sorts apportée par les classes de prestige */
@@ -509,7 +510,19 @@ function bonusComp(id, e) {
   if (id === 'discretion' && e.taille === 'P') b += 4;
   return b;
 }
-const compDeClasse = e => new Set(Object.keys(e.classes).flatMap(id => R.CLASSES[id].comp));
+const compDeClasse = e => new Set([...Object.keys(e.classes).flatMap(id => R.CLASSES[id].comp), ...(e.domaines || []).flatMap(d => R.DOMAINES[d]?.comp || [])]);
+/* Domaines : choisis au niveau 1 de prêtre, dans la Progression */
+const domainesDe = p => { const l = (p.progression || []).find(x => x.classe === 'pretre'); return l ? [l.domaine1, l.domaine2].filter(d => R.DOMAINES[d]) : []; };
+const cleVO = t => String(t || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
+let indexVO = null, indexVOtaille = -1;
+const sortVO = nomVO => {
+  if (!indexVO || indexVOtaille !== db.sorts.length) { indexVO = new Map(db.sorts.map(x => [cleVO(x.nomVO), x])); indexVOtaille = db.sorts.length; }
+  return indexVO.get(cleVO(nomVO));
+};
+function sortDomaineHTML(nomVO) {
+  const sp = sortVO(nomVO);
+  return sp ? `<a href="#/sort/${sp.id}">${esc(sp.nom)}</a>` : esc(nomVO);
+}
 
 function pointsComp(p, e) {
   let total = 0;
@@ -544,11 +557,12 @@ function stats(p, e) {
   const depourvu = esquiveInst ? ca : ca - Math.max(0, dexCA);
   let vitesse = e.race ? e.race.vitesse : 9;
   const notesVit = [];
-  if (mVit >= 3) { vitesse += 3 * Math.floor(mVit / 3); notesVit.push('déplacement accéléré du moine inclus'); }
-  for (const [id, k] of Object.entries(e.classes)) {
-    const v = R.valeurPalier(R.CLASSES[id].vitPaliers, k);
-    if (v) { vitesse += v; notesVit.push(`bonus de vitesse de ${R.CLASSES[id].nom.toLowerCase()} inclus`); }
-  }
+  /* Déplacement accéléré du moine et bonus de vitesse des classes de prestige : bonus d'altération,
+     ils ne s'additionnent pas, on garde le meilleur */
+  const vitMoine = mVit >= 3 ? 3 * Math.floor(mVit / 3) : 0;
+  const vitPrestige = Object.entries(e.classes).map(([id, k]) => [R.CLASSES[id].nom, R.valeurPalier(R.CLASSES[id].vitPaliers, k)]).filter(([, v]) => v).sort((x, y) => y[1] - x[1])[0];
+  if (vitPrestige && vitPrestige[1] > vitMoine) { vitesse += vitPrestige[1]; notesVit.push(`bonus de vitesse de ${vitPrestige[0].toLowerCase()} inclus (il ne s'ajoute pas à celui du moine : le meilleur est retenu)`); }
+  else if (vitMoine) { vitesse += vitMoine; notesVit.push(`déplacement accéléré du moine inclus${vitPrestige ? ' (meilleur que le bonus de ' + vitPrestige[0].toLowerCase() + ', qui ne s\'y ajoute pas)' : ''}`); }
   if (e.classes.barbare) { vitesse += 3; notesVit.push('déplacement accéléré du barbare inclus'); }
   vitesse += num(a.vitesse) + (ob.vitesse || 0);
   const bba = e.bba + num(a.bba) + (ob.attaque || 0);
@@ -652,6 +666,10 @@ function pagePerso(id, tab) {
   if (!p) return `<p>Personnage introuvable. <a href="#/persos">Retour à la liste</a></p>`;
   if (p.pnjMJ && !peutModifier(p)) { state.ctx = null; return pagePersoPublic(p); }
   state.ctx = p;
+  if (state.effetForm && state.effetForm.persoId === p.id) return formEffet() + pagePersoSuite(p, tab);
+  return pagePersoSuite(p, tab);
+}
+function pagePersoSuite(p, tab) {
   tab = tab || 'fiche';
   const e = etat(p);
   const tabs = [['fiche', 'Fiche'], ['inventaire', 'Inventaire'], ['sorts', 'Sorts'], ['progression', 'Progression']]
@@ -1242,10 +1260,14 @@ function infosMainsNues(p, e, st) {
 function ressources(p, e) {
   const res = [];
   const c = e.classes, niv = e.niveau;
+  for (const id of e.domaines || []) {
+    const u = R.DOMAINES[id].usage;
+    if (u) res.push({ id: 'dom-' + id, nom: u.nom, max: 1, unite: 'fois', action: `${u.action} · domaine ${R.DOMAINES[id].nom}`, texte: R.DOMAINES[id].pouvoir.replace(/(niveau de prêtre)/g, `$1 (${c.pretre})`), duree: u.duree || '' });
+  }
   for (const [id, k] of Object.entries(c)) {
     (R.CLASSES[id].ressourcesPerso || []).forEach((r, j) => {
       const max = R.valeurPalier(r.paliers, k);
-      if (max > 0) res.push({ id: `${id}-${j}`, nom: r.nom, max, unite: 'fois', action: r.action || R.CLASSES[id].nom, texte: r.texte || '' });
+      if (max > 0) res.push({ id: `${id}-${j}`, nom: r.nom, max, unite: 'fois', action: r.action || R.CLASSES[id].nom, texte: r.texte || '', duree: dureeCapacite(r.duree, e, k) });
     });
   }
   const moine = c.moine || 0;
@@ -1383,6 +1405,7 @@ function ficheCombat(p, e) {
 
     </div>
 
+    ${blocEffets(p)}
     <h4>Attaquer</h4>
     <div class="armes">
       ${mn ? `<div class="arme">
@@ -1450,6 +1473,17 @@ function explications(p, e) {
   };
 }
 
+function blocDomaines(e, sp) {
+  if (!(e.domaines || []).length) return '<p class="hint">Domaines : à choisir dans la Progression, au niveau 1 de prêtre.</p>';
+  const nivMax = sp ? Math.max(...sp.parJour.map(x => x.niv)) : 0;
+  return `<div class="domaines-fiche">${e.domaines.map(id => { const d = R.DOMAINES[id]; return `<div class="domaine-carte">
+    <div class="cap-tete"><b>Domaine : ${esc(d.nom)}</b></div>
+    <p>${esc(d.pouvoir)}</p>
+    <ol class="sorts-domaine">${d.sorts.map((x, n) => `<li class="${n + 1 <= nivMax ? 'accessible' : ''}">${sortDomaineHTML(x)}</li>`).join('')}</ol>
+  </div>`; }).join('')}
+  <p class="hint">Chaque jour, un sort de domaine en plus par niveau de sort accessible (en clair ci-dessus), choisi dans l'un des deux domaines.</p></div>`;
+}
+
 function ficheCapacitesLisible(p, e, valsClasses) {
   const race = e.race;
   const ex = explications(p, e);
@@ -1476,6 +1510,7 @@ function ficheCapacitesLisible(p, e, valsClasses) {
     return `<div class="cap-groupe"><h4>${esc(cl.nom)} ${k}</h4>
       <div class="cap-cartes">${cartes}</div>
       ${autres.length ? `<dl class="valeurs">${autres.map(([n, v]) => `<dt>${esc(n)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+      ${id === 'pretre' ? blocDomaines(e, sp) : ''}
       ${sp ? tableSorts(sp) : ''}
       <p class="hint">Maîtrises : ${esc(cl.maitrises)}</p>
     </div>`;
@@ -2063,7 +2098,9 @@ function pageCombatMJ() {
       const i = c.combattants.indexOf(x);
       return `<li class="${x === courant ? 'actif' : ''} ${x.type === 'pnj' && x.camp !== 'allie' ? 'ennemi' : ''} ${x.mort ? 'mort' : ''}">
         <span class="mj-init-val">${esc(x.init || '—')}</span>
-        <span><b>${esc(x.nom)}</b>${x.ca ? ` <small>CA ${esc(x.ca)}</small>` : ''}${x.mort ? ' <small>mort</small>' : ''}</span>
+        <span><b>${esc(x.nom)}</b>${x.ca ? ` <small>CA ${esc(x.ca)}</small>` : ''}${x.mort ? ' <small>mort</small>' : ''}
+          ${effetsDuCombattant(x, c).map(f => `<span class="effet-mj ${f.type}" title="par ${esc(f.de)}">${esc(f.nom)} <b>${f.reste}</b></span>`).join('')}
+          ${!x.mort ? `<button class="lien effet-mj-ajout" data-action="mj-cb-effet" data-i="${i}" title="Ajouter un effet qui dure">+ effet</button>` : ''}</span>
         <span class="mj-pv">${x.pvMax ? `<button class="icon" data-action="mj-cb-pv" data-i="${i}" data-d="-1" aria-label="−1 PV">−</button>${x.pv}/${x.pvMax}<button class="icon" data-action="mj-cb-pv" data-i="${i}" data-d="1" aria-label="+1 PV">+</button>` : ''}
           ${x.type === 'pnj' && !x.mort ? `<button class="icon" data-action="mj-cb-mort" data-i="${i}" title="Mort : son butin passe dans les objets en attente">☠</button>` : ''}</span>
       </li>`;
@@ -2275,6 +2312,140 @@ function pageSessionMJ(s) {
     <div class="ajout-etapes">${Object.entries(TYPES_ETAPE).map(([t, [l, ico, d]]) => `<button class="ajout-etape" data-action="mj-etape-ajout" data-s="${s.id}" data-type="${t}"><span>${ico}</span><b>${l}</b><small>${d}</small></button>`).join('')}</div>
     <div class="btns" style="margin-top:1rem"><button class="btn danger" data-action="mj-session-suppr" data-id="${s.id}">Supprimer la session</button></div>
   </section>` : ''}`;
+}
+
+/* ===== Effets à durée (buffs, debuffs) suivis au fil des rounds du combat du MJ =====
+   Un effet est rangé sur la fiche de celui qui le lance :
+   { id, nom, cible, type: 'buff' | 'debuff', rounds, debut, combat, reste, texte }
+   En combat, le temps restant se calcule avec le round publié par le MJ ;
+   hors combat, il se décompte à la main. */
+const combatPublic = () => (db.combatPublic && db.combatPublic.id ? db.combatPublic : null);
+function resteEffet(ef) {
+  const cp = combatPublic();
+  if (ef.combat && cp && cp.id === ef.combat) return num(ef.debut) + num(ef.rounds) - num(cp.round);
+  if (ef.combat && (!cp || cp.id !== ef.combat)) return null; // combat terminé
+  return num(ef.reste ?? ef.rounds);
+}
+/* Tous les effets qui concernent un personnage : les siens et ceux que d'autres ont lancés sur lui */
+function effetsSur(p) {
+  const res = [];
+  for (const x of db.personnages) {
+    for (const ef of x.effets || []) {
+      const surMoi = ef.cible === 'soi' ? x.id === p.id : norm(ef.cible) === norm(p.nom);
+      if (surMoi || x.id === p.id) res.push({ ef, lanceur: x, surMoi });
+    }
+  }
+  return res;
+}
+
+/* Durée d'un sort en rounds, d'après sa description de durée et le niveau de lanceur */
+function dureeSort(s, e) {
+  const t = norm(s?.duree || '');
+  const cl = Math.max(1, e.lanceur || 1);
+  const m = t.match(/(\d+)\s*(rounds?|min|minutes?|heures?|h\b)/);
+  if (!m) return '';
+  const n = Number(m[1]);
+  const unite = /^round/.test(m[2]) ? 1 : /^min/.test(m[2]) ? 10 : 600;
+  const parNiveau = /niveau/.test(t.slice(m.index, m.index + 40));
+  return String(n * unite * (parNiveau ? cl : 1));
+}
+/* Durée d'une capacité saisie : nombre, ou formule avec niv, sag, con, cha, int… (ex. « sag », « 10 », « niv+3 ») */
+function dureeCapacite(txt, e, k) {
+  if (!txt) return '';
+  const f = String(txt).toLowerCase().replace(/niv(eau)?/g, String(k || e.niveau)).replace(/\b(for|dex|con|int|sag|cha)\b/g, c => String(e.mods[c] || 0));
+  return /^[\d+\-*\s()]+$/.test(f) ? String(Math.max(0, Function('return (' + f + ')')())) : '';
+}
+
+function ouvrirFormEffet(p, base) {
+  state.effetForm = { persoId: p.id, nom: base.nom || '', rounds: base.rounds || '', cible: 'soi', type: 'buff', texte: base.texte || '' };
+  render();
+}
+function formEffet() {
+  const f = state.effetForm;
+  const p = findPerso(f.persoId);
+  if (!p) return '';
+  const cp = combatPublic();
+  const allies = db.personnages.filter(x => x.id !== p.id && estMembre(x) && (!enLigne() || x.publie)).map(x => x.nom);
+  const ennemis = (cp?.noms || []).filter(n => !db.personnages.some(x => norm(x.nom) === norm(n)));
+  return `<div class="tiroir-fond" data-action="effet-annuler"></div>
+  <div class="modal-effet" role="dialog" aria-label="Effet qui dure">
+    <h3>Un effet qui dure ?</h3>
+    <p class="hint">${cp ? `Combat en cours : <b>${esc(cp.nom)}</b>, round ${esc(cp.round)}. Le décompte suivra les tours du MJ.` : 'Pas de combat en cours : le décompte se fera à la main.'}</p>
+    <label class="f"><span>Effet</span><input type="text" id="ef-nom" value="${esc(f.nom)}"></label>
+    <div class="grid">
+      <label class="f"><span>Sur qui ?</span><select id="ef-cible">
+        <option value="soi">Moi-même (${esc(p.nom)})</option>
+        ${allies.length ? `<optgroup label="Alliés">${allies.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}</optgroup>` : ''}
+        ${ennemis.length ? `<optgroup label="Adversaires">${ennemis.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}</optgroup>` : ''}
+      </select></label>
+      <label class="f"><span>Durée (rounds)</span><input type="text" inputmode="numeric" id="ef-rounds" value="${esc(f.rounds)}" placeholder="10"></label>
+    </div>
+    <p class="hint">1 minute = 10 rounds. Un effet sur un adversaire est compté comme un affaiblissement.</p>
+    <label class="f"><span>Rappel de l'effet (facultatif)</span><input type="text" id="ef-texte" value="${esc(f.texte)}" placeholder="Ex. : +7 dégâts à mains nues"></label>
+    <div class="btns"><button class="btn" data-action="effet-creer">Démarrer l'effet</button><button class="btn ghost" data-action="effet-annuler">Pas d'effet durable</button></div>
+  </div>`;
+}
+function creerEffet() {
+  const f = state.effetForm;
+  const p = findPerso(f.persoId);
+  const rounds = Math.max(1, Math.round(num($('#ef-rounds').value)) || 1);
+  const cible = $('#ef-cible').value;
+  const cp = combatPublic();
+  const ennemi = cible !== 'soi' && !db.personnages.some(x => norm(x.nom) === norm(cible));
+  const ef = { id: uid(), nom: $('#ef-nom').value.trim() || 'Effet', cible, type: ennemi ? 'debuff' : 'buff', rounds, texte: $('#ef-texte').value.trim(), debut: cp ? num(cp.round) : 0, combat: cp ? cp.id : '', reste: rounds };
+  p.effets = [...(p.effets || []).filter(x => resteEffet(x) == null || resteEffet(x) > 0), ef];
+  state.effetForm = null;
+  p.maj = Date.now(); saveNow(); persoModifie(p); render();
+  toast(`${ef.nom} : ${rounds} round${rounds > 1 ? 's' : ''}`);
+}
+
+function blocEffets(p) {
+  const l = effetsSur(p);
+  const cpMJ = combatPublic();
+  for (const ef of cpMJ?.effets || []) if (norm(ef.cible) === norm(p.nom)) l.push({ ef: { ...ef, id: 'mj', combat: cpMJ.id, cible: p.nom }, lanceur: { id: 'mj', nom: 'le MJ' }, surMoi: true });
+  const cp = combatPublic();
+  const mod = peutModifier(p);
+  const ligne = ({ ef, lanceur, surMoi }) => {
+    const r = resteEffet(ef);
+    const fini = r != null && r <= 0;
+    const cibleTxt = ef.cible === 'soi' ? (lanceur.id === p.id ? 'sur toi' : `sur ${lanceur.nom}`) : `sur ${ef.cible}`;
+    const deQui = lanceur.id === p.id ? '' : ` · lancé par ${lanceur.nom}`;
+    return `<div class="effet-actif ${ef.type} ${fini ? 'fini' : ''}">
+      <div><b>${esc(ef.nom)}</b> <small>${esc(cibleTxt + deQui)}</small>${ef.texte ? `<br><small>${esc(ef.texte)}</small>` : ''}</div>
+      <span class="effet-reste">${r == null ? 'combat terminé' : fini ? 'terminé' : `${r} round${r > 1 ? 's' : ''}`}</span>
+      ${mod && lanceur.id === p.id ? `${!ef.combat && r > 0 ? `<button class="icon" data-action="effet-tick" data-id="${ef.id}" title="Un round s'est écoulé">−1</button>` : ''}<button class="icon" data-action="effet-suppr" data-id="${ef.id}" aria-label="Retirer l'effet">✕</button>` : ''}
+    </div>`;
+  };
+  return `<div class="effets-bloc">
+    ${cp ? `<p class="combat-public">⚔ <b>${esc(cp.nom)}</b> · round ${esc(cp.round)}${cp.tour ? ` · au tour de <b>${esc(cp.tour)}</b>` : ''}</p>` : ''}
+    <div class="effets-tete"><h4>Effets actifs</h4>${mod ? '<button class="lien" data-action="effet-nouveau">+ Effet</button>' : ''}</div>
+    ${l.length ? l.map(ligne).join('') : '<p class="empty">Aucun effet en cours.</p>'}
+  </div>`;
+}
+
+/* ----- Côté MJ : état public du combat et effets visibles dans l'ordre de jeu ----- */
+function publierCombat() {
+  const c = mjd().combat;
+  const actifs = c ? c.combattants.filter(x => x.actif) : [];
+  const etat = c && c.phase === 'combat' ? {
+    id: c.id, nom: c.nom, round: c.round,
+    tour: (actifs.length ? actifs[c.tour % actifs.length] : null)?.nom || '',
+    noms: actifs.filter(x => !x.mort).map(x => x.nom),
+    effets: actifs.filter(x => x.persoId).flatMap(x => (x.effets || []).map(ef => ({ cible: x.nom, nom: ef.nom, debut: ef.debut, rounds: ef.rounds, type: ef.type }))),
+  } : {};
+  db.combatPublic = etat;
+  saveNow();
+  if (enLigne() && estMJ()) rpc('mj_combat_public', { p_code: db.codeMJ, p_etat: etat }).catch(e => statutSync('Combat non publié (base en v10 ?) : ' + e.message, true));
+}
+function effetsDuCombattant(x, c) {
+  const res = [];
+  for (const p of db.personnages) for (const ef of p.effets || []) {
+    if (ef.combat !== c.id) continue;
+    const cible = ef.cible === 'soi' ? p.nom : ef.cible;
+    if (norm(cible) === norm(x.nom)) res.push({ nom: ef.nom, reste: num(ef.debut) + num(ef.rounds) - num(c.round), type: ef.type, de: p.nom });
+  }
+  for (const ef of x.effets || []) res.push({ nom: ef.nom, reste: num(ef.debut) + num(ef.rounds) - num(c.round), type: ef.type || 'debuff', de: 'MJ' });
+  return res.filter(r => r.reste > 0);
 }
 
 /* ----- Ce que porte chaque personnage (tiroir et tableau du MJ) ----- */
@@ -2727,16 +2898,17 @@ function carteClassesPrestige(p) {
         <label class="f"><span>Bonus de CA propre (niveau:bonus)</span><input type="text" data-classebind="${b('caPaliers')}" value="${esc(d.caPaliers)}" placeholder="1:1, 5:2, 10:3"></label>
         <label class="f"><span>Bonus de vitesse en m (niveau:bonus)</span><input type="text" data-classebind="${b('vitPaliers')}" value="${esc(d.vitPaliers)}" placeholder="3:3"></label>
       </div>
-      <p class="hint">Format « niveau:valeur », séparés par des virgules : « 1:1, 5:2, 10:3 » veut dire +1 dès le niveau 1, +2 dès le 5, +3 au 10. Ces bonus s'ajoutent à la CA et à la vitesse de la fiche.</p>
+      <p class="hint">Format « niveau:valeur », séparés par des virgules : « 1:1, 5:2, 10:3 » veut dire +1 dès le niveau 1, +2 dès le 5, +3 au 10. Le bonus de CA s'ajoute à la CA. Le bonus de vitesse ne s'ajoute pas au déplacement accéléré du moine : la fiche garde le meilleur des deux.</p>
       <h4 class="titre-saisie">Capacités à utilisations par jour <small>(compteurs dans « En combat »)</small></h4>
       ${(d.ressources || []).map((r, j) => `<div class="bloc-saisie">
         <div class="bloc-saisie-tete"><b>${esc(r.nom || `Capacité ${j + 1}`)}</b><button class="icon" data-action="pp-res-suppr" data-i="${i}" data-j="${j}" aria-label="Supprimer cette capacité">✕</button></div>
         <div class="grid">
           <label class="f span2"><span>Nom</span><input type="text" data-classebind="${b('ressources')}.${j}.nom" value="${esc(r.nom)}" placeholder="Ex. : Flamme sacrée"></label>
           <label class="f"><span>Utilisations par jour</span><input type="text" data-classebind="${b('ressources')}.${j}.paliers" value="${esc(r.paliers)}" placeholder="4:1, 8:2"></label>
-          <label class="f"><span>Type d'action</span><input type="text" data-classebind="${b('ressources')}.${j}.action" value="${esc(r.action)}" placeholder="Action libre"></label>
+          <label class="f"><span>Type d'action</span><input type="text" data-classebind="${b('ressources')}.${j}.action" value="${esc(r.action)}" placeholder="Action simple"></label>
+          <label class="f"><span>Durée en rounds</span><input type="text" data-classebind="${b('ressources')}.${j}.duree" value="${esc(r.duree)}" placeholder="10, sag, niv…"></label>
         </div>
-        <p class="hint">Utilisations : « 4:1, 8:2 » = 1 fois par jour dès le niveau 4 de la classe, 2 fois dès le niveau 8.</p>
+        <p class="hint">Utilisations : « 4:1, 8:2 » = 1 fois par jour dès le niveau 4 de la classe, 2 fois dès le niveau 8. Durée : un nombre de rounds (1 minute = 10), ou une formule avec « sag », « con », « niv »… (ex. « sag » pour un nombre de rounds égal au mod Sagesse).</p>
         <label class="f"><span>Effet</span><textarea rows="3" data-classebind="${b('ressources')}.${j}.texte" placeholder="Ce qu'elle fait, tel que décrit dans le livre">${esc(r.texte)}</textarea></label>
       </div>`).join('')}
       <div class="btns"><button class="lien" data-action="pp-res-ajout" data-i="${i}">+ Capacité par jour</button></div>
@@ -2865,6 +3037,19 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
       <option value="">— Choisir —</option>${R.CARACS.map(x => `<option value="${x.k}" ${l.augment === x.k ? 'selected' : ''}>${x.n}</option>`).join('')}</select></label>
       <p class="hint">Quand tu coches « Atteint », ce +1 s'ajoute tout seul à la caractéristique sur la fiche (et se retire si tu décoches).</p>`);
   }
+  if (l.classe === 'pretre' && k === 1) {
+    const optsDom = autre => Object.values(R.DOMAINES).map(d => `<option value="${d.id}" ${d.id === autre ? 'disabled' : ''}>${esc(d.nom)}</option>`).join('');
+    const carte = id => { const d = R.DOMAINES[id]; return d ? `<div class="domaine-carte"><b>${esc(d.nom)}</b><p>${esc(d.pouvoir)}</p><p class="hint">Sorts : ${d.sorts.map((x, n) => `${n + 1}. ${sortDomaineHTML(x)}`).join(' · ')}</p></div>` : ''; };
+    choix.push(`<div class="choix-domaines">
+      <p class="lbl">Domaines du prêtre (2, parmi ceux de ta divinité)</p>
+      <div class="grid">
+        <label class="f"><span>Domaine 1</span><select data-bind="progression.${i}.domaine1" data-rerender><option value="">— Choisir —</option>${optsDom(l.domaine2).replace(`value="${l.domaine1}"`, `value="${l.domaine1}" selected`)}</select></label>
+        <label class="f"><span>Domaine 2</span><select data-bind="progression.${i}.domaine2" data-rerender><option value="">— Choisir —</option>${optsDom(l.domaine1).replace(`value="${l.domaine2}"`, `value="${l.domaine2}" selected`)}</select></label>
+      </div>
+      ${carte(l.domaine1)}${carte(l.domaine2)}
+      <p class="hint">Chaque domaine donne un pouvoir et une liste de sorts : chaque jour, tu prépares en plus un sort de domaine par niveau de sort, choisi dans l'un de tes deux domaines.</p>
+    </div>`);
+  }
   choix.push('<p class="hint">Points de vie : c\'est le MJ qui les fixe. Mets simplement à jour « Points de vie max » sur la fiche.</p>');
 
   /* Nouvelles aptitudes et valeurs qui évoluent */
@@ -2943,8 +3128,12 @@ function blocSortsNiveau(p, l, i, cl, k, avant, apres) {
         <div class="prog-sort-res" data-pour="${i}-${bl.cle}"></div>` : ''}
     </div>`;
   }).join('');
+  const nivAvant = spA ? Math.max(...spA.parJour.map(x => x.niv)) : 0;
+  const doms = cid === 'pretre' ? (apres.domaines || []) : [];
+  const nouveauxDom = doms.length && nivMax > nivAvant && nivMax >= 1
+    ? `<p class="domaine-nouveau">Nouveau sort de domaine de niveau ${nivMax} : ${doms.map(d => `${sortDomaineHTML(R.DOMAINES[d].sorts[nivMax - 1])} <small>(${esc(R.DOMAINES[d].nom)})</small>`).join(' ou ')}</p>` : '';
   const note = !blocs.length
-    ? (lc.type.startsWith('divin') ? `<p class="hint">${esc(R.CLASSES[cid].nom)} : tu prépares chaque jour tes sorts parmi <b>toute la liste</b> de ta classe, jusqu'au niveau ${nivMax}. Rien à choisir ici, seulement de nouveaux emplacements.</p>` : '')
+    ? (lc.type.startsWith('divin') ? `<p class="hint">${esc(R.CLASSES[cid].nom)} : tu prépares chaque jour tes sorts parmi <b>toute la liste</b> de ta classe, jusqu'au niveau ${nivMax}. Rien à choisir ici, seulement de nouveaux emplacements.</p>${nouveauxDom}` : '')
     : '<p class="hint">Les sorts choisis sont ajoutés à l\'onglet Sorts. Retirer un sort ici le retire aussi de l\'onglet Sorts.</p>';
   return {
     tableau: !cl.lanceur && JSON.stringify(spA?.parJour) !== JSON.stringify(spB.parJour) ? `<h4>Sorts de ${esc(R.CLASSES[cid].nom.toLowerCase())} : +1 niveau de lanceur</h4>${tableSorts(spB)}` : '',
@@ -3106,11 +3295,8 @@ async function chargerInfos() {
   if (!enLigne()) return;
   try {
     let l;
-    try { l = await api('campagne_info?select=conteur_id,conteur_nom,session,jour,bourse,porteur_id,bourse_journal'); }
-    catch (e) {
-      try { l = await api('campagne_info?select=conteur_id,conteur_nom,session,jour'); }
-      catch (e2) { l = await api('campagne_info?select=conteur_id,conteur_nom,session'); }
-    }
+    l = await api('campagne_info?select=*');
+    if (l && l[0]) db.combatPublic = l[0].combat || {};
     if (l && l[0] && l[0].bourse) db.bourseCommune = { bourse: l[0].bourse, porteur_id: l[0].porteur_id || '', journal: l[0].bourse_journal || [] };
     db.conteur = (l && l[0]) || null;
     if (l && l[0] && l[0].jour) db.jour = l[0].jour;
@@ -4385,7 +4571,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -4802,10 +4988,13 @@ document.addEventListener('click', ev => {
       (p.sorts || []).forEach(x => { x.utilises = 0; });
       save(); render(); toast('☾ Bonne nuit : tout est récupéré');
       break;
-    case 'cpt-use':
+    case 'cpt-use': {
       p.compteurs = { ...(p.compteurs || {}), [b.dataset.id]: num((p.compteurs || {})[b.dataset.id]) + 1 };
-      save(); render();
+      save();
+      const r = ressources(p, etat(p)).find(x => x.id === b.dataset.id);
+      ouvrirFormEffet(p, { nom: r?.nom, rounds: r?.duree || '', texte: '' });
       break;
+    }
     case 'cpt-annuler':
       p.compteurs = { ...(p.compteurs || {}), [b.dataset.id]: Math.max(0, num((p.compteurs || {})[b.dataset.id]) - 1) };
       save(); render();
@@ -4819,8 +5008,29 @@ document.addEventListener('click', ev => {
       save(); render();
       break;
     }
-    case 'sort-use':
-      p.sorts[idx].utilises = num(p.sorts[idx].utilises) + 1; save(); render();
+    case 'sort-use': {
+      p.sorts[idx].utilises = num(p.sorts[idx].utilises) + 1; save();
+      const sp = findSort(p.sorts[idx].id);
+      if (sp && !/instantan/i.test(sp.duree || '')) ouvrirFormEffet(p, { nom: sp.nom, rounds: dureeSort(sp, etat(p)) });
+      else render();
+      break;
+    }
+    case 'effet-nouveau':
+      ouvrirFormEffet(p, {});
+      break;
+    case 'effet-creer':
+      creerEffet();
+      break;
+    case 'effet-annuler':
+      state.effetForm = null; render();
+      break;
+    case 'effet-tick': {
+      const ef = (p.effets || []).find(x => x.id === b.dataset.id);
+      if (ef) { ef.reste = Math.max(0, num(ef.reste ?? ef.rounds) - 1); save(); render(); }
+      break;
+    }
+    case 'effet-suppr':
+      p.effets = (p.effets || []).filter(x => x.id !== b.dataset.id); save(); render();
       break;
     case 'sort-annuler':
       p.sorts[idx].utilises = Math.max(0, num(p.sorts[idx].utilises) - 1); save(); render();
@@ -4865,9 +5075,13 @@ document.addEventListener('click', ev => {
       const actifs = c.combattants.filter(x => x.actif);
       if (!actifs.length) break;
       let n = 0;
+      const avant = actifs.flatMap(x => effetsDuCombattant(x, c).map(f => `${f.nom} (${x.nom})`));
       do { c.tour++; n++; } while (actifs[c.tour % actifs.length].mort && n <= actifs.length);
       c.round = Math.floor(c.tour / actifs.length) + 1;
-      saveMJ('combat'); render();
+      const apres = new Set(actifs.flatMap(x => effetsDuCombattant(x, c).map(f => `${f.nom} (${x.nom})`)));
+      const finis = avant.filter(x => !apres.has(x));
+      if (finis.length) toast(`Fin : ${finis.join(', ')}`);
+      saveMJ('combat'); publierCombat(); render();
       break;
     }
     case 'mj-pv': {
@@ -5012,7 +5226,7 @@ document.addEventListener('click', ev => {
       break;
     case 'mj-combat-activer': {
       if (mjd().combat && !confirm('Un combat est déjà en cours. Le remplacer ?')) break;
-      lancerCombat(mjd().combats[Number(b.dataset.i)]);
+      lancerCombat(mjd().combats[Number(b.dataset.i)]); publierCombat();
       state.mjOnglet = 'combat'; render(); window.scrollTo(0, 0);
       break;
     }
@@ -5025,11 +5239,11 @@ document.addEventListener('click', ev => {
       const manquants = c.combattants.filter(x => x.actif && x.init === '');
       if (manquants.length && !confirm(`Pas d'initiative pour : ${manquants.map(x => x.nom).join(', ')}. Commencer quand même ?`)) break;
       c.combattants.sort((a2, b2) => num(b2.init) - num(a2.init) || num(b2.bonusInit) - num(a2.bonusInit));
-      c.phase = 'combat'; c.tour = 0; c.round = 1; saveMJ('combat'); render();
+      c.phase = 'combat'; c.tour = 0; c.round = 1; saveMJ('combat'); publierCombat(); render();
       break;
     }
     case 'mj-combat-fin':
-      if (confirm('Terminer le combat ?')) { mjd().combat = null; saveMJ('combat'); render(); }
+      if (confirm('Terminer le combat ?')) { mjd().combat = null; saveMJ('combat'); publierCombat(); render(); }
       break;
     case 'mj-cb-pv': {
       const c = mjd().combat, x = c.combattants[Number(b.dataset.i)];
@@ -5049,7 +5263,7 @@ document.addEventListener('click', ev => {
     }
     case 'mj-cb-mort': {
       const x = mjd().combat.combattants[Number(b.dataset.i)];
-      if (confirm(`${x.nom} est mort ? Son butin passera dans les objets en attente.`)) { tuerPNJ(x); saveMJ('combat'); render(); }
+      if (confirm(`${x.nom} est mort ? Son butin passera dans les objets en attente.`)) { tuerPNJ(x); saveMJ('combat'); publierCombat(); render(); }
       break;
     }
     case 'mj-obj-ajout': {
@@ -5256,7 +5470,7 @@ document.addEventListener('click', ev => {
       const c = mjd().combats.find(x => x.id === b.dataset.id);
       if (!c) break;
       if (mjd().combat && !confirm('Un combat est déjà en cours. Le remplacer ?')) break;
-      lancerCombat(c); state.mjOnglet = 'combat'; render(); window.scrollTo(0, 0);
+      lancerCombat(c); publierCombat(); state.mjOnglet = 'combat'; render(); window.scrollTo(0, 0);
       break;
     }
     case 'inv-cat':
@@ -5343,6 +5557,17 @@ document.addEventListener('click', ev => {
       const l = new Set(p.ecolesInterdites || []);
       if (l.has(b.dataset.e)) l.delete(b.dataset.e); else l.add(b.dataset.e);
       p.ecolesInterdites = [...l]; save(); render();
+      break;
+    }
+    case 'mj-cb-effet': {
+      const c = mjd().combat, x = c.combattants[Number(b.dataset.i)];
+      const nom = prompt(`Effet sur ${x.nom} (ex. Lenteur, Bénédiction) :`, '');
+      if (!nom) break;
+      const r = Math.round(num(prompt('Durée en rounds :', '3')));
+      if (!r) break;
+      const nefaste = confirm(`« ${nom} » est-il un effet néfaste pour ${x.nom} (affaiblissement) ?\nOK = néfaste, Annuler = bénéfique`);
+      x.effets = [...(x.effets || []), { id: uid(), nom, rounds: r, debut: c.round, type: nefaste ? 'debuff' : 'buff' }];
+      saveMJ('combat'); publierCombat(); render();
       break;
     }
     case 'replis-tout': {
@@ -5555,7 +5780,7 @@ setInterval(() => {
   if (document.visibilityState !== 'visible') return;
   tic++;
   const page = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'persos';
-  if (page === 'mj' || (page === 'perso' && tic % 2 === 0) || tic % 4 === 0) actualiser();
+  if (page === 'mj' || (page === 'perso' && (combatPublic() || tic % 2 === 0)) || tic % 4 === 0) actualiser();
 }, 15000);
 
 /* ---------- Démarrage ---------- */

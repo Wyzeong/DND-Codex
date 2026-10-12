@@ -1209,3 +1209,30 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .bloc-saisie-tete small { color: var(--muted); font-family: var(--font); font-weight: 400; }
 .bloc-saisie .grid { margin-bottom: .3rem; }
 .bloc-saisie .hint { margin: 0 0 .4rem; }
+
+/* ---------- Effets à durée ---------- */
+.modal-effet { position: fixed; z-index: 61; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, 92vw); max-height: 90vh; overflow-y: auto;
+  background: var(--nuit-profonde); border: 1px solid var(--bronze); border-radius: var(--radius-m); padding: 1rem; box-shadow: 0 20px 50px rgba(0, 0, 0, .5); }
+.modal-effet h3 { margin: 0 0 .4rem; color: var(--bronze-clair); }
+.effets-bloc { border: 1px solid var(--line); border-radius: var(--radius-s); padding: .5rem .65rem; margin: .4rem 0 .6rem; background: var(--inset); }
+.effets-tete { display: flex; justify-content: space-between; align-items: baseline; }
+.effets-tete h4 { margin: .1rem 0 .3rem; }
+.combat-public { margin: 0 0 .4rem; padding: .35rem .5rem; border-radius: var(--radius-s); background: rgba(139, 74, 61, .2); border: 1px solid var(--rouge); font-size: .9rem; }
+.effet-actif { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: .4rem; padding: .35rem .5rem; margin-bottom: .3rem; border-radius: var(--radius-s); border: 1px solid var(--line); border-left: 3px solid var(--emeraude); background: var(--surface); }
+.effet-actif.debuff { border-left-color: var(--rouge-clair); }
+.effet-actif.fini { opacity: .5; }
+.effet-actif small { color: var(--muted); }
+.effet-reste { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--bronze-clair); white-space: nowrap; }
+.effet-mj { display: inline-block; font-size: .7rem; border: 1px solid var(--emeraude); color: #8FD3C0; border-radius: 99px; padding: 0 .4rem; margin: .15rem .2rem 0 0; }
+.effet-mj.debuff { border-color: var(--rouge-clair); color: #F0B4A6; }
+.effet-mj b { margin-left: .2rem; }
+.effet-mj-ajout { font-size: .72rem; margin-left: .2rem; }
+/* Domaines du prêtre */
+.choix-domaines { border: 1px solid var(--line-bronze); border-radius: var(--radius-s); padding: .5rem .7rem; margin: .4rem 0 .7rem; background: rgba(183, 147, 90, .05); }
+.domaines-fiche { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .5rem; margin: .4rem 0 .6rem; }
+.domaines-fiche > .hint { grid-column: 1 / -1; margin: 0; }
+.domaine-carte { background: var(--inset); border: 1px solid var(--line); border-left: 3px solid var(--bronze); border-radius: var(--radius-s); padding: .5rem .7rem; margin-bottom: .4rem; }
+.domaine-carte p { margin: .25rem 0; font-size: .92rem; }
+.sorts-domaine { margin: .3rem 0 0; padding-left: 1.4rem; font-size: .88rem; color: var(--muted); }
+.sorts-domaine li.accessible, .sorts-domaine li.accessible a { color: var(--ivoire); font-weight: 600; }
+.domaine-nouveau { margin: .4rem 0 0; padding: .35rem .55rem; border-left: 3px solid var(--bronze); background: var(--inset); border-radius: 0 var(--radius-s) var(--radius-s) 0; font-size: .9rem; }
