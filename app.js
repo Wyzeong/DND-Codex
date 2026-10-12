@@ -2728,23 +2728,28 @@ function carteClassesPrestige(p) {
         <label class="f"><span>Bonus de vitesse en m (niveau:bonus)</span><input type="text" data-classebind="${b('vitPaliers')}" value="${esc(d.vitPaliers)}" placeholder="3:3"></label>
       </div>
       <p class="hint">Format « niveau:valeur », séparés par des virgules : « 1:1, 5:2, 10:3 » veut dire +1 dès le niveau 1, +2 dès le 5, +3 au 10. Ces bonus s'ajoutent à la CA et à la vitesse de la fiche.</p>
-      <p class="lbl">Capacités à utilisations par jour (compteurs dans « En combat »)</p>
-      ${(d.ressources || []).map((r, j) => `<div class="row butin-ligne">
-        <input type="text" data-classebind="${b('ressources')}.${j}.nom" value="${esc(r.nom)}" placeholder="Nom (ex. Flamme sacrée)">
-        <input type="text" class="s" data-classebind="${b('ressources')}.${j}.paliers" value="${esc(r.paliers)}" placeholder="4:1, 8:2" aria-label="Utilisations par jour selon le niveau">
-        <button class="icon" data-action="pp-res-suppr" data-i="${i}" data-j="${j}" aria-label="Retirer">✕</button>
-        <input type="text" class="ligne-entiere" data-classebind="${b('ressources')}.${j}.action" value="${esc(r.action)}" placeholder="Type d'action (ex. action libre)">
-        <input type="text" class="ligne-entiere" data-classebind="${b('ressources')}.${j}.texte" value="${esc(r.texte)}" placeholder="Ce qu'elle fait">
+      <h4 class="titre-saisie">Capacités à utilisations par jour <small>(compteurs dans « En combat »)</small></h4>
+      ${(d.ressources || []).map((r, j) => `<div class="bloc-saisie">
+        <div class="bloc-saisie-tete"><b>${esc(r.nom || `Capacité ${j + 1}`)}</b><button class="icon" data-action="pp-res-suppr" data-i="${i}" data-j="${j}" aria-label="Supprimer cette capacité">✕</button></div>
+        <div class="grid">
+          <label class="f span2"><span>Nom</span><input type="text" data-classebind="${b('ressources')}.${j}.nom" value="${esc(r.nom)}" placeholder="Ex. : Flamme sacrée"></label>
+          <label class="f"><span>Utilisations par jour</span><input type="text" data-classebind="${b('ressources')}.${j}.paliers" value="${esc(r.paliers)}" placeholder="4:1, 8:2"></label>
+          <label class="f"><span>Type d'action</span><input type="text" data-classebind="${b('ressources')}.${j}.action" value="${esc(r.action)}" placeholder="Action libre"></label>
+        </div>
+        <p class="hint">Utilisations : « 4:1, 8:2 » = 1 fois par jour dès le niveau 4 de la classe, 2 fois dès le niveau 8.</p>
+        <label class="f"><span>Effet</span><textarea rows="3" data-classebind="${b('ressources')}.${j}.texte" placeholder="Ce qu'elle fait, tel que décrit dans le livre">${esc(r.texte)}</textarea></label>
       </div>`).join('')}
       <div class="btns"><button class="lien" data-action="pp-res-ajout" data-i="${i}">+ Capacité par jour</button></div>
       <label class="f"><span>Prérequis (un par ligne, à vérifier avec le MJ)</span><textarea data-classebind="${b('prerequis')}" rows="3" placeholder="Bonus de base à l'attaque +4&#10;Science du combat à mains nues">${esc(d.prerequis)}</textarea></label>
       <div class="f"><span class="lbl">Compétences de classe</span><div class="vis-grille">${R.COMPETENCES.map(c => `<label class="check"><input type="checkbox" data-action="pp-comp" data-i="${i}" data-c="${c.id}" ${(d.comp || []).includes(c.id) ? 'checked' : ''}> ${esc(c.nom)}</label>`).join('')}</div></div>
-      <p class="lbl">Aptitudes par niveau</p>
-      ${(d.aptitudes || []).map((a, j) => `<div class="row butin-ligne">
-        <input type="text" inputmode="numeric" class="s" data-classebind="${b('aptitudes')}.${j}.niv" value="${esc(a.niv)}" placeholder="Niv." aria-label="Niveau">
-        <input type="text" data-classebind="${b('aptitudes')}.${j}.nom" value="${esc(a.nom)}" placeholder="Nom de l'aptitude">
-        <button class="icon" data-action="pp-apt-suppr" data-i="${i}" data-j="${j}" aria-label="Retirer">✕</button>
-        <input type="text" class="ligne-entiere" data-classebind="${b('aptitudes')}.${j}.texte" value="${esc(a.texte)}" placeholder="Ce qu'elle fait">
+      <h4 class="titre-saisie">Aptitudes par niveau</h4>
+      ${(d.aptitudes || []).map((a, j) => `<div class="bloc-saisie">
+        <div class="bloc-saisie-tete"><b>${a.nom ? `${esc(a.nom)}${a.niv ? ` <small>niveau ${esc(a.niv)}</small>` : ''}` : `Aptitude ${j + 1}`}</b><button class="icon" data-action="pp-apt-suppr" data-i="${i}" data-j="${j}" aria-label="Supprimer cette aptitude">✕</button></div>
+        <div class="grid">
+          <label class="f"><span>Niveau</span><input type="text" inputmode="numeric" data-classebind="${b('aptitudes')}.${j}.niv" value="${esc(a.niv)}" placeholder="1"></label>
+          <label class="f span2"><span>Nom</span><input type="text" data-classebind="${b('aptitudes')}.${j}.nom" value="${esc(a.nom)}" placeholder="Ex. : Code de conduite"></label>
+        </div>
+        <label class="f"><span>Ce qu'elle fait</span><textarea rows="2" data-classebind="${b('aptitudes')}.${j}.texte" placeholder="Description">${esc(a.texte)}</textarea></label>
       </div>`).join('')}
       <div class="btns"><button class="lien" data-action="pp-apt-ajout" data-i="${i}">+ Aptitude</button></div>
       <div class="btns"><button class="btn" data-action="pp-fin">Terminé</button><button class="btn danger" data-action="pp-suppr" data-i="${i}">Supprimer</button></div>

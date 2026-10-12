@@ -1201,3 +1201,11 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .prog-sort-res:empty { display: none; }
 .chip.interdite { background: rgba(139, 74, 61, .3); border-color: var(--rouge); color: #FFD8CE; text-decoration: line-through; }
 .cumul-moine { border: 1px solid var(--line-bronze); border-radius: var(--radius-s); padding: .45rem .6rem; background: var(--inset); margin: .4rem 0 .6rem; }
+.titre-saisie { margin: 1rem 0 .4rem; color: var(--bronze-clair); font-size: .95rem; }
+.titre-saisie small { color: var(--muted); font-family: var(--font); font-weight: 400; font-size: .78rem; }
+.bloc-saisie { border: 1px solid var(--line-bronze); border-left: 3px solid var(--bronze); border-radius: var(--radius-s); padding: .5rem .7rem .2rem; margin-bottom: .6rem; background: var(--inset); }
+.bloc-saisie-tete { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .4rem; }
+.bloc-saisie-tete b { font-family: var(--font-titre); font-weight: 600; }
+.bloc-saisie-tete small { color: var(--muted); font-family: var(--font); font-weight: 400; }
+.bloc-saisie .grid { margin-bottom: .3rem; }
+.bloc-saisie .hint { margin: 0 0 .4rem; }
