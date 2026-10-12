@@ -2463,27 +2463,39 @@ function porteDe(x) {
     armure: eq.filter(it => it.cat === 'armure' && porte(it)),
     bouclier: eq.filter(it => it.cat === 'bouclier' && porte(it)),
     vetements: eq.filter(it => it.cat === 'vetement' && porte(it)),
-    magiques: eq.filter(it => (it.cat === 'magique' || it.cat === 'babiole') && porte(it)),
+    magiques: eq.filter(it => (it.cat === 'magique' || it.focalisateur) && porte(it)),
+    divers: eq.filter(it => ['', 'babiole', 'fourniture', 'tresor'].includes(it.cat || '') && !it.focalisateur).length,
     armes: eq.filter(it => it.cat === 'arme'),
     nom,
   };
 }
 function listeObjetsMJ(l, nom) {
-  return l.length ? l.map(it => `<span class="porte-objet ${it.focalisateur ? 'focal' : ''}" title="${esc([it.notes, ...(it.bonus || []).filter(b => b.cible && num(b.val)).map(b => `${R.signe(num(b.val))} ${NOM_CIBLE[b.cible] || b.cible}${b.cond ? ' (' + (b.quand || 'sous condition') + ')' : ''}`)].filter(Boolean).join(' · '))}">${esc(nom(it))}${it.focalisateur ? ' ✦' : ''}</span>`).join('') : '<span class="vide">—</span>';
+  if (!l.length) return '<span class="vide">—</span>';
+  return l.map(it => {
+    const bonus = (it.bonus || []).filter(b => b.cible && num(b.val));
+    const info = [it.notes, ...bonus.map(b => `${R.signe(num(b.val))} ${NOM_CIBLE[b.cible] || b.cible}${b.cond ? ' (' + (b.quand || 'sous condition') + ')' : ''}`)].filter(Boolean).join(' · ');
+    return `<span class="porte-objet ${it.focalisateur ? 'focal' : ''}" ${info ? `title="${esc(info)}"` : ''}>${esc(nom(it))}${it.focalisateur ? ' ✦' : ''}${bonus.length ? ' <small>•</small>' : ''}</span>`;
+  }).join('');
 }
+const nomArme = t => it => (R.ARME[it.armeType] && it.nom && norm(it.nom) !== norm(R.ARME[it.armeType].nom) ? R.ARME[it.armeType].nom + ' — ' : '') + t.nom(it);
 function tableauPorteMJ(persos) {
   if (!persos.length) return '';
+  const ligne = (ico, titre, html) => `<div class="porte-ligne"><span class="porte-ico" aria-hidden="true">${ico}</span><span class="porte-titre">${titre}</span><div class="porte-liste">${html}</div></div>`;
   return `<section class="card"><h3>Ce que porte le groupe</h3>
-    <div class="table-defile"><table class="table-porte">
-      <thead><tr><th>Personnage</th><th>Armure</th><th>Bouclier</th><th>Vêtements</th><th>Objets magiques</th><th>Armes</th><th>Baguette</th></tr></thead>
-      <tbody>${persos.map(x => { const t = porteDe(x); return `<tr>
-        <th><button class="lien" data-action="mj-tiroir" data-id="${x.id}">${esc(x.nom)}</button></th>
-        <td>${listeObjetsMJ(t.armure, t.nom)}</td><td>${listeObjetsMJ(t.bouclier, t.nom)}</td><td>${listeObjetsMJ(t.vetements, t.nom)}</td>
-        <td>${listeObjetsMJ(t.magiques, t.nom)}</td><td>${listeObjetsMJ(t.armes, it => (R.ARME[it.armeType] && it.nom && norm(it.nom) !== norm(R.ARME[it.armeType].nom) ? R.ARME[it.armeType].nom + ' : ' : '') + t.nom(it))}</td>
-        <td>${x.baguette?.nom ? esc(x.baguette.nom) : x.baguette?.photo ? 'sans nom' : '<span class="vide">—</span>'}</td>
-      </tr>`; }).join('')}</tbody>
-    </table></div>
-    <p class="hint">Survole ou touche un objet pour voir ses bonus. Touche un nom pour ouvrir le détail.</p>
+    <div class="porte-cartes">${persos.map(x => {
+      const t = porteDe(x), e = etat(x);
+      const bag = x.baguette?.nom || x.baguette?.photo ? `${esc(x.baguette.nom || 'sans nom')}${x.baguette.possedee === false ? ' <small>(perdue)</small>' : ''}` : '';
+      return `<article class="porte-carte">
+        <header><button class="lien porte-nom" data-action="mj-tiroir" data-id="${x.id}">${esc(x.nom)}</button><small>${esc([raceNom(x), classesTxt(e)].filter(Boolean).join(', '))}</small></header>
+        ${ligne('🛡️', 'Protection', [...t.armure, ...t.bouclier].length ? listeObjetsMJ([...t.armure, ...t.bouclier], t.nom) : '<span class="vide">aucune</span>')}
+        ${t.vetements.length ? ligne('👘', 'Vêtements', listeObjetsMJ(t.vetements, t.nom)) : ''}
+        ${t.magiques.length ? ligne('✨', 'Magie', listeObjetsMJ(t.magiques, t.nom)) : ''}
+        ${bag ? ligne('🪄', 'Baguette', `<span class="porte-objet focal">${bag}</span>`) : ''}
+        ${t.armes.length ? ligne('⚔️', 'Armes', listeObjetsMJ(t.armes, nomArme(t))) : ''}
+        ${t.divers ? `<p class="porte-divers">+ ${t.divers} objet${t.divers > 1 ? 's' : ''} divers dans le sac</p>` : ''}
+      </article>`;
+    }).join('')}</div>
+    <p class="hint">Un point • signale un objet avec des bonus : survole-le pour les voir. Touche un nom pour ouvrir le détail complet.</p>
   </section>`;
 }
 function tiroirMJ() {
@@ -2505,7 +2517,7 @@ function tiroirMJ() {
     ${ligne('Bouclier', listeObjetsMJ(t.bouclier, t.nom))}
     ${ligne('Vêtements', listeObjetsMJ(t.vetements, t.nom))}
     ${ligne('Objets magiques', listeObjetsMJ(t.magiques, t.nom))}
-    ${ligne('Armes', listeObjetsMJ(t.armes, it => (R.ARME[it.armeType] && it.nom && norm(it.nom) !== norm(R.ARME[it.armeType].nom) ? R.ARME[it.armeType].nom + ' : ' : '') + t.nom(it)))}
+    ${ligne('Armes', listeObjetsMJ(t.armes, nomArme(t)))}
     ${ligne('Baguette', x.baguette?.nom || x.baguette?.photo ? `${esc(x.baguette.nom || 'sans nom')}${sortA ? ` <small>(sort ancré : ${esc(sortA.nom)})</small>` : ''}` : '<span class="vide">—</span>')}
     ${ligne('Sauvegardes', `Vig ${R.signe(st.js.vig)} · Réf ${R.signe(st.js.ref)} · Vol ${R.signe(st.js.vol)} · Init ${R.signe(st.init)}`)}
     ${ligne('Protections', [ENERGIES.filter(([k]) => pr.res[k]).map(([k, l]) => `résist. ${l.replace(/^(à l'|au |à la )/, '')} ${pr.res[k]}`).join(', '), pr.rm ? `RM ${pr.rm}` : '', pr.rd.length ? `RD ${pr.rd.join(', ')}` : '', pr.imm.length ? `immunités : ${pr.imm.map(k => nomI[k]).join(', ')}` : ''].filter(Boolean).join(' · ') || '<span class="vide">—</span>')}
