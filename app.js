@@ -620,7 +620,7 @@ function ongletFicheBrut(p, e) {
       <div class="grid">
         ${fi(p, 'nom', 'Nom')}${fi(p, 'joueur', 'Joueur')}
         ${sel(p, 'race', 'Race', raceOpts)}
-        ${R.RACES[p.race]?.ajNiv ? `<p class="hint span2">${esc(R.RACES[p.race].nom)} : ${esc(R.RACES[p.race].ajust)} · ajustement de niveau +${R.RACES[p.race].ajNiv}.</p>` : ''}
+        ${R.RACES[p.race]?.ajNiv ? `<p class="hint ligne-entiere">${esc(R.RACES[p.race].nom)} : ${esc(R.RACES[p.race].ajust)} · ajustement de niveau +${R.RACES[p.race].ajNiv}.</p>` : ''}
         ${p.race === 'autre' ? fi(p, 'raceAutre', 'Nom de la race') : ''}
         ${sel(p, 'alignement', 'Alignement', R.ALIGNEMENTS)}
         ${sel(p, 'divinite', 'Divinité', [...R.DIVINITES, 'Autre'])}
@@ -1468,7 +1468,7 @@ function carteBaguette(p) {
   return `<section class="card baguette"><h3>Baguette</h3>
     <div class="baguette-titre">
       <p class="recit-num">Relique de l'ancien monde</p>
-      <h2 class="baguette-nom">${esc(b.nom || (vide ? 'Baguette sans nom' : ''))}</h2>
+      <h2 class="baguette-nom">${esc(b.nom || 'Baguette sans nom')}</h2>
       <div class="ornement" aria-hidden="true"><span></span></div>
     </div>
     <div class="baguette-photo paysage">${b.photo ? `<img src="${b.photo}" alt="Baguette ${esc(b.nom || '')}">` : `<div class="baguette-vide">${BAGUETTE_SVG}</div>`}</div>

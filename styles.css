@@ -1115,3 +1115,13 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .ajout-etape:hover { border-style: solid; border-color: var(--bronze); }
 .tag-mj { margin-left: auto; text-decoration: none; border-color: var(--bronze); color: var(--bronze-clair); align-self: center; }
 .check.membre { align-items: flex-start; gap: .55rem; padding: .5rem .6rem; border: 1px solid var(--line-bronze); border-radius: var(--radius-s); background: var(--inset); margin-bottom: .6rem; } .check.membre input { margin-top: .2rem; flex: none; }
+
+/* Identité : la colonne des champs peut rétrécir, et une ligne d'aide occupe toute la largeur */
+.identite { grid-template-columns: auto minmax(0, 1fr); }
+.grid .ligne-entiere { grid-column: 1 / -1; margin: -.3rem 0 0; }
+/* Fiche sur deux colonnes (identité + baguette) : portrait au-dessus des champs */
+@media (min-width: 900px) {
+  .fiche-haut .identite { grid-template-columns: minmax(0, 1fr); }
+  .fiche-haut .identite .images { flex-direction: row; justify-content: flex-start; }
+}
+@media (max-width: 560px) { .identite { grid-template-columns: minmax(0, 1fr); } }
