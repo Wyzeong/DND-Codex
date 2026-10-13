@@ -1078,7 +1078,7 @@ function ongletInventaire(p, e) {
       <span>Bourse<b>${esc(bourseTxt(p))}</b></span>
     </div>
     ${lignes}
-    ${mod ? '<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>' : ''}
+    ${mod ? `<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>${blocAjoutRapide('perso')}` : ''}
     <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Armure » et « Bouclier » : la CA, la Dextérité maximale et le malus aux compétences se calculent seuls. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
   </section>
   <section class="card"><h3>Bourse</h3>
@@ -2159,6 +2159,7 @@ function pageObjetsMJ() {
     ${groupes.map(g => `<h4 class="groupe-inv">${esc(g || 'Sans PNJ')} <small>${objets.filter(it => (it.detenteur || '') === g).length}</small></h4>
       <div class="objets">${objets.filter(it => (it.detenteur || '') === g).map(ligne).join('')}</div>`).join('') || '<p class="empty">Aucun objet en attente.</p>'}
     <div class="btns" style="margin-top:.6rem"><button class="btn ghost" data-action="mj-obj-ajout">+ Préparer un objet</button><button class="btn ghost" data-action="mj-obj-ajout" data-type="vente">+ Préparer un objet à vendre</button></div>
+    ${blocAjoutRapide('mj')}
   </section>
   ${carteMarchesMJ()}
   <section class="card"><h3>Donner des pièces</h3>
@@ -2189,6 +2190,26 @@ const sessionsMJ = () => Object.entries(mjd()).filter(([k, v]) => k.startsWith('
 const sessionMJ = id => mjd()[cleSession(id)];
 const xpSession = s => (s.etapes || []).reduce((t, e) => t + num(e.xp), 0);
 const xpDonne = s => (s.etapes || []).filter(e => e.xpDonne).reduce((t, e) => t + num(e.xp), 0);
+
+/* Fenêtre séparée, à glisser sur l'écran ou la télévision des joueurs : elle se réutilise à chaque image */
+function afficherSurEcran(src, titre, legende) {
+  const w = window.open('', 'codex-ecran-joueurs', 'popup=yes,width=1280,height=760');
+  if (!w) { alert('Ton navigateur a bloqué la fenêtre. Autorise les fenêtres pop-up pour ce site, puis réessaie.'); return; }
+  w.document.open();
+  w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(titre || 'Illustration')}</title>
+    <style>html,body{margin:0;height:100%;background:#05090d;color:#E8E4D9;font-family:Georgia,serif;overflow:hidden}
+    .cadre{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8rem;padding:2vh}
+    img{max-width:100%;max-height:${titre || legende ? '88vh' : '96vh'};object-fit:contain;box-shadow:0 20px 60px #000}
+    h1{margin:0;font-weight:normal;letter-spacing:.08em;font-size:2.4vh;color:#D9BE8A}
+    p{margin:0;font-size:1.8vh;color:#B9B4A8}
+    .aide{position:fixed;top:1rem;right:1rem;font:13px sans-serif;color:#888;background:#111c;padding:.4rem .7rem;border-radius:6px;transition:opacity 1s}</style></head>
+    <body ondblclick="document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()">
+    <div class="cadre"><img src="${src}" alt="">${titre ? `<h1>${esc(titre)}</h1>` : ''}${legende ? `<p>${esc(legende)}</p>` : ''}</div>
+    <div class="aide" id="aide">Glisse cette fenêtre sur l'autre écran, puis double-clic (ou F11) pour le plein écran</div>
+    <script>setTimeout(function(){document.getElementById('aide').style.opacity=0},6000)</script></body></html>`);
+  w.document.close();
+  w.focus();
+}
 
 function pageSessionsMJ() {
   if (state.mjSession && sessionMJ(state.mjSession)) return pageSessionMJ(sessionMJ(state.mjSession));
@@ -2231,7 +2252,8 @@ function etapeEdition(s, e, i) {
   if (e.type === 'quete') propre = `<div class="grid">
     <label class="f"><span>Quête (encyclopédie)</span><select data-mjbind="${base}.queteId" data-rerender><option value="">— Choisir —</option>${quetes.map(f => `<option value="${f.id}" ${e.queteId === f.id ? 'selected' : ''}>${esc(f.nom)}</option>`).join('')}</select></label>
     <label class="f"><span>Étape</span><select data-mjbind="${base}.queteAction">${Object.entries(ACTIONS_QUETE).map(([v, l]) => `<option value="${v}" ${e.queteAction === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-  </div>`;
+  </div>
+  <div class="btns"><button class="lien" data-action="mj-quete-nouvelle" data-s="${s.id}" data-i="${i}">+ Nouvelle quête</button>${e.queteId ? `<a class="lien" href="#/fiche/${e.queteId}">Ouvrir ou modifier la fiche de la quête</a>` : ''}</div>`;
   if (e.type === 'image') propre = `<div class="objet-image">
     <button class="image-cadre petite large" data-action="img-choisir" data-type="sessionimg" data-id="${e.id}" aria-label="${e.image ? 'Changer' : 'Ajouter'} l'illustration">${e.image ? `<img src="${e.image}" alt="">` : '<span>+ Illustration</span>'}</button>
     ${e.image ? `<button class="lien" data-action="mj-etape-image-suppr" data-s="${s.id}" data-i="${i}">Retirer</button>` : ''}
@@ -2257,7 +2279,8 @@ function etapeJeu(s, e, i) {
   let propre = '';
   if (e.type === 'dialogue' && !e.texte && !e.pnj) propre = '';
   else if (e.type === 'dialogue') propre = `<blockquote class="dialogue">${e.pnj ? `<b>${lienFiche(e.pnj)}</b> : ` : ''}${formaterRecit(e.texte).replace(/^<p>|<\/p>$/g, '') || ''}</blockquote>`;
-  else if (e.type === 'image') propre = `${e.image ? `<button class="illustration" data-action="img-zoom" data-src="${e.image}" aria-label="Montrer en plein écran"><img src="${e.image}" alt=""></button>` : '<p class="empty">Pas encore d\'image.</p>'}${e.texte ? `<p class="hint">${esc(e.texte)}</p>` : ''}`;
+  else if (e.type === 'image') propre = `${e.image ? `<button class="illustration" data-action="img-zoom" data-src="${e.image}" aria-label="Montrer en plein écran"><img src="${e.image}" alt=""></button>
+      <div class="btns"><button class="btn" data-action="ecran-image" data-s="${s.id}" data-i="${i}">🖥 Afficher sur l'écran des joueurs</button></div>` : '<p class="empty">Pas encore d\'image.</p>'}${e.texte ? `<p class="hint">${esc(e.texte)}</p>` : ''}`;
   else propre = e.texte ? `<div class="recit-texte">${formaterRecit(e.texte)}</div>` : '';
   if (e.type === 'rencontre' && e.combatId) {
     const c = m.combats.find(x => x.id === e.combatId);
@@ -2287,7 +2310,9 @@ function etapeJeu(s, e, i) {
   }
   if (e.type === 'quete' && e.queteId) {
     const f = findFiche(e.queteId);
-    propre = `<p class="quete-etape"><span class="tag-cat quete-${e.queteAction || 'lancement'}">${ACTIONS_QUETE[e.queteAction || 'lancement']}</span> ${f ? `<a href="#/fiche/${f.id}">${esc(f.nom)}</a>` : 'Quête supprimée'}</p>` + propre;
+    const statutVise = { lancement: 'En cours', progression: 'En cours', fin: 'Terminée' }[e.queteAction || 'lancement'];
+    propre = `<p class="quete-etape"><span class="tag-cat quete-${e.queteAction || 'lancement'}">${ACTIONS_QUETE[e.queteAction || 'lancement']}</span> ${f ? `<a href="#/fiche/${f.id}">${esc(f.nom)}</a> ${badgeStatut(f)}` : 'Quête supprimée'}</p>
+      ${f && f.statut !== statutVise ? `<button class="btn ghost petit" data-action="mj-quete-statut" data-id="${f.id}" data-statut="${statutVise}">Passer la quête à « ${statutVise} »</button>` : ''}` + propre;
   }
   return `<article class="etape type-${e.type} ${e.fait ? 'faite' : ''}">
     <div class="etape-tete">
@@ -2544,6 +2569,115 @@ function tiroirMJ() {
   </aside>`;
 }
 
+/* ===== Ajout rapide d'objets : copier-coller depuis Excel (ou un fichier CSV) =====
+   Une ligne par objet. Avec une ligne d'en-tête, les colonnes sont reconnues par leur nom,
+   dans n'importe quel ordre ; sans en-tête, l'ordre du modèle est utilisé. */
+const COLONNES_OBJET = [
+  ['nom', 'Nom', ['nom', 'objet', 'name', 'article']],
+  ['cat', 'Catégorie', ['categorie', 'cat', 'type d objet', 'type']],
+  ['qte', 'Quantité', ['quantite', 'qte', 'qté', 'nombre', 'nb', 'stock']],
+  ['valeur', 'Valeur', ['valeur', 'prix', 'cout']],
+  ['unite', 'Monnaie', ['monnaie', 'unite', 'devise', 'piece']],
+  ['poids', 'Poids', ['poids']],
+  ['notes', 'Notes', ['notes', 'note', 'description', 'effet', 'commentaire']],
+  ['detenteur', 'Détenteur', ['detenteur', 'pnj', 'marchand', 'vendeur', 'proprietaire']],
+  ['vente', 'À vendre', ['a vendre', 'vente', 'destination']],
+  ['marche', 'Marché', ['marche']],
+];
+const SYN_CAT = {
+  arme: ['arme', 'armes', 'weapon'], armure: ['armure', 'armures'], bouclier: ['bouclier', 'boucliers'], vetement: ['vetement', 'vetements', 'habit', 'tenue'],
+  magique: ['objet magique', 'magique', 'magie', 'focalisateur'], munition: ['munition', 'munitions', 'fleche', 'carreau'],
+  consommable: ['potion', 'elixir', 'flacon', 'fiole', 'consommable'], fourniture: ['fourniture', 'fournitures', 'materiel', 'outil'],
+  ration: ['ration', 'rations', 'nourriture', 'vivres'], tresor: ['tresor', 'tresors', 'gemme', 'bijou'], babiole: ['babiole', 'babioles', 'bibelot'],
+};
+function lireCategorie(txt) {
+  const t = norm(txt).trim();
+  if (!t) return '';
+  for (const [k, l] of Object.entries(SYN_CAT)) if (l.some(x => t === x || t.startsWith(x))) return k;
+  return '';
+}
+function analyserObjets(texte) {
+  const lignes = String(texte || '').replace(/\r/g, '').split('\n').filter(l => l.trim());
+  if (!lignes.length) return { objets: [], entete: false };
+  const sep = lignes.some(l => l.includes('\t')) ? '\t' : lignes[0].includes(';') ? ';' : ',';
+  const decouper = l => l.split(sep).map(c => c.trim().replace(/^"(.*)"$/, '$1'));
+  let ordre = COLONNES_OBJET.map(c => c[0]);
+  const premiere = decouper(lignes[0]).map(c => norm(c).replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim());
+  const entete = premiere.some(c => ['nom', 'objet', 'article'].includes(c));
+  if (entete) {
+    ordre = premiere.map(c => (COLONNES_OBJET.find(([, , syn]) => syn.includes(c)) || [null])[0]);
+    lignes.shift();
+  }
+  const objets = lignes.map(l => {
+    const cases = decouper(l);
+    const o = {};
+    ordre.forEach((k, i) => { if (k && cases[i] != null && cases[i] !== '') o[k] = cases[i]; });
+    if (!o.nom) return null;
+    const it = { id: uid(), nom: o.nom, cat: lireCategorie(o.cat), qte: String(Math.max(1, Math.round(nombre(o.qte)) || 1)), poids: o.poids || '', notes: o.notes || '' };
+    /* « 25 po », « 3,5 pa »… dans la colonne Valeur */
+    const v = String(o.valeur || '').match(/([\d.,]+)\s*(pp|po|pa|pc)?/i);
+    if (v) { it.valeur = v[1].replace('.', ','); it.valeurUnite = (o.unite || v[2] || 'po').toLowerCase().slice(0, 2); }
+    /* Types d'armes et d'armures des règles, reconnus par leur nom */
+    const arme = R.ARMES.find(a => norm(a.nom) === norm(o.nom) || norm(o.cat || '').includes(norm(a.nom)));
+    const armure = R.ARMURES.find(a => norm(a.nom) === norm(o.nom) || norm(o.cat || '').includes(norm(a.nom)));
+    if (arme && (!it.cat || it.cat === 'arme')) Object.assign(it, { cat: 'arme', armeType: arme.id, degats: arme.deg, critique: arme.crit, portee: arme.portee, mode: arme.prise === 'distance' ? 'distance' : '' });
+    else if (armure && (!it.cat || it.cat === 'armure' || it.cat === 'bouclier')) Object.assign(it, { cat: armure.type === 'bouclier' ? 'bouclier' : 'armure', armureType: armure.id });
+    if (/focal/.test(norm(o.cat || ''))) it.focalisateur = true;
+    it._detenteur = o.detenteur || '';
+    it._vente = /^(oui|o|x|vente|a vendre|1|vrai|true)$/.test(norm(o.vente || ''));
+    it._marche = o.marche || '';
+    return it;
+  }).filter(Boolean);
+  return { objets, entete };
+}
+function blocAjoutRapide(cible) {
+  const st = state.ajoutRapide && state.ajoutRapide.cible === cible ? state.ajoutRapide : null;
+  const res = st ? analyserObjets(st.texte) : null;
+  const mj = cible === 'mj';
+  return `<details class="ajout-rapide" ${st ? 'open' : ''}><summary>⚡ Ajout rapide : copier-coller depuis Excel</summary>
+    <p class="hint">Sélectionne tes lignes dans Excel (ou Google Sheets), copie, puis colle-les ici. Une ligne par objet. Garde la ligne d'en-tête si tu peux : les colonnes sont alors reconnues dans n'importe quel ordre.</p>
+    <p class="hint">Colonnes : <b>${COLONNES_OBJET.filter(c => mj || !['detenteur', 'vente', 'marche'].includes(c[0])).map(c => c[1]).join(' · ')}</b>. Catégories acceptées : arme, armure, bouclier, vêtement, objet magique, munition, potion, fourniture, ration, trésor, babiole. Les armes et armures des règles (« Épée longue », « Cuirasse »…) sont reconnues avec leurs caractéristiques.</p>
+    <textarea id="ajout-rapide-${cible}" rows="6" placeholder="Nom&#9;Catégorie&#9;Quantité&#9;Valeur&#10;Potion de soins légers&#9;potion&#9;3&#9;50 po">${esc(st?.texte || '')}</textarea>
+    <div class="btns">
+      <button class="btn ghost" data-action="ajout-rapide-voir" data-cible="${cible}">Vérifier</button>
+      ${res && res.objets.length ? `<button class="btn" data-action="ajout-rapide-ok" data-cible="${cible}">Ajouter les ${res.objets.length} objet${res.objets.length > 1 ? 's' : ''}</button>` : ''}
+      <button class="lien" data-action="ajout-rapide-modele" data-cible="${cible}">Télécharger le modèle Excel</button>
+    </div>
+    ${res ? (res.objets.length ? `<div class="table-defile"><table class="table-porte apercu-objets"><thead><tr><th>Nom</th><th>Catégorie</th><th>Qté</th><th>Valeur</th><th>Poids</th>${mj ? '<th>Détenteur</th><th>Destination</th>' : ''}<th>Notes</th></tr></thead>
+      <tbody>${res.objets.map(o => `<tr><td>${esc(o.nom)}${o.armeType || o.armureType ? ' <small>✓ règles</small>' : ''}</td><td>${esc(CATS_OBJET[o.cat || ''])}</td><td>${esc(o.qte)}</td><td>${o.valeur ? esc(prixTxt(o.valeur, o.valeurUnite)) : '—'}</td><td>${esc(o.poids || '—')}</td>${mj ? `<td>${esc(o._detenteur || '—')}</td><td>${o._vente ? `À vendre${o._marche ? ' · ' + esc(o._marche) : ''}` : 'Butin'}</td>` : ''}<td>${esc(o.notes || '')}</td></tr>`).join('')}</tbody></table></div>
+      <p class="hint">${res.entete ? 'En-tête reconnu.' : 'Pas d\'en-tête : ordre du modèle utilisé.'} Vérifie l'aperçu, puis ajoute.</p>` : '<p class="empty">Aucune ligne reconnue : il faut au moins une colonne Nom.</p>') : ''}
+  </details>`;
+}
+function ajouterObjetsRapides(cible) {
+  const res = analyserObjets(state.ajoutRapide?.texte);
+  if (!res.objets.length) return 0;
+  const nettoyer = ({ _detenteur, _vente, _marche, ...o }) => o;
+  if (cible === 'mj') {
+    for (const o of res.objets) {
+      const m = o._marche && listeMarches().find(x => norm(x.nom) === norm(o._marche));
+      mjd().objets.push({ ...nettoyer(o), detenteur: o._detenteur, type: o._vente ? 'vente' : '', marcheId: m ? m.id : (o._vente ? listeMarches()[0].id : undefined) });
+    }
+    saveMJ('objets');
+  } else {
+    const p = state.ctx;
+    p.equipement = [...(p.equipement || []), ...res.objets.map(nettoyer)];
+    save();
+  }
+  return res.objets.length;
+}
+function telechargerModeleObjets(cible) {
+  const cols = COLONNES_OBJET.filter(c => cible === 'mj' || !['detenteur', 'vente', 'marche'].includes(c[0])).map(c => c[1]);
+  const ex = cible === 'mj'
+    ? [['Potion de soins légers', 'Potion', '3', '50', 'po', '', 'Soigne 1d8+1 PV', 'Rudolf Reich', 'oui', 'Marché noir'], ['Épée longue', 'Arme', '1', '15', 'po', '2 kg', '', 'Garde régihus', 'non', '']]
+    : [['Potion de soins légers', 'Potion', '3', '50', 'po', '', 'Soigne 1d8+1 PV'], ['Corde en chanvre (15 m)', 'Fourniture', '1', '1', 'po', '5 kg', '']];
+  const csv = '\ufeff' + [cols, ...ex].map(l => l.map(c => /[;"\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c).join(';')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'modele-objets.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
 /* ----- Page MJ à onglets ----- */
 function pageMJ2() {
   if (!estMJ()) return pageMJReelle();
@@ -2628,12 +2762,13 @@ function journalLocal(qui, quoi, delta) {
 async function chargerMarche() {
   if (!enLigne()) return;
   try {
-    const ch = await lignesChangees('marche', 'marche', 'id,data,maj', id => (db.marche || []).some(a => a.id === id) || (db.marches || []).some(m => m.id === id));
-    const parId = new Map([...(db.marche || []), ...(db.marches || [])].map(a => [a.id, a]));
+    const ch = await lignesChangees('marche', 'marche', 'id,data,maj', id => [...(db.marche || []), ...(db.marches || []), ...(db.ambiances || [])].some(a => a.id === id));
+    const parId = new Map([...(db.marche || []), ...(db.marches || []), ...(db.ambiances || [])].map(a => [a.id, a]));
     for (const x of ch.lignes) parId.set(x.id, { ...x.data, id: x.id });
     const tous = [...parId.values()].filter(a => ch.tous.has(a.id));
-    db.marche = tous.filter(a => a.kind !== 'marche');
+    db.marche = tous.filter(a => a.kind !== 'marche' && a.kind !== 'ambiance');
     db.marches = tous.filter(a => a.kind === 'marche');
+    db.ambiances = tous.filter(a => a.kind === 'ambiance');
     ch.valider();
     saveNow();
   } catch (e) { console.warn('Marché indisponible (base pas encore en v7 ?)', e); }
@@ -2647,6 +2782,19 @@ function sauverArticle(a) {
 }
 /* ===== Les marchés : chacun a son décor ; les articles sont posés sur les étals des marchands ===== */
 const TYPES_MARCHE = { port: 'Marché du port', ville: 'Marché en ville', noir: 'Marché noir', ambulant: 'Marchand ambulant' };
+/* Ambiances créées par le MJ : couleurs de l'auvent et étal clair ou sombre */
+const ambiancesPerso = () => db.ambiances || [];
+const toutesAmbiances = () => [...Object.entries(TYPES_MARCHE).map(([k, l]) => [k, l]), ...ambiancesPerso().map(a => [a.id, a.nom])];
+function styleAmbiance(type) {
+  const a = ambiancesPerso().find(x => x.id === type);
+  if (!a) return { classe: `type-${type || 'ville'}`, style: '' };
+  return { classe: `type-${a.sombre ? 'noir' : 'perso'}`, style: `--toile-a:${a.toileA || '#EDE6D6'};--toile-b:${a.toileB || '#7A4E9C'};` };
+}
+function sauverAmbiance(a) {
+  db.ambiances = [...ambiancesPerso().filter(x => x.id !== a.id), a];
+  saveNow();
+  if (enLigne() && estMJ()) rpc('mj_marche_sauver', { p_code: db.codeMJ, p_id: a.id, p_data: { ...a, kind: 'ambiance' } }).catch(e => statutSync('Ambiance non enregistrée : ' + e.message, true));
+}
 const MARCHES_DEFAUT = [
   { id: 'm-port', kind: 'marche', nom: 'Marché du port', type: 'port', image: 'images/marche-port.jpg', ouvert: true, ordre: 1 },
   { id: 'm-ville', kind: 'marche', nom: 'Marché de la ville', type: 'ville', image: 'images/marche-ville.jpg', ouvert: true, ordre: 2 },
@@ -2715,7 +2863,7 @@ function pageMarche() {
     </div>`;
   };
   return `<div class="marche-fond" style="background-image:url('${esc(sel.image || '')}')"></div>
-  <div class="marche-contenu type-${esc(sel.type || 'ville')}">
+  <div class="marche-contenu ${styleAmbiance(sel.type).classe}" style="${styleAmbiance(sel.type).style}">
     <div class="marche-tete">
       <h1>${esc(sel.nom)}</h1>
       ${marches.length > 1 ? `<nav class="marche-onglets">${marches.map(m => `<button class="${m.id === sel.id ? 'on' : ''}" data-action="marche-choisir" data-id="${m.id}">${esc(m.nom)}${mj && m.ouvert === false ? ' (fermé)' : ''}</button>`).join('')}</nav>` : ''}
@@ -2740,7 +2888,7 @@ function carteMarchesMJ() {
       <button class="marche-mj-image" data-action="marche-image" data-id="${m.id}" style="background-image:url('${esc(m.image || '')}')" aria-label="Changer l'image de ${esc(m.nom)}"><span>Changer l'image</span></button>
       <div class="grid">
         <label class="f span2"><span>Nom</span><input type="text" data-marchedef="${m.id}.nom" value="${esc(m.nom)}"></label>
-        <label class="f"><span>Ambiance</span><select data-marchedef="${m.id}.type">${Object.entries(TYPES_MARCHE).map(([k, l]) => `<option value="${k}" ${m.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="f"><span>Ambiance</span><select data-marchedef="${m.id}.type">${toutesAmbiances().map(([k, l]) => `<option value="${k}" ${m.type === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
         <label class="f"><span>Ordre</span><input type="text" inputmode="numeric" data-marchedef="${m.id}.ordre" value="${esc(m.ordre)}"></label>
       </div>
       <div class="row"><label class="check"><input type="checkbox" data-marchedef="${m.id}.ouvert" ${m.ouvert === false ? '' : 'checked'}> Ouvert aux joueurs</label>
@@ -2748,6 +2896,17 @@ function carteMarchesMJ() {
         <button class="lien danger" data-action="marche-suppr" data-id="${m.id}">Supprimer</button></div>
     </div>`).join('')}</div>
     <button class="btn ghost" data-action="marche-ajout">+ Nouveau marché</button>
+    <h4>Ambiances</h4>
+    <p class="hint">En plus des quatre ambiances de base (port, ville, marché noir, ambulant), crée les tiennes : couleurs de l'auvent rayé et étal clair ou sombre.</p>
+    <div class="ambiances-mj">${ambiancesPerso().map(a => `<div class="ambiance-mj">
+      <span class="ambiance-apercu" style="--toile-a:${esc(a.toileA || '#EDE6D6')};--toile-b:${esc(a.toileB || '#7A4E9C')}"></span>
+      <input type="text" data-ambiance="${a.id}.nom" value="${esc(a.nom)}" aria-label="Nom de l'ambiance">
+      <label class="couleur" title="Première couleur de l'auvent"><input type="color" data-ambiance="${a.id}.toileA" value="${esc(a.toileA || '#EDE6D6')}"></label>
+      <label class="couleur" title="Seconde couleur de l'auvent"><input type="color" data-ambiance="${a.id}.toileB" value="${esc(a.toileB || '#7A4E9C')}"></label>
+      <label class="check"><input type="checkbox" data-ambiance="${a.id}.sombre" ${a.sombre ? 'checked' : ''}> Étal sombre</label>
+      <button class="icon" data-action="ambiance-suppr" data-id="${a.id}" aria-label="Supprimer l'ambiance">✕</button>
+    </div>`).join('') || '<p class="empty">Aucune ambiance personnalisée.</p>'}</div>
+    <button class="btn ghost" data-action="ambiance-ajout">+ Nouvelle ambiance</button>
   </section>`;
 }
 
@@ -3459,8 +3618,8 @@ function carteConteur(admin) {
 
 /* Envoie en ligne tout ce qui n'est pas encore publié */
 async function publierTout() {
-  if (!db.codeCampagne) { toast('Saisis d\'abord le code de campagne'); return; }
-  const aEnvoyer = recapsTous().filter(r => statutRecap(r) !== 'publie');
+  if (!db.codeCampagne && !db.codeMJ) { toast('Saisis d\'abord le code de campagne ou le code MJ'); return; }
+  const aEnvoyer = db.codeCampagne ? recapsTous().filter(r => statutRecap(r) !== 'publie') : [];
   const sansPhoto = aEnvoyer.filter(r => !photoRecap(r) && !r.photoMaj);
   if (sansPhoto.length && !confirm(`${sansPhoto.map(r => 'Session ' + r.numero).join(', ')} : pas de photo. Publier quand même ?`)) return;
   try {
@@ -3472,18 +3631,17 @@ async function publierTout() {
       });
       if (r.photo !== undefined) { state.photos = state.photos || {}; state.photos[r.id] = r.photo; }
     }
-    for (const id of db.recapsSupprimes || []) await rpc('supprimer_recap', { p_code: db.codeCampagne, p_id: id });
+    if (db.codeCampagne) for (const id of db.recapsSupprimes || []) await rpc('supprimer_recap', { p_code: db.codeCampagne, p_id: id });
     for (const f of fichesToutes().filter(x => statutPublication(x) !== 'publie')) {
-      await rpc('sauver_fiche', { p_code: db.codeCampagne, p_id: f.id, p_nom: f.nom || '', p_type: f.type || 'pnj', p_role: f.role || '', p_lieu: f.lieu || '', p_statut: f.statut || '', p_alias: f.alias || '', p_description: f.description || '' });
+      await rpc('sauver_fiche', { p_code: codeFiches(), p_id: f.id, p_nom: f.nom || '', p_type: f.type || 'pnj', p_role: f.role || '', p_lieu: f.lieu || '', p_statut: f.statut || '', p_alias: f.alias || '', p_description: f.description || '' });
     }
-    for (const id of db.fichesSupprimees || []) await rpc('supprimer_fiche', { p_code: db.codeCampagne, p_id: id });
+    for (const id of db.fichesSupprimees || []) await rpc('supprimer_fiche', { p_code: codeFiches(), p_id: id });
     await chargerFiches();
     await chargerRecaps();
     render();
     toast('Publié pour toute la compagnie');
   } catch (e) {
-    if (/code/i.test(e.message)) { db.codeCampagne = ''; saveNow(); render(); }
-    alert('Publication impossible : ' + e.message);
+    alert('Publication impossible : ' + e.message + (db.codeMJ && !db.codeCampagne ? ' (la base est-elle en v11 ?)' : ''));
   }
 }
 
@@ -3849,7 +4007,7 @@ function carteFiche(f) {
   return `<a class="fiche-carte type-${f.type}" href="#/fiche/${f.id}">
     <span class="fiche-carte-tete"><b>${esc(f.nom)}</b>${badgeStatut(f)}</span>
     ${f.role || f.lieu ? `<small>${esc([f.role, f.lieu].filter(Boolean).join(', '))}</small>` : ''}
-    ${st !== 'publie' && estAdmin() ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
+    ${st !== 'publie' && peutEcrireFiches() ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
   </a>`;
 }
 
@@ -3859,11 +4017,11 @@ function pageEncyclo(mode, q) {
   <div class="pagehead">
     <div><h1>Encyclopédie</h1><p class="sub">Tout ce que la compagnie sait du monde</p></div>
     <div class="btns">
-      ${estAdmin() ? '<button class="btn" data-action="new-fiche">Nouvelle fiche</button>' : ''}
+      ${peutEcrireFiches() ? '<button class="btn" data-action="new-fiche">Nouvelle fiche</button>' : ''}
       <button class="btn ghost" data-action="export-ia">Exporter pour une IA</button>
     </div>
   </div>
-  ${estAdmin() ? bandeauPublication() : ''}
+  ${peutEcrireFiches() ? bandeauPublication() : ''}
   <input type="search" id="eq" value="${esc(state.eq)}" placeholder="Chercher un nom, un lieu, un mot dans les fiches et les récits…" aria-label="Chercher dans l'encyclopédie et les récits">
   <div id="eres">${resultatsEncyclo()}</div>`;
 }
@@ -3893,13 +4051,13 @@ function resultatsEncyclo() {
     if (!liste.length) return '';
     return `<section class="card"><h3>${l}</h3><div class="fiches">${liste.map(carteFiche).join('')}</div></section>`;
   }).join('');
-  return chips + (groupes || `<section class="card intro"><p class="empty">L'encyclopédie est vide.${estAdmin() ? ' Crée une première fiche, ou importe un fichier d\'encyclopédie depuis l\'onglet Partage.' : ''}</p></section>`);
+  return chips + (groupes || `<section class="card intro"><p class="empty">L'encyclopédie est vide.${peutEcrireFiches() ? ' Crée une première fiche, ou importe un fichier d\'encyclopédie depuis l\'onglet Partage.' : ''}</p></section>`);
 }
 
 function pageFiche(id) {
   const f = findFiche(id);
   if (!f) return `${sousNav('encyclo')}<p>Fiche introuvable. <a href="#/encyclo">Retour à l'encyclopédie</a></p>`;
-  if (state.editFiche === id && estAdmin()) return formFiche(f);
+  if (state.editFiche === id && peutEcrireFiches()) return formFiche(f);
   const st = statutPublication(f);
   const perso = f.type === 'pj' && db.personnages.find(p => norm(p.nom) === norm(f.nom));
   const app = apparitions(f);
@@ -3922,7 +4080,7 @@ function pageFiche(id) {
     ${app.length ? `<ul class="passages">${app.map(({ r, extraits, total }) => `<li><a href="#/recap/${r.id}">Session ${esc(r.numero)}${r.titre ? ' : ' + esc(r.titre) : ''}</a>${total > 1 ? ` <small>${total} passages</small>` : ''}
       ${extraits.map(p => `<p>${surligner(p, termes)}</p>`).join('')}</li>`).join('')}</ul>` : '<p class="empty">Aucun récit ne la mentionne encore.</p>'}
   </section>
-  ${estAdmin() ? `<div class="btns">
+  ${peutEcrireFiches() ? `<div class="btns">
     <button class="btn" data-action="fiche-edit" data-id="${f.id}">Modifier</button>
     ${st !== 'publie' ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
   </div>${st !== 'publie' ? bandeauPublication() : ''}` : ''}`;
@@ -4165,6 +4323,14 @@ function migrerSessions(liste) {
 /* ---------- Droits et synchronisation en ligne ---------- */
 /* Hors ligne (pas de config.js), tout reste local et tout est modifiable, comme avant. */
 const estAdmin = () => !enLigne() || !!db.codeCampagne;
+/* L'encyclopédie (quêtes, PNJ, lieux…) : l'administrateur et le MJ */
+const peutEcrireFiches = () => estAdmin() || estMJ();
+const codeFiches = () => db.codeCampagne || db.codeMJ || '';
+async function publierFiche(f) {
+  if (!enLigne()) return;
+  await rpc('sauver_fiche', { p_code: codeFiches(), p_id: f.id, p_nom: f.nom || '', p_type: f.type || 'pnj', p_role: f.role || '', p_lieu: f.lieu || '', p_statut: f.statut || '', p_alias: f.alias || '', p_description: f.description || '' });
+  await chargerFiches();
+}
 const estAMoi = p => !enLigne() || !!(db.cles || {})[p.id];
 const peutModifier = p => !!p && (p.pnjMJ ? (estMJ() && !p._public) : (estAMoi(p) || (enLigne() && (!!db.codeCampagne || estMJ())) || (enLigne() && !p.publie)));
 const codePour = p => p.pnjMJ ? (db.codeMJ || '') : ((db.cles || {})[p.id] || db.codeCampagne || db.codeMJ || '');
@@ -4623,6 +4789,15 @@ document.addEventListener('input', ev => {
     if (t.hasAttribute('data-rerender')) render();
     return;
   }
+  if (t.dataset.ambiance) {
+    if (!estMJ()) return;
+    const [id, champ] = t.dataset.ambiance.split('.');
+    const a = { ...ambiancesPerso().find(x => x.id === id) };
+    a[champ] = t.type === 'checkbox' ? t.checked : t.value;
+    sauverAmbiance(a);
+    if (t.type !== 'text') render();
+    return;
+  }
   if (t.dataset.marchedef) {
     if (!estMJ()) return;
     const [id, champ] = t.dataset.marchedef.split('.');
@@ -4678,7 +4853,7 @@ document.addEventListener('input', ev => {
   if (!path || !state.ctx) return;
   if (db.personnages.includes(state.ctx) && !peutModifier(state.ctx)) return;
   if (state.ctx === state.editRecapObj && !estAdmin()) return;
-  if (state.ctx === state.editFicheObj && !estAdmin()) return;
+  if (state.ctx === state.editFicheObj && !peutEcrireFiches()) return;
   setP(state.ctx, path, t.type === 'checkbox' ? t.checked : t.value);
   if (state.ctx === state.draft) return; // le sort n'est enregistré qu'au clic sur le bouton
   state.ctx.maj = Date.now();
@@ -4746,7 +4921,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -5072,7 +5247,7 @@ document.addEventListener('click', ev => {
       download('fiches.json', { type: 'encyclopedie', version: 1, fiches: fichesToutes() });
       break;
     case 'new-fiche': {
-      if (!estAdmin()) break;
+      if (!peutEcrireFiches()) break;
       const f = { id: uid(), nom: 'Nouvelle fiche', type: state.ftype || 'pnj', role: '', lieu: '', statut: '', alias: '', description: '', maj: Date.now() };
       db.fiches = [...(db.fiches || []), f]; saveNow();
       state.editFiche = f.id;
@@ -5081,7 +5256,7 @@ document.addEventListener('click', ev => {
       break;
     }
     case 'fiche-edit':
-      if (!estAdmin()) break;
+      if (!peutEcrireFiches()) break;
       state.editFiche = b.dataset.id; ficheLocale(b.dataset.id); render();
       break;
     case 'fiche-fin':
@@ -5089,12 +5264,12 @@ document.addEventListener('click', ev => {
       toast(aPublier() ? 'Enregistré sur cet appareil. Pense à publier.' : 'Enregistré');
       break;
     case 'fiche-publier':
-      if (!estAdmin()) break;
+      if (!peutEcrireFiches()) break;
       state.editFiche = null; saveNow();
       publierTout();
       break;
     case 'del-fiche': {
-      if (!estAdmin() || !confirm('Supprimer cette fiche ? Elle disparaîtra pour tout le monde à la prochaine publication.')) break;
+      if (!peutEcrireFiches() || !confirm('Supprimer cette fiche ? Elle disparaîtra pour tout le monde à la prochaine publication.')) break;
       const id = b.dataset.id;
       db.fiches = (db.fiches || []).filter(x => x.id !== id);
       if (fichesPubliees().some(x => x.id === id)) db.fichesSupprimees = [...new Set([...(db.fichesSupprimees || []), id])];
@@ -5779,6 +5954,62 @@ document.addEventListener('click', ev => {
       supprimerMarcheDef(m.id); render();
       break;
     }
+    case 'mj-quete-nouvelle': {
+      const nom = prompt('Nom de la nouvelle quête :', '');
+      if (!nom) break;
+      const f = { id: uid(), nom, type: 'quete', role: 'Quête', lieu: '', statut: 'En cours', alias: '', description: '', maj: Date.now() };
+      db.fiches = [...(db.fiches || []), f];
+      const ss = sessionMJ(b.dataset.s); ss.etapes[Number(b.dataset.i)].queteId = f.id;
+      saveMJ(cleSession(ss.id)); saveNow(); render();
+      publierFiche(f).then(render).catch(e2 => toast('Quête enregistrée sur cet appareil (publication : ' + e2.message + ')'));
+      toast(`Quête « ${nom} » créée`);
+      break;
+    }
+    case 'mj-quete-statut': {
+      const f = ficheLocale(b.dataset.id);
+      if (!f) break;
+      f.statut = b.dataset.statut; saveNow(); render();
+      publierFiche(f).then(() => { toast(`${f.nom} : ${f.statut}`); render(); }).catch(e2 => alert('Impossible : ' + e2.message));
+      break;
+    }
+    case 'ecran-image': {
+      const et = sessionMJ(b.dataset.s)?.etapes[Number(b.dataset.i)];
+      if (et?.image) afficherSurEcran(et.image, et.titre || '', et.texte || '');
+      break;
+    }
+    case 'ambiance-ajout': {
+      if (!estMJ()) break;
+      sauverAmbiance({ id: 'amb-' + uid(), kind: 'ambiance', nom: 'Nouvelle ambiance', toileA: '#EDE6D6', toileB: '#7A4E9C', sombre: false }); render();
+      break;
+    }
+    case 'ambiance-suppr': {
+      if (!estMJ()) break;
+      const a = ambiancesPerso().find(x => x.id === b.dataset.id);
+      if (!a || !confirm(`Supprimer l'ambiance « ${a.nom} » ? Les marchés qui l'utilisent repasseront en « Marché en ville ».`)) break;
+      db.ambiances = ambiancesPerso().filter(x => x.id !== a.id);
+      for (const m of listeMarches().filter(x => x.type === a.id)) { const m2 = { ...m, type: 'ville' }; delete m2._envoye; sauverMarcheDef(m2); }
+      saveNow(); if (enLigne()) rpc('mj_marche_suppr', { p_code: db.codeMJ, p_id: a.id }).catch(() => {});
+      render();
+      break;
+    }
+    case 'ajout-rapide-voir': {
+      const c = b.dataset.cible;
+      state.ajoutRapide = { cible: c, texte: $('#ajout-rapide-' + c).value };
+      render();
+      break;
+    }
+    case 'ajout-rapide-ok': {
+      const c = b.dataset.cible;
+      if (c === 'mj' && !estMJ()) break;
+      if (c === 'perso' && !peutModifier(p)) break;
+      const n = ajouterObjetsRapides(c);
+      state.ajoutRapide = null; render();
+      toast(`${n} objet${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''}`);
+      break;
+    }
+    case 'ajout-rapide-modele':
+      telechargerModeleObjets(b.dataset.cible);
+      break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });

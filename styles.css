@@ -1367,3 +1367,17 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .etape-titre-partie::after { background: linear-gradient(90deg, var(--bronze), transparent); }
 .etape-titre-partie span { text-align: center; }
 .etapes > .etape-titre-partie:first-child { margin-top: 0; }
+/* Ambiances personnalisées */
+.type-perso .enseigne { background: linear-gradient(180deg, #6B4A2B, #4A3119); }
+.ambiances-mj { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .6rem; }
+.ambiance-mj { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); }
+.ambiance-mj input[type=text] { flex: 1 1 160px; }
+.ambiance-apercu { width: 60px; height: 22px; border-radius: 4px; background: repeating-linear-gradient(90deg, var(--toile-a) 0 10px, var(--toile-b) 10px 20px); border: 1px solid var(--line); }
+.couleur input { width: 2.4rem; height: 2rem; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: none; cursor: pointer; }
+.ambiance-mj .check { padding: 0; }
+/* Ajout rapide */
+.ajout-rapide { border: 1px dashed var(--line-bronze); border-radius: var(--radius-s); padding: .45rem .7rem; margin-top: .8rem; background: var(--inset); }
+.ajout-rapide summary { cursor: pointer; color: var(--bronze-clair); font-weight: 600; }
+.ajout-rapide textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: .82rem; margin: .4rem 0; }
+.apercu-objets { min-width: 640px; }
+.apercu-objets small { color: #8FD3C0; }
