@@ -1343,3 +1343,27 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .persos { grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); }
 .banniere { aspect-ratio: 5 / 9.6; }
 @media (max-width: 420px) { .persos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Accueil : la compagnie sur une ligne (5 sur ordinateur), sans en-tête ni bannière de création */
+.compagnie-tete { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .4rem 1rem; margin: .4rem 0 .8rem; }
+.compagnie-tete .titre-section { margin: 0; text-align: left; }
+.compagnie-outils { display: flex; align-items: center; gap: .6rem; font-size: .85rem; }
+.compagnie-outils small { color: var(--muted); }
+.btn.petit { padding: .3rem .7rem; font-size: .82rem; }
+@media (min-width: 960px) {
+  /* la rangée de bannières déborde un peu de la colonne centrale pour en loger 5 */
+  .persos { grid-template-columns: repeat(5, minmax(0, 1fr)); width: min(1120px, calc(100vw - 3rem)); margin-left: 50%; transform: translateX(-50%); }
+}
+@media (min-width: 600px) and (max-width: 959px) { .persos { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 420px) {
+  .compagnie-tete { justify-content: center; text-align: center; }
+  .compagnie-tete .titre-section { width: 100%; text-align: center; }
+}
+/* Sessions : titres de partie */
+.etape.type-titre { --te: var(--bronze-clair); background: rgba(183, 147, 90, .08); }
+.titre-partie-saisie { font-family: var(--font-titre); font-size: 1.1rem; font-weight: 600; }
+.etape-titre-partie { display: flex; align-items: center; gap: .8rem; margin: 1.1rem 0 .2rem; font-size: 1.15rem; color: var(--bronze-clair); letter-spacing: .04em; }
+.etape-titre-partie::before, .etape-titre-partie::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--bronze)); }
+.etape-titre-partie::after { background: linear-gradient(90deg, var(--bronze), transparent); }
+.etape-titre-partie span { text-align: center; }
+.etapes > .etape-titre-partie:first-child { margin-top: 0; }

@@ -648,17 +648,15 @@ function pagePersos() {
       <div class="banniere-in"><span class="plus" aria-hidden="true">+</span><h2>Nouveau</h2><p>Créer un personnage</p><span class="losange" aria-hidden="true"></span></div>
     </button>`;
   return `
-    <header class="hero">
-      ${LOGO_SVG}
-      <h1>L'Éveil<br>du Givre Éternel</h1>
-      <p class="campagne">CAMPAGNE D&amp;D 3.5</p>
-      <p class="devise">Il existe encore des secrets que le monde a oubliés…</p>
-    </header>
     ${carteConteur(false)}
-    <div class="ornement" aria-hidden="true"><span></span></div>
-    <h2 class="titre-section">La compagnie</h2>
-    ${enLigne() ? `<p class="actualiser"><button class="lien" data-action="actualiser">↻ Actualiser</button>${state.persosCharges ? ` <small>mis à jour à ${new Date(state.persosCharges).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</small>` : ''}</p>` : ''}
-    <div class="persos">${bannieres}${ajout}</div>
+    <div class="compagnie-tete">
+      <h2 class="titre-section">La compagnie</h2>
+      <div class="compagnie-outils">
+        ${enLigne() ? `<button class="lien" data-action="actualiser">↻ Actualiser</button>${state.persosCharges ? ` <small>à ${new Date(state.persosCharges).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</small>` : ''}` : ''}
+        <button class="btn ghost petit" data-action="new-perso">+ Nouveau personnage</button>
+      </div>
+    </div>
+    <div class="persos">${bannieres}</div>
     ${carteBourseCommune()}
     <p class="hint centre">Pour importer une fiche reçue d'un autre joueur : onglet Partage.</p>`;
 }
@@ -2175,6 +2173,7 @@ function pageObjetsMJ() {
    Chaque session est rangée sous sa propre clé (« session:<id> ») dans les données privées du MJ,
    pour n'envoyer et ne télécharger que la session modifiée. */
 const TYPES_ETAPE = {
+  titre: ['Titre de partie', '§', 'Sépare les grandes parties du scénario'],
   scene: ['Scène', '📜', 'Ce qui se passe, description, ambiance'],
   dialogue: ['Dialogue', '💬', 'Texte préparé pour un PNJ'],
   rencontre: ['Rencontre', '⚔', 'Combat préparé ou rencontre avec des PNJ'],
@@ -2197,7 +2196,7 @@ function pageSessionsMJ() {
   return `<section class="card"><h3>Sessions</h3>
     <p class="hint">Prépare le scénario séance par séance : scènes, dialogues, rencontres, objets, quêtes, XP et illustrations, dans l'ordre où ils arriveront.</p>
     <div class="sessions-liste">${ls.map(s => {
-      const n = (s.etapes || []).length, faits = (s.etapes || []).filter(e => e.fait).length;
+      const n = (s.etapes || []).filter(e => e.type !== 'titre').length, faits = (s.etapes || []).filter(e => e.fait && e.type !== 'titre').length;
       return `<button class="session-prep" data-action="mj-session-ouvrir" data-id="${s.id}">
         <span class="recit-num">Session ${esc(s.numero)}</span>
         <b>${esc(s.titre || 'Sans titre')}</b>
@@ -2211,6 +2210,15 @@ function pageSessionsMJ() {
 
 function etapeEdition(s, e, i) {
   const k = cleSession(s.id), base = `${k}.etapes.${i}`;
+  if (e.type === 'titre') return `<div class="etape en-edition type-titre">
+    <div class="etape-outils">
+      <span class="etape-type">§ Titre de partie</span>
+      <button class="icon" data-action="mj-etape-monter" data-s="${s.id}" data-i="${i}" aria-label="Monter" ${i ? '' : 'disabled'}>↑</button>
+      <button class="icon" data-action="mj-etape-descendre" data-s="${s.id}" data-i="${i}" aria-label="Descendre" ${i < s.etapes.length - 1 ? '' : 'disabled'}>↓</button>
+      <button class="icon" data-action="mj-etape-suppr" data-s="${s.id}" data-i="${i}" aria-label="Supprimer">✕</button>
+    </div>
+    <input type="text" class="titre-partie-saisie" data-mjbind="${base}.titre" value="${esc(e.titre)}" placeholder="Ex. : Partie 1 — L'arrivée à Marsember">
+  </div>`;
   const m = mjd();
   const quetes = fichesToutes().filter(f => f.type === 'quete');
   const nomsPNJ = [...new Set([...m.pnj.map(x => x.nom), ...fichesToutes().filter(f => f.type === 'pnj').map(f => f.nom)])];
@@ -2243,10 +2251,12 @@ function etapeEdition(s, e, i) {
 }
 
 function etapeJeu(s, e, i) {
+  if (e.type === 'titre') return `<h3 class="etape-titre-partie"><span>${esc(e.titre || 'Nouvelle partie')}</span></h3>`;
   const m = mjd();
   const t = TYPES_ETAPE[e.type] || TYPES_ETAPE.note;
   let propre = '';
-  if (e.type === 'dialogue') propre = `<blockquote class="dialogue">${e.pnj ? `<b>${lienFiche(e.pnj)}</b> : ` : ''}${formaterRecit(e.texte).replace(/^<p>|<\/p>$/g, '') || ''}</blockquote>`;
+  if (e.type === 'dialogue' && !e.texte && !e.pnj) propre = '';
+  else if (e.type === 'dialogue') propre = `<blockquote class="dialogue">${e.pnj ? `<b>${lienFiche(e.pnj)}</b> : ` : ''}${formaterRecit(e.texte).replace(/^<p>|<\/p>$/g, '') || ''}</blockquote>`;
   else if (e.type === 'image') propre = `${e.image ? `<button class="illustration" data-action="img-zoom" data-src="${e.image}" aria-label="Montrer en plein écran"><img src="${e.image}" alt=""></button>` : '<p class="empty">Pas encore d\'image.</p>'}${e.texte ? `<p class="hint">${esc(e.texte)}</p>` : ''}`;
   else propre = e.texte ? `<div class="recit-texte">${formaterRecit(e.texte)}</div>` : '';
   if (e.type === 'rencontre' && e.combatId) {
@@ -2293,7 +2303,8 @@ function etapeJeu(s, e, i) {
 function pageSessionMJ(s) {
   const prep = state.mjSessionMode === 'prep';
   const etapes = s.etapes || [];
-  const faits = etapes.filter(e => e.fait).length;
+  const reelles = etapes.filter(e => e.type !== 'titre');
+  const faits = reelles.filter(e => e.fait).length;
   const k = cleSession(s.id);
   return `<p><button class="lien" data-action="mj-session-fermer">← Toutes les sessions</button></p>
   <section class="card session-tete">
@@ -2306,10 +2317,10 @@ function pageSessionMJ(s) {
     : `<p class="recit-num">Session ${esc(s.numero)}${s.date ? ` · ${dateFr(s.date)}` : ''}</p><h2 class="session-titre">${esc(s.titre || 'Sans titre')}</h2>
       ${s.resume ? `<p>${esc(s.resume)}</p>` : ''}`}
     <div class="session-compteurs">
-      <span>${faits} / ${etapes.length} étapes jouées</span>
+      <span>${faits} / ${reelles.length} étapes jouées</span>
       <span>XP : ${xpDonne(s)} attribués sur ${xpSession(s)} prévus</span>
     </div>
-    ${etapes.length ? `<div class="barre"><span style="width:${etapes.length ? Math.round(faits / etapes.length * 100) : 0}%"></span></div>` : ''}
+    ${reelles.length ? `<div class="barre"><span style="width:${Math.round(faits / reelles.length * 100)}%"></span></div>` : ''}
     <div class="btns">
       <button class="btn ${prep ? 'ghost' : ''}" data-action="mj-session-mode" data-mode="jeu">▶ Jouer</button>
       <button class="btn ${prep ? '' : 'ghost'}" data-action="mj-session-mode" data-mode="prep">✎ Préparer</button>
