@@ -1411,3 +1411,24 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .rappels summary { cursor: pointer; color: var(--bronze-clair); }
 .creature-actions { align-items: center; margin-top: .6rem; }
 .creature-actions .row { gap: .3rem; align-items: center; flex-wrap: wrap; }
+.marche-ferme { text-align: center; color: var(--muted); margin: 3rem 1rem; font-style: italic; }
+/* Grimoire : onglets et aptitudes */
+.grimoire-onglets { margin-bottom: .6rem; }
+.sous-onglets { margin: 0 0 .7rem; }
+.cartes-aptitudes, .aptitudes-niveaux { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .55rem; }
+.carte-aptitude { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--bronze); border-radius: var(--radius-s); padding: .55rem .7rem; }
+.carte-aptitude header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.carte-aptitude header b { font-family: var(--font-titre); font-size: 1rem; }
+.carte-aptitude .niv { color: var(--bronze-clair); font-weight: 700; font-size: .78rem; white-space: nowrap; }
+.carte-aptitude .vo { color: var(--muted); font-style: italic; font-size: .78rem; }
+.carte-aptitude p { margin: .3rem 0 0; font-size: .9rem; line-height: 1.5; }
+.carte-aptitude .prerequis span { color: var(--bronze-clair); }
+.classe-resume p { margin: .25rem 0; }
+/* Log */
+.bottomnav a[hidden] { display: none; }
+.journal-jour { text-transform: capitalize; font-size: .95rem; color: var(--bronze-clair); margin: 1rem 0 .4rem; }
+.journal-entree { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-s); padding: .45rem .7rem; margin-bottom: .4rem; }
+.journal-entree header { display: flex; justify-content: space-between; align-items: baseline; }
+.journal-entree header small { color: var(--muted); }
+.journal-entree ul { margin: .25rem 0 0; padding-left: 1.1rem; font-size: .88rem; }
+.gen-choix { margin: .5rem 0; } .gen-fiche { border-top: none; padding: 0; }

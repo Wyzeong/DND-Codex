@@ -1078,7 +1078,7 @@ function ongletInventaire(p, e) {
       <span>Bourse<b>${esc(bourseTxt(p))}</b></span>
     </div>
     ${lignes}
-    ${mod ? `<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>${blocAjoutRapide('perso')}` : ''}
+    ${mod ? `<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>${estMJ() ? blocAjoutRapide('perso') : ''}` : ''}
     <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Armure » et « Bouclier » : la CA, la Dextérité maximale et le malus aux compétences se calculent seuls. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
   </section>
   <section class="card"><h3>Bourse</h3>
@@ -2087,6 +2087,133 @@ function pnjDepuisCreature(c) {
     attaques: c.outrance, caracs: `${c.caracs} · ${c.js} · Vitesse ${c.vitesse}`, notes, butin: [], source: c.id, fp: c.fp };
 }
 
+/* ===== Générateur de PNJ types (règles du SRD : classes de PNJ et classes de personnage) ===== */
+const CLASSES_PNJ = {
+  'homme-peuple': { nom: 'Homme du peuple', dv: 4, bba: 'faible', js: {}, pc: 2 },
+  expert: { nom: 'Expert', dv: 6, bba: 'moyen', js: { vol: 1 }, pc: 6 },
+  combattant: { nom: 'Combattant', dv: 8, bba: 'fort', js: { vig: 1 }, pc: 2 },
+  adepte: { nom: 'Adepte', dv: 6, bba: 'faible', js: { vol: 1 }, pc: 2 },
+  aristocrate: { nom: 'Aristocrate', dv: 8, bba: 'moyen', js: { vol: 1 }, pc: 4 },
+};
+const classeGen = id => CLASSES_PNJ[id] || R.CLASSES[id];
+/* Modèles : classe, caractéristiques par ordre d'importance, équipement, compétences et dons typiques */
+const MODELES_PNJ = [
+  { id: 'garde', nom: 'Garde de la ville', classe: 'combattant', ordre: ['for', 'con', 'dex', 'sag', 'int', 'cha'], armure: 'chemise-mailles', bouclier: 'ecu-leger', arme: 'epee-longue', distance: 'arbalete-legere', comp: ['detection', 'perception', 'intimidation'], dons: ['vigilance', 'arme-predilection', 'robustesse', 'attaque-puissance'] },
+  { id: 'soldat', nom: 'Soldat', classe: 'combattant', ordre: ['for', 'con', 'dex', 'sag', 'int', 'cha'], armure: 'ecailles', bouclier: 'ecu-lourd', arme: 'epee-longue', distance: 'javeline', comp: ['escalade', 'saut', 'intimidation'], dons: ['arme-predilection', 'robustesse', 'attaque-puissance', 'enchainement'] },
+  { id: 'mercenaire', nom: 'Mercenaire', classe: 'guerrier', ordre: ['for', 'con', 'dex', 'sag', 'cha', 'int'], armure: 'cotte-mailles', arme: 'epee-deux-mains', distance: 'arc-long', comp: ['intimidation', 'escalade', 'equitation'], dons: ['attaque-puissance', 'arme-predilection', 'enchainement', 'science-initiative', 'specialisation-martiale', 'robustesse'] },
+  { id: 'chef-bandits', nom: 'Chef de bandits', classe: 'guerrier', ordre: ['for', 'dex', 'con', 'cha', 'sag', 'int'], armure: 'cuirasse', arme: 'epee-longue', distance: 'arc-court', comp: ['intimidation', 'bluff', 'detection'], dons: ['attaque-puissance', 'arme-predilection', 'science-initiative', 'enchainement', 'specialisation-martiale', 'vigilance'] },
+  { id: 'bandit', nom: 'Bandit de grand chemin', classe: 'combattant', ordre: ['dex', 'for', 'con', 'sag', 'int', 'cha'], armure: 'cuir', arme: 'epee-courte', distance: 'arc-court', comp: ['discretion', 'deplacement-silencieux', 'detection'], dons: ['tir-bout-portant', 'arme-predilection', 'tir-precision'] },
+  { id: 'voleur', nom: 'Voleur des rues', classe: 'roublard', ordre: ['dex', 'int', 'con', 'sag', 'cha', 'for'], armure: 'cuir', arme: 'dague', distance: 'dague', comp: ['escamotage', 'discretion', 'deplacement-silencieux', 'crochetage', 'detection', 'bluff'], dons: ['attaque-finesse', 'esquive', 'science-initiative', 'mobilite'] },
+  { id: 'assassin', nom: 'Tueur à gages', classe: 'roublard', ordre: ['dex', 'int', 'con', 'sag', 'for', 'cha'], armure: 'cuir-cloute', arme: 'epee-courte', distance: 'arbalete-poing', comp: ['discretion', 'deplacement-silencieux', 'deguisement', 'detection', 'perception'], dons: ['attaque-finesse', 'science-initiative', 'arme-predilection', 'esquive'], notes: 'Enduit souvent ses lames de poison.' },
+  { id: 'contrebandier', nom: 'Contrebandier', classe: 'roublard', ordre: ['dex', 'cha', 'int', 'con', 'sag', 'for'], armure: 'cuir', arme: 'rapiere', distance: 'arbalete-legere', comp: ['bluff', 'diplomatie', 'natation', 'estimation', 'discretion'], dons: ['attaque-finesse', 'persuasion', 'esquive'] },
+  { id: 'marchand', nom: 'Marchand', classe: 'expert', ordre: ['int', 'cha', 'sag', 'con', 'dex', 'for'], arme: 'dague', comp: ['estimation', 'diplomatie', 'psychologie', 'bluff', 'renseignements'], dons: ['negociation', 'persuasion', 'vigilance'] },
+  { id: 'artisan', nom: 'Artisan', classe: 'expert', ordre: ['int', 'dex', 'sag', 'con', 'for', 'cha'], arme: 'marteau-leger', comp: ['artisanat', 'estimation', 'profession'], dons: ['talent', 'assidu'] },
+  { id: 'aubergiste', nom: 'Aubergiste', classe: 'homme-peuple', ordre: ['con', 'sag', 'cha', 'for', 'int', 'dex'], arme: 'gourdin', comp: ['profession', 'perception', 'detection'], dons: ['vigilance', 'robustesse'] },
+  { id: 'paysan', nom: 'Paysan', classe: 'homme-peuple', ordre: ['for', 'con', 'sag', 'dex', 'int', 'cha'], arme: 'faucille', comp: ['profession', 'dressage', 'escalade'], dons: ['endurance', 'robustesse'] },
+  { id: 'marin', nom: 'Marin', classe: 'combattant', ordre: ['for', 'dex', 'con', 'sag', 'int', 'cha'], armure: 'matelassee', arme: 'cimeterre', distance: 'arbalete-legere', comp: ['escalade', 'natation', 'maitrise-cordes', 'equilibre'], dons: ['athletisme', 'robustesse'] },
+  { id: 'capitaine', nom: 'Capitaine de navire', classe: 'guerrier', ordre: ['for', 'cha', 'dex', 'con', 'sag', 'int'], armure: 'cuir-cloute', arme: 'rapiere', distance: 'arbalete-legere', comp: ['profession', 'intimidation', 'natation', 'maitrise-cordes'], dons: ['attaque-finesse', 'arme-predilection', 'esquive', 'mobilite', 'specialisation-martiale'] },
+  { id: 'chasseur', nom: 'Chasseur', classe: 'rodeur', ordre: ['dex', 'sag', 'con', 'for', 'int', 'cha'], armure: 'cuir', arme: 'epee-courte', distance: 'arc-long', comp: ['survie', 'detection', 'perception', 'discretion', 'deplacement-silencieux'], dons: ['tir-bout-portant', 'tir-precision', 'pistage'] },
+  { id: 'eclaireur', nom: 'Éclaireur', classe: 'rodeur', ordre: ['dex', 'sag', 'con', 'for', 'int', 'cha'], armure: 'cuir-cloute', arme: 'epee-courte', distance: 'arc-court', comp: ['discretion', 'deplacement-silencieux', 'detection', 'survie'], dons: ['vigilance', 'tir-bout-portant', 'science-initiative'] },
+  { id: 'chevalier', nom: 'Chevalier', classe: 'guerrier', ordre: ['for', 'con', 'cha', 'dex', 'sag', 'int'], armure: 'harnois', bouclier: 'ecu-lourd', arme: 'epee-longue', distance: 'javeline', comp: ['equitation', 'diplomatie', 'intimidation'], dons: ['combat-monte', 'arme-predilection', 'attaque-puissance', 'enchainement', 'specialisation-martiale', 'charge-devastatrice'] },
+  { id: 'garde-corps', nom: 'Garde du corps', classe: 'guerrier', ordre: ['for', 'con', 'dex', 'sag', 'int', 'cha'], armure: 'cotte-mailles', bouclier: 'ecu-lourd', arme: 'masse-lourde', distance: 'arbalete-legere', comp: ['detection', 'perception', 'psychologie'], dons: ['vigilance', 'attaques-reflexes', 'arme-predilection', 'robustesse', 'specialisation-martiale'] },
+  { id: 'pretre', nom: 'Prêtre de village', classe: 'pretre', ordre: ['sag', 'con', 'cha', 'for', 'int', 'dex'], armure: 'ecailles', bouclier: 'ecu-lourd', arme: 'masse-lourde', distance: 'arbalete-legere', comp: ['concentration', 'premiers-secours', 'diplomatie', 'conn-religion'], dons: ['magie-guerre', 'vigueur-surhumaine', 'volonte-fer'] },
+  { id: 'acolyte', nom: 'Acolyte', classe: 'adepte', ordre: ['sag', 'con', 'int', 'cha', 'dex', 'for'], arme: 'baton', comp: ['concentration', 'premiers-secours', 'conn-religion'], dons: ['magie-guerre', 'volonte-fer'] },
+  { id: 'cultiste', nom: 'Cultiste', classe: 'adepte', ordre: ['sag', 'cha', 'con', 'int', 'dex', 'for'], armure: 'cuir', arme: 'dague', comp: ['concentration', 'bluff', 'conn-religion'], dons: ['magie-guerre', 'robustesse'] },
+  { id: 'mage', nom: 'Mage de cour', classe: 'magicien', ordre: ['int', 'dex', 'con', 'sag', 'cha', 'for'], arme: 'baton', distance: 'arbalete-legere', comp: ['art-magie', 'concentration', 'conn-mysteres', 'decryptage'], dons: ['magie-guerre', 'science-initiative', 'ecriture-parchemins', 'robustesse'] },
+  { id: 'druide', nom: 'Druide ermite', classe: 'druide', ordre: ['sag', 'con', 'dex', 'cha', 'int', 'for'], armure: 'peau', bouclier: 'ecu-leger', arme: 'cimeterre', distance: 'fronde', comp: ['survie', 'conn-nature', 'premiers-secours', 'concentration'], dons: ['magie-guerre', 'pistage', 'endurance'] },
+  { id: 'barde', nom: 'Barde ambulant', classe: 'barde', ordre: ['cha', 'dex', 'int', 'con', 'sag', 'for'], armure: 'cuir', arme: 'rapiere', distance: 'arc-court', comp: ['representation', 'diplomatie', 'bluff', 'renseignements'], dons: ['attaque-finesse', 'persuasion', 'esquive'] },
+  { id: 'noble', nom: 'Noble', classe: 'aristocrate', ordre: ['cha', 'int', 'sag', 'dex', 'con', 'for'], armure: 'chemise-mailles', arme: 'rapiere', comp: ['diplomatie', 'psychologie', 'equitation', 'conn-noblesse', 'bluff'], dons: ['persuasion', 'negociation', 'attaque-finesse'] },
+];
+const RACES_GEN = { humain: ['Humain', {}], nain: ['Nain', { con: 2, cha: -2 }], elfe: ['Elfe', { dex: 2, con: -2 }], 'demi-orc': ['Demi-orque', { for: 2, int: -2, cha: -2 }], halfelin: ['Halfelin', { dex: 2, for: -2 }], gnome: ['Gnome', { con: 2, for: -2 }], 'demi-elfe': ['Demi-elfe', {}] };
+const modC = v => Math.floor((v - 10) / 2);
+function genererPNJ(modeleId, niveau, raceId = 'humain') {
+  const md = MODELES_PNJ.find(m => m.id === modeleId);
+  const cl = classeGen(md.classe);
+  const pnjClasse = !!CLASSES_PNJ[md.classe];
+  /* Valeurs de caractéristiques : « non élite » pour les classes de PNJ, « élite » pour les autres (Guide du Maître) */
+  const valeurs = pnjClasse ? [13, 12, 11, 10, 9, 8] : [15, 14, 13, 12, 10, 8];
+  const car = {};
+  md.ordre.forEach((k, i) => { car[k] = valeurs[i]; });
+  for (const [k, v] of Object.entries(RACES_GEN[raceId][1])) car[k] += v;
+  car[md.ordre[0]] += Math.floor(niveau / 4);
+  const m = Object.fromEntries(Object.entries(car).map(([k, v]) => [k, modC(v)]));
+  const bba = R.bbaClasse(cl.bba, niveau);
+  const js = { vig: R.jsClasse(cl.js.vig, niveau) + m.con, ref: R.jsClasse(cl.js.ref, niveau) + m.dex, vol: R.jsClasse(cl.js.vol, niveau) + m.sag };
+  const pv = Math.max(1, Math.floor(cl.dv + (niveau - 1) * (cl.dv / 2 + 0.5) + m.con * niveau));
+  const armure = md.armure ? R.ARMURE[md.armure] : null, bouclier = md.bouclier ? R.ARMURE[md.bouclier] : null;
+  const dexCA = armure && armure.dex != null ? Math.min(m.dex, armure.dex) : m.dex;
+  const taille = ['halfelin', 'gnome'].includes(raceId) ? 1 : 0;
+  const ca = 10 + dexCA + (armure?.ca || 0) + (bouclier?.ca || 0) + taille;
+  const arme = R.ARMES.find(a => a.id === md.arme), dist = md.distance ? R.ARMES.find(a => a.id === md.distance) : null;
+  const dons = md.dons.slice(0, 1 + Math.floor(niveau / 3) + (md.classe === 'guerrier' ? 1 + Math.floor(niveau / 2) : 0) + (raceId === 'humain' ? 1 : 0)).filter(d => R.DON[d]);
+  const predi = dons.includes('arme-predilection') ? 1 : 0, spe = dons.includes('specialisation-martiale') && niveau >= 4 ? 2 : 0;
+  const finesse = dons.includes('attaque-finesse') && arme && (arme.prise === 'legere' || arme.id === 'rapiere');
+  const deuxMains = arme && arme.prise === 'deux';
+  const attC = bba + (finesse ? m.dex : m.for) + predi + taille;
+  const degC = Math.floor(m.for * (deuxMains ? 1.5 : 1)) + spe;
+  const attD = bba + m.dex + taille + (dons.includes('tir-bout-portant') ? 0 : 0);
+  const iter = n => R.attTxt(R.attaques(n));
+  const att = [arme ? `${arme.nom} ${iter(attC)} corps à corps (${arme.deg}${degC ? R.signe(degC) : ''}, ${arme.crit})` : '',
+    dist ? `${dist.nom} ${iter(attD)} distance (${dist.deg}${dist.lancer && m.for ? R.signe(m.for) : ''}, ${dist.crit}${dist.portee ? ', ' + dist.portee : ''})` : ''].filter(Boolean).join(' ; ou ');
+  const rangs = niveau + 3;
+  const nomComp = k => (R.COMPETENCES.find(c => c.id === k) || {}).nom || k;
+  const carComp = k => (R.COMPETENCES.find(c => c.id === k) || {}).car || 'int';
+  const comps = md.comp.map((k, i) => { const r = i < 3 ? rangs : Math.ceil(rangs / 2); return `${nomComp(k)} ${R.signe(r + (m[carComp(k)] || 0))}`; });
+  const lanceur = cl.lanceur ? sortsParJour(md.classe, niveau, { classes: { [md.classe]: niveau }, mods: m, lanceurBonus: {} }) : null;
+  const sorts = md.classe === 'adepte' ? `Sorts d'adepte : ${niveau >= 4 ? '3 de niv. 0, 3 de niv. 1, 1 de niv. 2' : '3 de niv. 0, 1 de niv. 1'} (bénédiction, soins légers, sommeil…)` :
+    lanceur ? `Sorts par jour : ${lanceur.parJour.map(x => `niv. ${x.niv} : ${x.txt}`).join(', ')}` : '';
+  const equip = [armure?.nom, bouclier?.nom, arme?.nom, dist && dist.id !== arme?.id ? dist.nom + (dist.prise === 'distance' ? ' et 20 projectiles' : '') : '', niveau >= 3 ? 'une pièce d\'équipement de maître' : '', niveau >= 5 ? '1 ou 2 potions' : ''].filter(Boolean).join(', ');
+  const car6 = R.CARACS.map(c => `${c.n.slice(0, 3)} ${car[c.k]}`).join(', ');
+  return {
+    modele: md, niveau, race: RACES_GEN[raceId][0],
+    titre: `${md.nom} (${RACES_GEN[raceId][0].toLowerCase()}, ${cl.nom.toLowerCase()} ${niveau})`,
+    pv, ca, contact: 10 + dexCA + taille, init: m.dex, bba, lutte: bba + m.for - 4 * taille, js, att,
+    vitesse: armure && armure.type !== 'legere' ? (['nain', 'halfelin', 'gnome'].includes(raceId) ? '6 m' : '6 m (armure)') : (['nain', 'halfelin', 'gnome'].includes(raceId) ? '6 m' : '9 m'),
+    car6, comps, dons: dons.map(d => R.DON[d].nom), equip, sorts, notes: md.notes || '',
+    fp: niveau <= 1 && pnjClasse ? '½' : String(Math.max(1, pnjClasse ? niveau - 1 : niveau)),
+  };
+}
+function cartePNJGen() {
+  const g = state.gen || (state.gen = { modele: 'garde', niveau: 1, race: 'humain', nb: 1, nom: '' });
+  const r = genererPNJ(g.modele, g.niveau, g.race);
+  const m = mjd();
+  return `<section class="card"><details class="bestiaire generateur" ${state.genFerme ? '' : 'open'}>
+    <summary><h3 class="inline">Générateur de PNJ <small>(gardes, marchands, prêtres, bandits…)</small></h3></summary>
+    <div class="grid gen-choix">
+      <label class="f"><span>Modèle</span><select id="gen-modele">${MODELES_PNJ.map(x => `<option value="${x.id}" ${g.modele === x.id ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select></label>
+      <label class="f"><span>Niveau</span><select id="gen-niveau">${Array.from({ length: 12 }, (_, i) => i + 1).map(n => `<option ${g.niveau === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label class="f"><span>Race</span><select id="gen-race">${Object.entries(RACES_GEN).map(([k, [l]]) => `<option value="${k}" ${g.race === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="f"><span>Nom (facultatif)</span><input type="text" id="gen-nom" value="${esc(g.nom)}" placeholder="${esc(r.modele.nom)}"></label>
+    </div>
+    <div class="creature-fiche gen-fiche">
+      <p class="creature-type">${esc(r.titre)} · FP ${esc(r.fp)}</p>
+      <div class="creature-chiffres">
+        <span><b>${r.pv}</b> PV</span><span><b>${r.ca}</b> CA <small>(contact ${r.contact})</small></span><span><b>${R.signe(r.init)}</b> init.</span><span><b>${R.signe(r.bba)}</b> BBA · lutte ${R.signe(r.lutte)}</span>
+      </div>
+      <div class="bloc-stat"><span>Attaques</span><div>${esc(r.att || '—')}</div></div>
+      <div class="bloc-stat"><span>Vitesse</span><div>${esc(r.vitesse)}</div></div>
+      <div class="bloc-stat"><span>Sauvegardes</span><div>Vig ${R.signe(r.js.vig)}, Réf ${R.signe(r.js.ref)}, Vol ${R.signe(r.js.vol)}</div></div>
+      <div class="bloc-stat"><span>Caractéristiques</span><div>${esc(r.car6)}</div></div>
+      <div class="bloc-stat"><span>Compétences</span><div>${esc(r.comps.join(', '))}</div></div>
+      <div class="bloc-stat"><span>Dons</span><div>${esc(r.dons.join(', ') || '—')}</div></div>
+      ${r.sorts ? `<div class="bloc-stat"><span>Magie</span><div>${esc(r.sorts)}</div></div>` : ''}
+      <div class="bloc-stat"><span>Équipement</span><div>${esc(r.equip || '—')}</div></div>
+      ${r.notes ? `<p class="hint">${esc(r.notes)}</p>` : ''}
+      <div class="btns creature-actions">
+        <button class="btn" data-action="gen-pnj">+ Ajouter aux PNJ</button>
+        ${m.combats.length ? `<span class="row"><input type="text" inputmode="numeric" class="s" id="gen-nb" value="${esc(g.nb)}" aria-label="Nombre">
+          <select id="gen-combat" aria-label="Combat">${m.combats.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
+          <button class="btn ghost" data-action="gen-combat">Ajouter au combat</button></span>` : ''}
+      </div>
+    </div>
+  </details></section>`;
+}
+function pnjDepuisGen(r, nom) {
+  return { id: uid(), nom: nom || r.modele.nom, camp: 'neutre', pvMax: String(r.pv), ca: String(r.ca), init: String(r.init),
+    attaques: r.att, caracs: `${r.car6} · Vig ${R.signe(r.js.vig)}, Réf ${R.signe(r.js.ref)}, Vol ${R.signe(r.js.vol)} · Vitesse ${r.vitesse}`,
+    notes: [r.titre, 'Compétences : ' + r.comps.join(', '), 'Dons : ' + r.dons.join(', '), r.sorts, 'Équipement : ' + r.equip, r.notes].filter(Boolean).join('\n'), butin: [], fp: r.fp };
+}
+
 /* ----- Préparation : PNJ (bestiaire), combats ----- */
 const nouveauPNJ = () => ({ id: uid(), nom: 'Nouveau PNJ', camp: 'ennemi', pvMax: '', ca: '', init: '', attaques: '', caracs: '', notes: '', butin: [] });
 const champMJ = (path, label, opt = {}) => `<label class="f${opt.span ? ' span2' : ''}"><span>${esc(label)}</span>${opt.area
@@ -2786,7 +2913,7 @@ function pageMJ2() {
   else if (o === 'objets') corps = pageObjetsMJ();
   else if (o === 'notes') corps = `<section class="card"><h3>Notes secrètes</h3>${champMJ('notes', 'Rien que pour toi', { area: true, rows: 14 })}</section>`;
   else if (o === 'prepa') {
-    corps = `${carteBestiaire()}<section class="card"><h3>PNJ et créatures</h3>
+    corps = `${carteBestiaire()}${cartePNJGen()}<section class="card"><h3>PNJ et créatures</h3>
       <div class="pnjs">${m.pnj.map((x, i) => state.mjEdit === 'pnj:' + x.id ? formPNJ(x, i) : cartePNJ(x, i)).join('') || '<p class="empty">Aucun PNJ préparé.</p>'}</div>
       <button class="btn ghost" data-action="mj-pnj-ajout">+ Préparer un PNJ</button></section>
       <section class="card"><h3>Combats préparés</h3>
@@ -2926,7 +3053,7 @@ function pageMarche() {
   const mj = estMJ();
   const marches = listeMarches().filter(m => mj || m.ouvert !== false);
   const sel = marches.find(m => m.id === state.marcheSel) || marches.find(m => (db.marche || []).some(a => marcheDe(a).id === m.id && (mj || a.aVendre))) || marches[0];
-  if (!sel) return '<section class="card intro"><p class="empty">Aucun marché ouvert pour l\'instant.</p></section>';
+  if (!sel) return '<p class="marche-ferme">Aucun marché n\'est ouvert pour le moment.</p>';
   const articles = (db.marche || []).filter(a => marcheDe(a).id === sel.id && (mj || a.aVendre));
   const mes = db.personnages.filter(x => !x._public && estMembre(x) && (enLigne() ? !!(db.cles || {})[x.id] || mj : true));
   const vendeurs = [...new Set(articles.map(a => a.vendeur || 'Étal du marché'))];
@@ -4472,6 +4599,94 @@ async function lignesChangees(table, cache, champs, present = () => true) {
   };
 }
 
+/* ===== Journal des modifications des joueurs (visible du MJ et de l'administrateur) =====
+   Sur l'appareil d'un joueur, chaque envoi de fiche est comparé à la dernière version connue du serveur ;
+   les différences sont envoyées au journal. Rien n'est noté depuis l'appareil du MJ. */
+function resumeLog(p) {
+  const e = etat(p);
+  return {
+    nom: p.nom || '', pv: pvActuels(p), pvMax: num(p.pvMax), niveau: e.niveau, classes: classesTxt(e),
+    caracs: Object.fromEntries(R.CARACS.map(c => [c.k, (p.caracs || {})[c.k]?.val ?? ''])),
+    argent: piecesTxt(p.argent),
+    objets: Object.fromEntries((p.equipement || []).map(it => [it.id, `${it.nom || 'Objet'}|${num(it.qte) || 1}|${it.equipe === false ? 0 : 1}`])),
+    sorts: (p.sorts || []).map(x => x.id),
+    etats: (p.etats || []).filter(x => x.actif !== false).map(x => x.nom),
+    comp: Object.fromEntries(Object.entries(p.comp || {}).filter(([, v]) => num(v.rangs)).map(([k, v]) => [k, num(v.rangs)])),
+    dons: [...e.dons].sort(),
+    baguette: p.baguette?.nom || '',
+    langues: (p.langues || []).join(', '),
+  };
+}
+function differencesLog(a, b) {
+  if (!a || !b) return [];
+  const l = [];
+  const champ = (t, x, y) => { if (String(x) !== String(y)) l.push(`${t} : ${x === '' ? '—' : x} → ${y === '' ? '—' : y}`); };
+  champ('Nom', a.nom, b.nom); champ('PV', a.pv, b.pv); champ('PV max', a.pvMax, b.pvMax); champ('Niveau', a.niveau, b.niveau);
+  if (a.classes !== b.classes) l.push(`Classes : ${a.classes || '—'} → ${b.classes || '—'}`);
+  for (const c of R.CARACS) champ(c.n, a.caracs[c.k], b.caracs[c.k]);
+  champ('Bourse', a.argent, b.argent);
+  const nomObj = v => v.split('|')[0], qte = v => Number(v.split('|')[1]), porte = v => v.split('|')[2];
+  for (const [id, v] of Object.entries(b.objets)) {
+    const w = a.objets[id];
+    if (!w) l.push(`Objet ajouté : ${nomObj(v)}${qte(v) > 1 ? ' ×' + qte(v) : ''}`);
+    else {
+      if (nomObj(w) !== nomObj(v)) l.push(`Objet renommé : ${nomObj(w)} → ${nomObj(v)}`);
+      if (qte(w) !== qte(v)) l.push(`${nomObj(v)} : quantité ${qte(w)} → ${qte(v)}`);
+      if (porte(w) !== porte(v)) l.push(`${nomObj(v)} : ${porte(v) === '1' ? 'porté' : 'rangé'}`);
+    }
+  }
+  for (const [id, w] of Object.entries(a.objets)) if (!b.objets[id]) l.push(`Objet retiré : ${nomObj(w)}${qte(w) > 1 ? ' ×' + qte(w) : ''}`);
+  const nomSort = id => findSort(id)?.nom || id;
+  for (const id of b.sorts) if (!a.sorts.includes(id)) l.push(`Sort ajouté : ${nomSort(id)}`);
+  for (const id of a.sorts) if (!b.sorts.includes(id)) l.push(`Sort retiré : ${nomSort(id)}`);
+  for (const n of b.etats) if (!a.etats.includes(n)) l.push(`État ajouté : ${n}`);
+  for (const n of a.etats) if (!b.etats.includes(n)) l.push(`État retiré : ${n}`);
+  const nomComp = k => (R.COMPETENCES.find(c => c.id === k) || {}).nom || k;
+  for (const k of new Set([...Object.keys(a.comp), ...Object.keys(b.comp)])) if ((a.comp[k] || 0) !== (b.comp[k] || 0)) l.push(`${nomComp(k)} : ${a.comp[k] || 0} → ${b.comp[k] || 0} rang(s)`);
+  for (const d of b.dons) if (!a.dons.includes(d)) l.push(`Don ajouté : ${R.DON[d]?.nom || d}`);
+  for (const d of a.dons) if (!b.dons.includes(d)) l.push(`Don retiré : ${R.DON[d]?.nom || d}`);
+  champ('Baguette', a.baguette, b.baguette); champ('Langues', a.langues, b.langues);
+  return l.slice(0, 40);
+}
+/* Base de comparaison : la dernière version connue du serveur */
+const baseLog = () => (db.baseLog = db.baseLog || {});
+function memoriserBaseLog(p) { try { baseLog()[p.id] = resumeLog(p); } catch (e) { /* fiche incomplète */ } }
+async function noterModifs(p) {
+  if (estMJ() || !enLigne() || p.pnjMJ) return;
+  const avant = baseLog()[p.id];
+  const apres = resumeLog(p);
+  const lignes = differencesLog(avant, apres);
+  if (lignes.length) await rpc('journal_ajouter', { p_id: p.id, p_code: codePour(p), p_nom: p.nom || '', p_lignes: lignes }).catch(() => {});
+}
+async function chargerJournal() {
+  const code = db.codeMJ || db.codeCampagne;
+  if (!enLigne() || !code) return;
+  try { state.journal = await rpc('journal_lire', { p_code: code, p_limite: 300 }) || []; state.journalErreur = ''; }
+  catch (e) { state.journalErreur = e.message; }
+}
+const voitJournal = () => estMJ() || !!db.codeCampagne;
+function pageJournalModifs() {
+  if (!voitJournal()) return '<section class="card intro"><p class="empty">Réservé au MJ et à l\'administrateur.</p></section>';
+  if (!state.journal && !state.journalErreur) { chargerJournal().then(render); return '<p class="hint">Chargement…</p>'; }
+  const persos = [...new Set((state.journal || []).map(x => x.perso_nom))].sort();
+  const l = (state.journal || []).filter(x => !state.journalPerso || x.perso_nom === state.journalPerso);
+  const jour = d => new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  let dernier = '';
+  return `<div class="pagehead"><div><h1>Log</h1><p class="sub">Les modifications faites par les joueurs sur leurs fiches</p></div>
+    <button class="btn ghost" data-action="journal-actualiser">↻ Actualiser</button></div>
+    ${state.journalErreur ? `<p class="hint">Journal indisponible (${esc(state.journalErreur)}). La base est-elle en v12 ?</p>` : ''}
+    ${persos.length > 1 ? `<div class="chips">${['', ...persos].map(n => `<button class="chip ${(state.journalPerso || '') === n ? 'on' : ''}" data-action="journal-filtre" data-n="${esc(n)}">${esc(n || 'Tous')}</button>`).join('')}</div>` : ''}
+    <div class="journal-modifs">${l.map(x => {
+      const j = jour(x.cree), tete = j !== dernier ? `<h3 class="journal-jour">${esc(j)}</h3>` : '';
+      dernier = j;
+      return `${tete}<article class="journal-entree">
+        <header><b>${esc(x.perso_nom)}</b><small>${new Date(x.cree).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</small></header>
+        <ul>${(x.lignes || []).map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+      </article>`;
+    }).join('') || '<p class="empty">Aucune modification enregistrée pour l\'instant.</p>'}</div>
+    <p class="hint">Seules les modifications faites par les joueurs depuis leur propre appareil sont notées. Les actions du MJ (PV, rations, objets donnés, jour suivant…) n'apparaissent pas ici.</p>`;
+}
+
 async function chargerPersos() {
   if (!enLigne()) return false;
   try {
@@ -4491,6 +4706,7 @@ async function chargerPersos() {
       migrer(data);
       if (local) { for (const k of Object.keys(local)) delete local[k]; Object.assign(local, data); res.push(local); }
       else res.push(data);
+      if (!data._public) memoriserBaseLog(data);
     }
     /* Gardés : les personnages jamais mis en ligne. Retirés : ceux supprimés en ligne par leur propriétaire. */
     for (const p of db.personnages) if (!enLigneIds.has(p.id) && (!p.publie || attente.has(p.id))) res.push(p);
@@ -4529,10 +4745,12 @@ async function envoyerPersos() {
         if (v && v[0] && num(v[0].mjMaj) > num(p.mjMaj)) {
           const srv = await api(`persos?id=eq.${encodeURIComponent(id)}&select=data`).catch(() => null);
           const d = srv && srv[0] && srv[0].data;
-          if (d) fusionMJ(p, d);
+          if (d) { memoriserBaseLog({ ...d, id }); fusionMJ(p, d); }
         }
         const maj = await rpc('sauver_perso', { p_id: id, p_code: codePour(p), p_data: { ...p, publie: true } });
         if (maj) versions('persos')[id] = msDe(maj);
+        await noterModifs(p);
+        memoriserBaseLog(p);
       }
       db.enAttente = db.enAttente.filter(x => x !== id);
       state.syncErreur = '';
@@ -4667,6 +4885,98 @@ function resultatsSorts() {
   return `<p class="count">${res.length} sort${res.length > 1 ? 's' : ''}</p>
     ${lis ? `<ul class="spells">${lis}</ul>` : '<p class="empty">Aucun sort ne correspond à ces filtres.</p>'}`;
 }
+/* ===== Grimoire > Aptitudes : dons, aptitudes de classe et manœuvres de combat ===== */
+const MANOEUVRES = [
+  ['Actions du round', 'Action simple', "Une attaque, un sort, boire une potion, activer un objet, aider un allié. À chaque round : une action simple et une action de mouvement, ou une action complexe, plus des actions libres."],
+  ['Attaque à outrance', 'Action complexe', "Toutes les attaques auxquelles le BBA donne droit (+6/+1, etc.). On ne peut alors faire qu'un pas de placement de 1,5 m. Le déluge de coups du moine est une attaque à outrance."],
+  ['Charge', 'Action complexe', "Déplacement en ligne droite jusqu'à deux fois sa vitesse (au moins 3 m), puis une attaque au corps à corps : +2 au jet d'attaque, −2 à la CA jusqu'au prochain tour. Le chemin doit être dégagé."],
+  ['Pas de placement', 'Gratuit', "Un déplacement de 1,5 m qui ne provoque pas d'attaque d'opportunité, si l'on ne se déplace pas autrement pendant le round."],
+  ['Retraite', 'Action complexe', "Se déplacer jusqu'à deux fois sa vitesse : la case de départ ne provoque pas d'attaque d'opportunité de la part des ennemis qu'on voit."],
+  ['Défense totale', 'Action simple', "On renonce à attaquer : +4 d'esquive à la CA jusqu'au prochain tour (+6 avec 5 rangs en Acrobaties)."],
+  ['Combat sur la défensive', 'Pendant une attaque', "−4 aux jets d'attaque du round, +2 d'esquive à la CA (+3 avec 5 rangs en Acrobaties)."],
+  ['Attaque d\'opportunité', 'Réaction', "Une attaque gratuite contre un ennemi adjacent qui quitte une case menacée, lance un sort, tire à distance ou fait certaines actions. Une seule par round (davantage avec Attaques réflexes)."],
+  ['Prise en tenaille', 'Position', "Deux alliés de part et d'autre d'un ennemi : chacun gagne +2 au jet d'attaque. Le roublard y ajoute son attaque sournoise."],
+  ['Bousculade', 'Pendant une charge ou une action simple', "Pousser un adversaire : tests de Force opposés (+4 par catégorie de taille d'écart, +2 en charge). En cas de réussite, il recule de 1,5 m, plus 1,5 m par tranche de 5 points d'écart. Provoque une attaque d'opportunité sans le don Science de la bousculade."],
+  ['Croc-en-jambe', 'À la place d\'une attaque', "Attaque de contact au corps à corps, puis test de Force (ou Dex) opposé à la Force ou Dex de la cible : réussite, elle tombe à terre (−4 en attaque au corps à corps, +4 contre elle au corps à corps). Si on rate, la cible peut riposter. Science du croc-en-jambe évite l'attaque d'opportunité."],
+  ['Désarmement', 'À la place d\'une attaque', "Jets d'attaque opposés (+4 avec une arme à deux mains, ±4 par taille d'écart). Réussite : l'arme de l'adversaire tombe (ou on la prend si on est à mains nues). Échec : il peut tenter de vous désarmer en retour."],
+  ['Destruction d\'arme', 'À la place d\'une attaque', "Frapper l'arme ou le bouclier d'un adversaire : jets d'attaque opposés, puis dégâts à l'objet (moins sa solidité)."],
+  ['Feinte', 'Action simple', "Test de Bluff opposé à Psychologie (ou au BBA + mod Sag) de la cible : si on réussit, elle perd son bonus de Dextérité contre votre prochaine attaque. Science de la feinte en fait une action de mouvement."],
+  ['Lutte', 'À la place d\'une attaque', "1) attaque de contact pour la saisir ; 2) tests de lutte opposés (BBA + mod For + taille) ; en cas de réussite, on l'agrippe et on inflige les dégâts à mains nues. Pour se dégager : test de lutte ou d'Évasion. Science de la lutte évite l'attaque d'opportunité."],
+  ['Renversement', 'Pendant un déplacement', "Passer au travers d'un adversaire : il peut s'écarter ou résister ; tests de Force opposés, le perdant tombe à terre."],
+  ['Combat à deux armes', 'Attaque à outrance', "Une attaque supplémentaire avec l'arme secondaire : −6 / −10 sans don, −4 / −4 avec une arme secondaire légère et le don Combat à deux armes, −2 / −2 avec les deux."],
+  ['Tir dans la mêlée', 'Attaque à distance', "−4 pour tirer sur une cible engagée au corps à corps avec un allié (annulé par Tir de précision)."],
+  ['Retarder', 'Gratuit', "Jouer plus tard dans le round : votre initiative devient le moment où vous agissez."],
+  ['Préparer une action', 'Action simple', "Annoncer une action et son déclencheur (« j'attaque le premier qui franchit la porte ») ; elle se déclenche avant l'action qui la provoque."],
+  ['Coup de grâce', 'Action complexe', "Contre un adversaire sans défense : coup critique automatique, et il doit réussir un jet de Vigueur (DD 10 + dégâts) ou mourir. Provoque une attaque d'opportunité."],
+  ['Se relever', 'Action de mouvement', "Se relever quand on est à terre provoque une attaque d'opportunité."],
+];
+function prerequisDonTexte(d) {
+  const p = d.p || {}, l = [];
+  const noms = { for: 'For', dex: 'Dex', con: 'Con', int: 'Int', sag: 'Sag', cha: 'Cha' };
+  for (const [k, v] of Object.entries(p.car || {})) l.push(`${noms[k]} ${v}`);
+  if (p.bba) l.push(`BBA +${p.bba}`);
+  for (const id of p.dons || []) l.push(R.DON[id]?.nom || id);
+  for (const [k, v] of Object.entries(p.classe || {})) l.push(`${R.CLASSES[k]?.nom || k} niveau ${v}`);
+  for (const [k, v] of Object.entries(p.rang || {})) l.push(`${(R.COMPETENCES.find(c => c.id === k) || {}).nom || k} ${v} rang${v > 1 ? 's' : ''}`);
+  if (p.lanceur) l.push(`niveau de lanceur ${p.lanceur}`);
+  if (p.renvoi) l.push('pouvoir renvoyer ou intimider les morts-vivants');
+  return l.join(', ');
+}
+function ongletsGrimoire(actif) {
+  return `<nav class="tabs grimoire-onglets">
+    <a href="#/sorts" class="${actif === 'sorts' ? 'active' : ''}">Sorts</a>
+    <a href="#/aptitudes" class="${actif === 'aptitudes' ? 'active' : ''}">Aptitudes</a>
+  </nav>`;
+}
+function pageAptitudes() {
+  const o = state.aptOnglet || 'dons';
+  const sous = [['dons', 'Dons'], ['classes', 'Aptitudes de classe'], ['manoeuvres', 'Manœuvres de combat']];
+  let corps = '';
+  if (o === 'dons') {
+    const q = state.aptQ || '';
+    const liste = (q ? rechercherDons(R.DONS, q) : R.DONS.slice().sort((a, b) => a.nom.localeCompare(b.nom, 'fr'))).filter(d => !state.aptType || d.type === state.aptType);
+    corps = `<div class="filters">
+        <input type="search" id="apt-q" value="${esc(q)}" placeholder="Nom, nom anglais ou effet…" aria-label="Chercher un don">
+        <select id="apt-type" aria-label="Type de don"><option value="">Tous les types</option>${Object.entries(R.TYPES_DONS).map(([k, l]) => `<option value="${k}" ${state.aptType === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      </div>
+      <p class="hint">${liste.length} don${liste.length > 1 ? 's' : ''}. Les dons de combat peuvent être pris comme dons supplémentaires de guerrier.</p>
+      <div class="cartes-aptitudes">${liste.map(d => `<article class="carte-aptitude">
+        <header><b>${esc(d.nom)}</b><span class="tag-cat">${R.TYPES_DONS[d.type]}</span></header>
+        ${d.vo ? `<small class="vo">${esc(d.vo)}</small>` : ''}
+        ${prerequisDonTexte(d) ? `<p class="prerequis"><span>Prérequis :</span> ${esc(prerequisDonTexte(d))}</p>` : ''}
+        <p>${esc(d.texte)}</p>
+      </article>`).join('')}</div>`;
+  } else if (o === 'classes') {
+    const ids = Object.keys(R.CLASSES).filter(id => !R.CLASSES[id].perso || classesCommunes().some(d => 'pp-' + d.id === id));
+    const id = ids.includes(state.aptClasse) ? state.aptClasse : 'moine';
+    const cl = R.CLASSES[id];
+    const comps = (cl.comp || []).map(c => (R.COMPETENCES.find(x => x.id === c) || {}).nom).filter(Boolean);
+    corps = `<div class="filters"><select id="apt-classe" aria-label="Classe">
+        <optgroup label="Classes de base">${ids.filter(i => !R.CLASSES[i].prestige).map(i => `<option value="${i}" ${i === id ? 'selected' : ''}>${esc(R.CLASSES[i].nom)}</option>`).join('')}</optgroup>
+        <optgroup label="Classes de prestige">${ids.filter(i => R.CLASSES[i].prestige).map(i => `<option value="${i}" ${i === id ? 'selected' : ''}>${esc(R.CLASSES[i].nom)}</option>`).join('')}</optgroup>
+      </select></div>
+      <section class="card classe-resume">
+        <h3>${esc(cl.nom)}</h3>
+        <p>Dé de vie d${cl.dv} · BBA ${({ fort: 'bon', moyen: 'moyen', faible: 'faible' })[cl.bba]} · bons jets : ${['vig', 'ref', 'vol'].filter(x => cl.js[x]).map(x => ({ vig: 'Vigueur', ref: 'Réflexes', vol: 'Volonté' })[x]).join(', ') || 'aucun'} · ${cl.pc} + Int points de compétence par niveau${cl.prestige ? ` · ${cl.max} niveaux` : ''}</p>
+        ${cl.maitrises ? `<p class="hint">Maîtrises : ${esc(cl.maitrises)}</p>` : ''}
+        ${comps.length ? `<p class="hint">Compétences de classe : ${esc(comps.join(', '))}</p>` : ''}
+        ${(cl.prerequis || []).length ? `<p class="hint">Prérequis : ${esc(cl.prerequis.map(x => x[0]).join(' · '))}</p>` : ''}
+      </section>
+      <div class="aptitudes-niveaux">${(cl.aptitudes || []).slice().sort((a, b) => a.niv - b.niv).map(a => `<article class="carte-aptitude">
+        <header><span class="niv">Niv. ${a.niv}</span><b>${esc(a.nom)}</b></header>
+        <p>${esc(a.texte)}</p>
+      </article>`).join('') || '<p class="empty">Pas d\'aptitudes détaillées pour cette classe.</p>'}</div>`;
+  } else {
+    corps = `<p class="hint">Les actions et manœuvres que tout personnage peut tenter en combat, d'après le Manuel des Joueurs.</p>
+      <div class="cartes-aptitudes">${MANOEUVRES.map(([n, a, t]) => `<article class="carte-aptitude">
+        <header><b>${esc(n)}</b><span class="tag-cat">${esc(a)}</span></header><p>${esc(t)}</p></article>`).join('')}</div>`;
+  }
+  return `<div class="pagehead"><div><h1>Grimoire</h1><p class="sub">Dons, aptitudes de classe et manœuvres de combat</p></div></div>
+    ${ongletsGrimoire('aptitudes')}
+    <div class="chips sous-onglets">${sous.map(([k, l]) => `<button class="chip ${o === k ? 'on' : ''}" data-action="apt-onglet" data-o="${k}">${l}</button>`).join('')}</div>
+    <div id="apt-corps">${corps}</div>`;
+}
+
 function pageSorts() {
   const f = state.filtres;
   const classes = [...new Set(db.sorts.flatMap(s => (s.niveaux || []).map(n => n.classe)))].sort();
@@ -4676,6 +4986,7 @@ function pageSorts() {
     <div><h1>Grimoire</h1><p class="sub">Tous les sorts connus de la campagne</p></div>
     <a class="btn" href="#/sort-edit/new">Ajouter un sort</a>
   </div>
+  ${ongletsGrimoire('sorts')}
   <div class="filters">
     <input type="search" class="q" data-filtre="q" value="${esc(f.q)}" placeholder="Nom ou effet…" aria-label="Rechercher">
     <select data-filtre="ecole" aria-label="École">${opt('', 'Toutes les écoles', f.ecole)}${ECOLES.map(e => opt(e, e, f.ecole)).join('')}</select>
@@ -4754,9 +5065,6 @@ function pageDonnees() {
     <p class="sub">Les données restent sur cet appareil. Le partage se fait par fichier.</p></div></div>
 
   <section class="card intro"><h3>Partager avec la troupe</h3>
-    <p>Chaque joueur remplit sa fiche sur son propre téléphone, puis l'exporte depuis la page du personnage. Le fichier .json s'envoie par Discord, mail ou message, et le destinataire l'importe ici. Un personnage déjà présent est remplacé par la version importée.</p>
-    <p>L'export de toute la campagne contient aussi tes notes personnelles de session. C'est pratique pour passer d'un appareil à l'autre, mais pense-y avant de l'envoyer à quelqu'un.</p>
-    <p>Pour les récapitulatifs communs, utilise plutôt « Exporter recaps.json » dans Journal, Récapitulatifs : ce fichier ne contient que les récits, sans aucune note.</p>
     <div class="btns">
       <button class="btn" data-action="import">Importer un fichier</button>
       <button class="btn ghost" data-action="export-all">Exporter toute la campagne</button>
@@ -4804,6 +5112,8 @@ function render(garderScroll = true) {
   switch (page) {
     case 'perso': html = pagePerso(id, tab); break;
     case 'sorts': html = pageSorts(); break;
+    case 'aptitudes': html = pageAptitudes(); break;
+    case 'log': html = pageJournalModifs(); break;
     case 'sort': html = pageSort(id); break;
     case 'sort-edit': html = pageSortEdit(id); break;
     case 'journal':
@@ -4821,7 +5131,9 @@ function render(garderScroll = true) {
   }
   $('#app').innerHTML = html;
   const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
-  document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav));
+  const navLog = document.querySelector('[data-nav="log"]');
+  if (navLog) navLog.hidden = !voitJournal();
+  document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav || (a.dataset.nav === 'sorts' && nav === 'aptitudes')));
   if (garderScroll) window.scrollTo(0, y);
 }
 function go(hash) {
@@ -4846,6 +5158,20 @@ document.addEventListener('input', ev => {
   if (t.id === 'pickq') {
     state.pickQ = t.value;
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
+    return;
+  }
+  if (['gen-modele', 'gen-niveau', 'gen-race', 'gen-nom', 'gen-nb'].includes(t.id)) {
+    const g = state.gen;
+    if (t.id === 'gen-modele') g.modele = t.value; else if (t.id === 'gen-niveau') g.niveau = Number(t.value); else if (t.id === 'gen-race') g.race = t.value;
+    else if (t.id === 'gen-nom') { g.nom = t.value; return; } else { g.nb = t.value; return; }
+    render();
+    return;
+  }
+  if (['apt-q', 'apt-type', 'apt-classe'].includes(t.id)) {
+    if (t.id === 'apt-q') state.aptQ = t.value; else if (t.id === 'apt-type') state.aptType = t.value; else state.aptClasse = t.value;
+    const z = $('#apt-corps');
+    if (z) { const tmp = document.createElement('div'); tmp.innerHTML = pageAptitudes(); z.innerHTML = tmp.querySelector('#apt-corps').innerHTML; }
+    if (t.id === 'apt-q') { const q = $('#apt-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
     return;
   }
   if (['best-q', 'best-fp', 'best-type'].includes(t.id)) {
@@ -4980,7 +5306,7 @@ document.addEventListener('input', ev => {
 /* Mémorise les groupes d'inventaire ouverts ou fermés */
 document.addEventListener('click', ev => {
   const sb = ev.target.closest && ev.target.closest('details.bestiaire > summary');
-  if (sb) setTimeout(() => { state.bestFerme = !sb.parentElement.open; }, 0);
+  if (sb) setTimeout(() => { if (sb.parentElement.classList.contains('generateur')) state.genFerme = !sb.parentElement.open; else state.bestFerme = !sb.parentElement.open; }, 0);
   const sm = ev.target.closest && ev.target.closest('details.groupe-inv-d > summary');
   if (!sm || state.invQ || state.invCat) return;
   const d = sm.parentElement;
@@ -5034,7 +5360,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -6114,7 +6440,7 @@ document.addEventListener('click', ev => {
     case 'ajout-rapide-ok': {
       const c = b.dataset.cible;
       if (c === 'mj' && !estMJ()) break;
-      if (c === 'perso' && !peutModifier(p)) break;
+      if (c === 'perso' && (!peutModifier(p) || !estMJ())) break;
       const n = ajouterObjetsRapides(c);
       state.ajoutRapide = null; render();
       toast(`${n} objet${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''}`);
@@ -6146,6 +6472,31 @@ document.addEventListener('click', ev => {
       const part = cb.participants.find(y => y.pnjId === pnj.id);
       if (part) part.nombre = String(num(part.nombre) + n); else cb.participants.push({ pnjId: pnj.id, nombre: String(n) });
       saveMJ('combats'); toast(`${n} × ${c.nom} → ${cb.nom}`); render();
+      break;
+    }
+    case 'apt-onglet':
+      state.aptOnglet = b.dataset.o; render();
+      break;
+    case 'journal-actualiser':
+      state.journal = null; render();
+      break;
+    case 'journal-filtre':
+      state.journalPerso = b.dataset.n; render();
+      break;
+    case 'gen-pnj': {
+      const g = state.gen, r = genererPNJ(g.modele, g.niveau, g.race);
+      mjd().pnj.push(pnjDepuisGen(r, g.nom)); saveMJ('pnj');
+      toast(`${g.nom || r.modele.nom} ajouté aux PNJ préparés`); render();
+      break;
+    }
+    case 'gen-combat': {
+      const g = state.gen, r = genererPNJ(g.modele, g.niveau, g.race);
+      const cb = mjd().combats.find(x => x.id === $('#gen-combat').value);
+      const n = Math.max(1, Math.round(num($('#gen-nb').value)) || 1);
+      const pnj = pnjDepuisGen(r, g.nom); pnj.camp = 'ennemi';
+      mjd().pnj.push(pnj); saveMJ('pnj');
+      cb.participants = [...(cb.participants || []), { pnjId: pnj.id, nombre: String(n) }];
+      saveMJ('combats'); toast(`${n} × ${pnj.nom} → ${cb.nom}`); render();
       break;
     }
     case 'replis-tout': {
