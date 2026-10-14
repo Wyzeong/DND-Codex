@@ -3768,7 +3768,17 @@ function bandeauPublication() {
   if (enLigne()) {
     return `<section class="card bandeau">
       <h3>À publier</h3>
-      <p>${n} élément${pluriel} (récits ou fiches) pas encore publié${pluriel}. Tant qu'ils ne le sont pas, les autres joueurs ne les voient pas.</p>
+      <p>${(() => {
+        const rn = recapsTous().filter(r => statutRecap(r) !== 'publie');
+        const rs = (db.recapsSupprimes || []).length, fn = fichesToutes().filter(f => statutPublication(f) !== 'publie').length, fs = (db.fichesSupprimees || []).length;
+        const l = [
+          rn.length ? `${rn.length} récit${rn.length > 1 ? 's' : ''} nouveau${rn.length > 1 ? 'x' : ''} ou modifié${rn.length > 1 ? 's' : ''} (${rn.map(r => 'session ' + esc(r.numero)).join(', ')})` : '',
+          rs ? `${rs} récit${rs > 1 ? 's' : ''} supprimé${rs > 1 ? 's' : ''} (encore visible${rs > 1 ? 's' : ''} chez les autres)` : '',
+          fn ? `${fn} fiche${fn > 1 ? 's' : ''} nouvelle${fn > 1 ? 's' : ''} ou modifiée${fn > 1 ? 's' : ''}` : '',
+          fs ? `${fs} fiche${fs > 1 ? 's' : ''} supprimée${fs > 1 ? 's' : ''}` : '',
+        ].filter(Boolean);
+        return `En attente : ${l.join(' ; ')}. Ces changements ne sont que sur cet appareil tant que tu ne publies pas.`;
+      })()}</p>
       <div class="btns" style="margin-top:.6rem"><button class="btn" data-action="publier-tout">Publier maintenant</button></div>
     </section>`;
   }
@@ -6215,6 +6225,10 @@ $('#fileinput').addEventListener('change', async ev => {
     let recapsMaj = 0;
     db.recaps = db.recaps || [];
     for (const r of recapsImp) {
+      if (!findRecap(r.id)) {
+        const vide = recapsTous().find(x => num(x.numero) === num(r.numero) && !String(x.texte || '').trim() && !String(x.titre || '').trim());
+        if (vide) r.id = vide.id;
+      }
       const cur = findRecap(r.id);
       if (cur && champsRecap(cur) === champsRecap(r)) continue;
       const i = db.recaps.findIndex(x => x.id === r.id);
