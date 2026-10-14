@@ -1381,3 +1381,33 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .ajout-rapide textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: .82rem; margin: .4rem 0; }
 .apercu-objets { min-width: 640px; }
 .apercu-objets small { color: #8FD3C0; }
+
+/* ===== Bestiaire ===== */
+.bestiaire > summary { cursor: pointer; list-style: none; }
+.bestiaire > summary::-webkit-details-marker { display: none; }
+.bestiaire > summary h3.inline { display: inline; }
+.bestiaire > summary h3 small { color: var(--muted); font-family: var(--font); font-weight: 400; font-size: .78rem; letter-spacing: 0; text-transform: none; }
+.best-filtres { gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
+.best-filtres input { flex: 2 1 200px; }
+.best-filtres select { flex: 1 1 140px; }
+.creatures { display: flex; flex-direction: column; gap: .3rem; }
+.creature { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); }
+.creature.ouverte { border-color: var(--bronze); }
+.creature-ligne { font: inherit; color: var(--ink); background: none; border: none; width: 100%; text-align: left; cursor: pointer; padding: .45rem .6rem; display: grid; grid-template-columns: 3.6rem 1fr; column-gap: .5rem; align-items: baseline; }
+.creature-ligne small { grid-column: 2; color: var(--muted); font-size: .78rem; }
+.creature-fp { grid-row: 1 / span 2; font-weight: 700; color: var(--bronze-clair); font-size: .8rem; }
+.creature-fiche { padding: 0 .7rem .6rem; border-top: 1px solid var(--line); }
+.creature-type { color: var(--muted); font-style: italic; margin: .4rem 0; font-size: .88rem; }
+.creature-chiffres { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-bottom: .5rem; }
+.creature-chiffres b { font-family: var(--font-titre); font-size: 1.25rem; color: var(--ivoire); }
+.creature-chiffres small { color: var(--muted); }
+.bloc-stat { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: .5rem; padding: .22rem 0; border-top: 1px solid var(--line); font-size: .88rem; }
+.bloc-stat > span { color: var(--muted); font-size: .8rem; }
+@media (max-width: 480px) { .bloc-stat { grid-template-columns: 1fr; gap: .05rem; } }
+.pouvoir { margin: .3rem 0; font-size: .9rem; line-height: 1.5; }
+.pouvoir b { color: var(--bronze-clair); }
+.pouvoir small { color: var(--muted); }
+.rappels { margin: .4rem 0; font-size: .85rem; }
+.rappels summary { cursor: pointer; color: var(--bronze-clair); }
+.creature-actions { align-items: center; margin-top: .6rem; }
+.creature-actions .row { gap: .3rem; align-items: center; flex-wrap: wrap; }

@@ -1991,6 +1991,102 @@ function carteXP() {
   </section>`;
 }
 
+/* ===== Bestiaire : créatures du SRD 3.5 traduites, à ajouter en un geste aux PNJ préparés ===== */
+let BESTIAIRE = null;
+async function chargerBestiaire() {
+  if (BESTIAIRE) return BESTIAIRE;
+  try {
+    const r = await fetch('bestiaire.json');
+    BESTIAIRE = await r.json();
+  } catch (e) { BESTIAIRE = { creatures: [], rappels: {} }; toast('Bestiaire indisponible hors connexion (ouvre-le une fois en ligne).'); }
+  return BESTIAIRE;
+}
+const FILTRES_FP = [['', 'Tous les FP'], ['0-1', 'FP 1 ou moins'], ['2-2', 'FP 2'], ['3-3', 'FP 3'], ['4-4', 'FP 4'], ['5-5', 'FP 5']];
+function creaturesFiltrees() {
+  if (!BESTIAIRE) return [];
+  const q = norm(state.bestQ || '').trim();
+  const [a, b] = (state.bestFP || '').split('-').map(Number);
+  return BESTIAIRE.creatures.filter(c =>
+    (!state.bestFP || (c.fpN >= (a === 0 ? 0 : a) && c.fpN <= b)) &&
+    (!state.bestType || c.typeBase === state.bestType) &&
+    (!q || norm(c.nom + ' ' + c.vo + ' ' + c.type + ' ' + c.env).includes(q)))
+    .sort((x, y) => x.fpN - y.fpN || x.nom.localeCompare(y.nom, 'fr'));
+}
+function ficheCreature(c) {
+  const ligne = (t, v) => v && v !== '—' ? `<div class="bloc-stat"><span>${t}</span><div>${esc(v)}</div></div>` : '';
+  const m = mjd();
+  return `<div class="creature-fiche">
+    <p class="creature-type">${esc(c.type)} · FP ${esc(c.fp)} · ${esc(c.align)}</p>
+    <div class="creature-chiffres">
+      <span><b>${c.pv ?? '—'}</b> PV <small>${esc(c.dv)}</small></span>
+      <span><b>${c.caN ?? '—'}</b> CA</span>
+      <span><b>${esc(c.init)}</b> init.</span>
+      <span><b>${esc(c.bba)}</b> BBA · lutte ${esc(c.lutte)}</span>
+    </div>
+    ${ligne('Classe d\'armure', c.ca)}
+    ${ligne('Vitesse', c.vitesse)}
+    ${ligne('Attaque', c.attaque)}
+    ${ligne('Attaque à outrance', c.outrance)}
+    ${ligne('Espace / allonge', c.espace)}
+    ${ligne('Attaques spéciales', c.attSpe)}
+    ${ligne('Particularités', c.qualSpe)}
+    ${ligne('Sauvegardes', c.js)}
+    ${ligne('Caractéristiques', c.caracs)}
+    ${ligne('Compétences', c.comp)}
+    ${ligne('Dons', c.dons)}
+    ${ligne('Environnement', c.env)}
+    ${ligne('Organisation', c.org)}
+    ${ligne('Trésor', c.tresor)}
+    ${ligne('Évolution', c.avancement)}
+    ${c.pouvoirs.length ? `<h4>Pouvoirs</h4>${c.pouvoirs.map(p => `<p class="pouvoir"><b>${esc(p.nom)}</b> <small>(${esc(p.type)})</small> : ${esc(p.texte)}</p>`).join('')}` : ''}
+    ${c.rappels.length ? `<details class="rappels"><summary>Rappels de règles</summary>${c.rappels.map(r => `<p><b>${esc(r[0].toUpperCase() + r.slice(1))}</b> : ${esc(BESTIAIRE.rappels[r] || '')}</p>`).join('')}</details>` : ''}
+    <div class="btns creature-actions">
+      <button class="btn" data-action="best-pnj" data-id="${c.id}">+ Ajouter aux PNJ</button>
+      ${m.combats.length ? `<span class="row"><input type="text" inputmode="numeric" class="s" id="best-nb-${c.id}" value="1" aria-label="Nombre">
+        <select id="best-combat-${c.id}" aria-label="Combat">${m.combats.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
+        <button class="btn ghost" data-action="best-combat" data-id="${c.id}">Ajouter au combat</button></span>` : '<span class="hint">Prépare un combat ci-dessous pour pouvoir y ajouter des créatures directement.</span>'}
+    </div>
+  </div>`;
+}
+function resultatsBestiaire() {
+  if (!BESTIAIRE) return '<p class="hint">Chargement du bestiaire…</p>';
+  const l = creaturesFiltrees();
+  const lim = state.bestTout ? l.length : 40;
+  return `<p class="hint">${l.length} créature${l.length > 1 ? 's' : ''}${l.length > lim ? `, les ${lim} premières affichées` : ''}.</p>
+    <div class="creatures">${l.slice(0, lim).map(c => `<div class="creature ${state.bestOuvert === c.id ? 'ouverte' : ''}">
+      <button class="creature-ligne" data-action="best-ouvrir" data-id="${c.id}">
+        <span class="creature-fp">FP ${esc(c.fp)}</span><b>${esc(c.nom)}</b>
+        <small>${esc(c.type.replace(/ de taille .*/, ''))} · ${esc(c.taille)} · ${c.pv ?? '?'} PV · CA ${c.caN ?? '?'}</small>
+      </button>
+      ${state.bestOuvert === c.id ? ficheCreature(c) : ''}
+    </div>`).join('') || '<p class="empty">Aucune créature ne correspond.</p>'}</div>
+    ${l.length > lim ? '<button class="lien" data-action="best-tout">Tout afficher</button>' : ''}`;
+}
+function carteBestiaire() {
+  if (!BESTIAIRE) chargerBestiaire().then(() => { const z = $('#best-res'); if (z) { z.innerHTML = resultatsBestiaire(); const s = $('#best-type'); if (s && s.options.length <= 1) render(); } });
+  const types = BESTIAIRE ? [...new Set(BESTIAIRE.creatures.map(c => c.typeBase))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'fr')) : [];
+  return `<section class="card"><details class="bestiaire" ${state.bestFerme ? '' : 'open'}>
+    <summary><h3 class="inline">Bestiaire <small>(Manuel des Monstres, en français)</small></h3></summary>
+    <p class="hint">Les créatures du document de référence libre de D&D 3.5, de FP ½ à 5. Cherche par nom, filtre par FP ou par type, puis ajoute-les à tes PNJ ou directement à un combat préparé. Une fois ajoutées, tu peux les renommer et les ajuster.</p>
+    <div class="row best-filtres">
+      <input type="search" id="best-q" value="${esc(state.bestQ || '')}" placeholder="Chercher : gobelin, squelette, loup…" aria-label="Chercher une créature">
+      <select id="best-fp" aria-label="Facteur de puissance">${FILTRES_FP.map(([v, l]) => `<option value="${v}" ${(state.bestFP || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="best-type" aria-label="Type"><option value="">Tous les types</option>${types.map(t => `<option ${state.bestType === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+    </div>
+    <div id="best-res">${resultatsBestiaire()}</div>
+  </details></section>`;
+}
+function pnjDepuisCreature(c) {
+  const notes = [
+    c.attSpe !== '—' ? 'Attaques spéciales : ' + c.attSpe : '',
+    c.qualSpe !== '—' ? 'Particularités : ' + c.qualSpe : '',
+    ...c.pouvoirs.map(p => `${p.nom} : ${p.texte}`),
+    'Compétences : ' + c.comp, 'Dons : ' + c.dons,
+  ].filter(Boolean).join('\n');
+  return { id: uid(), nom: c.nom, camp: 'ennemi', pvMax: String(c.pv ?? ''), ca: String(c.caN ?? ''), init: String(c.init).replace('+', ''),
+    attaques: c.outrance, caracs: `${c.caracs} · ${c.js} · Vitesse ${c.vitesse}`, notes, butin: [], source: c.id, fp: c.fp };
+}
+
 /* ----- Préparation : PNJ (bestiaire), combats ----- */
 const nouveauPNJ = () => ({ id: uid(), nom: 'Nouveau PNJ', camp: 'ennemi', pvMax: '', ca: '', init: '', attaques: '', caracs: '', notes: '', butin: [] });
 const champMJ = (path, label, opt = {}) => `<label class="f${opt.span ? ' span2' : ''}"><span>${esc(label)}</span>${opt.area
@@ -2690,7 +2786,7 @@ function pageMJ2() {
   else if (o === 'objets') corps = pageObjetsMJ();
   else if (o === 'notes') corps = `<section class="card"><h3>Notes secrètes</h3>${champMJ('notes', 'Rien que pour toi', { area: true, rows: 14 })}</section>`;
   else if (o === 'prepa') {
-    corps = `<section class="card"><h3>PNJ et créatures</h3>
+    corps = `${carteBestiaire()}<section class="card"><h3>PNJ et créatures</h3>
       <div class="pnjs">${m.pnj.map((x, i) => state.mjEdit === 'pnj:' + x.id ? formPNJ(x, i) : cartePNJ(x, i)).join('') || '<p class="empty">Aucun PNJ préparé.</p>'}</div>
       <button class="btn ghost" data-action="mj-pnj-ajout">+ Préparer un PNJ</button></section>
       <section class="card"><h3>Combats préparés</h3>
@@ -4742,6 +4838,11 @@ document.addEventListener('input', ev => {
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
     return;
   }
+  if (['best-q', 'best-fp', 'best-type'].includes(t.id)) {
+    state.bestQ = $('#best-q').value; state.bestFP = $('#best-fp').value; state.bestType = $('#best-type').value; state.bestTout = false;
+    const z = $('#best-res'); if (z) z.innerHTML = resultatsBestiaire();
+    return;
+  }
   if (t.classList.contains('prog-sort-q')) {
     const q = norm(t.value).trim(), d = t.dataset;
     const zone = t.parentElement.querySelector('.prog-sort-res');
@@ -4868,6 +4969,8 @@ document.addEventListener('input', ev => {
 });
 /* Mémorise les groupes d'inventaire ouverts ou fermés */
 document.addEventListener('click', ev => {
+  const sb = ev.target.closest && ev.target.closest('details.bestiaire > summary');
+  if (sb) setTimeout(() => { state.bestFerme = !sb.parentElement.open; }, 0);
   const sm = ev.target.closest && ev.target.closest('details.groupe-inv-d > summary');
   if (!sm || state.invQ || state.invCat) return;
   const d = sm.parentElement;
@@ -4921,7 +5024,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -6010,6 +6113,31 @@ document.addEventListener('click', ev => {
     case 'ajout-rapide-modele':
       telechargerModeleObjets(b.dataset.cible);
       break;
+    case 'best-ouvrir':
+      state.bestOuvert = state.bestOuvert === b.dataset.id ? null : b.dataset.id;
+      $('#best-res').innerHTML = resultatsBestiaire();
+      break;
+    case 'best-tout':
+      state.bestTout = true; $('#best-res').innerHTML = resultatsBestiaire();
+      break;
+    case 'best-pnj': {
+      const c = BESTIAIRE.creatures.find(x => x.id === b.dataset.id);
+      mjd().pnj.push(pnjDepuisCreature(c)); saveMJ('pnj');
+      toast(`${c.nom} ajouté aux PNJ préparés`); render();
+      break;
+    }
+    case 'best-combat': {
+      const c = BESTIAIRE.creatures.find(x => x.id === b.dataset.id);
+      const cb = mjd().combats.find(x => x.id === $('#best-combat-' + c.id).value);
+      const n = Math.max(1, Math.round(num($('#best-nb-' + c.id).value)) || 1);
+      let pnj = mjd().pnj.find(x => x.source === c.id && x.nom === c.nom);
+      if (!pnj) { pnj = pnjDepuisCreature(c); mjd().pnj.push(pnj); saveMJ('pnj'); }
+      cb.participants = cb.participants || [];
+      const part = cb.participants.find(y => y.pnjId === pnj.id);
+      if (part) part.nombre = String(num(part.nombre) + n); else cb.participants.push({ pnjId: pnj.id, nombre: String(n) });
+      saveMJ('combats'); toast(`${n} × ${c.nom} → ${cb.nom}`); render();
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
