@@ -1987,6 +1987,7 @@ async function envoyerMJ() {
 async function chargerMJ() {
   if (!enLigne() || !estMJ()) return;
   try {
+    const videLocal = !db.mjData || !Object.keys(db.mjData).some(k => k.startsWith('session:') || (Array.isArray(db.mjData[k]) && db.mjData[k].length));
     const m = mjd();
     let v = null;
     try { v = await rpc('mj_versions', { p_code: db.codeMJ }); } catch (e) { /* base pas encore en v8 */ }
@@ -1997,7 +1998,7 @@ async function chargerMJ() {
     }
     const connus = versions('mj');
     const serveur = v.donnees || {};
-    const cles = Object.keys(serveur).filter(k => !mjAttente.has(k) && (connus[k] !== serveur[k] || !(k in m)));
+    const cles = Object.keys(serveur).filter(k => !mjAttente.has(k) && (videLocal || connus[k] !== serveur[k] || !(k in m)));
     if (cles.length) {
       const d = await rpc('mj_lire_cles', { p_code: db.codeMJ, p_cles: cles }) || {};
       for (const [k, x] of Object.entries(d)) m[k] = x;
@@ -5881,7 +5882,7 @@ document.addEventListener('click', ev => {
       break;
     case 'mj-entrer': {
       const code = $('#code-mj').value.trim();
-      const ok = () => { db.codeMJ = code; saveNow(); toast('Bienvenue, maître du jeu'); chargerPersosMJ().then(chargerMJ).then(render); };
+      const ok = () => { db.codeMJ = code; if (db.versions) { delete db.versions.mj; delete db.versions.persosMJcomplets; } saveNow(); toast('Bienvenue, maître du jeu'); chargerPersosMJ().then(chargerMJ).then(render); };
       if (enLigne()) rpc('verifier_mj', { p_code: code }).then(v => v ? ok() : toast('Code MJ incorrect')).catch(e => alert('Vérification impossible (la base est-elle en v5 ?) : ' + e.message));
       else if (code === CODE_MJ_DEMO) ok(); else toast('Code MJ incorrect');
       break;
@@ -5889,7 +5890,7 @@ document.addEventListener('click', ev => {
     case 'mj-sortir':
       db.codeMJ = '';
       /* les versions complètes des personnages du MJ ne restent pas sur l'appareil */
-      if (enLigne()) { db.personnages = db.personnages.filter(x => !x.pnjMJ); db.mjData = null; }
+      if (enLigne()) { db.personnages = db.personnages.filter(x => !x.pnjMJ); db.mjData = null; if (db.versions) { delete db.versions.mj; delete db.versions.persosMJcomplets; } }
       saveNow(); go('#/persos'); actualiser();
       break;
     case 'mj-suivant': {
