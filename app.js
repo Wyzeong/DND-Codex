@@ -759,7 +759,8 @@ function ongletFicheBrut(p, e) {
         ${R.RACES[p.race]?.ajNiv ? `<p class="hint ligne-entiere">${esc(R.RACES[p.race].nom)} : ${esc(R.RACES[p.race].ajust)} · ajustement de niveau +${R.RACES[p.race].ajNiv}.</p>` : ''}
         ${p.race === 'autre' ? fi(p, 'raceAutre', 'Nom de la race') : ''}
         ${sel(p, 'alignement', 'Alignement', R.ALIGNEMENTS)}
-        ${sel(p, 'divinite', 'Divinité', [...R.DIVINITES, 'Autre'])}
+        ${sel(p, 'divinite', 'Divinité', [['Aucune', [['Aucune', 'Aucune']]], ...['Royaumes Oubliés', 'Panthéon nain', 'Panthéon drow', 'Manuel des Joueurs'].map(g => [g, R.DIVINITES_INFO.filter(d => d.groupe === g).map(d => [d.nom, `${d.nom} (${d.align})`])]), ['Autre', [['Autre', 'Autre divinité']]]])}
+        ${R.DIVINITE[p.divinite] ? (d => `<p class="hint ligne-entiere">${esc(d.nom)} · ${esc(d.sujet)} · domaines : ${esc([...d.domaines.map(x => R.DOMAINES[x].nom), ...d.autres].join(', '))} · arme de prédilection : ${esc(d.arme)}</p>`)(R.DIVINITE[p.divinite]) : ''}
         ${p.divinite === 'Autre' ? fi(p, 'diviniteAutre', 'Nom de la divinité') : ''}
         ${sel(p, 'sexe', 'Sexe', R.SEXES)}
         ${fi(p, 'age', 'Âge', { type: 'number' })}${fi(p, 'taillePoids', 'Taille et poids', { ph: '1,30 m, 75 kg' })}
@@ -3553,10 +3554,13 @@ function gainsNiveau(p, l, i, cl, k, avant, apres) {
       <p class="hint">Quand tu coches « Atteint », ce +1 s'ajoute tout seul à la caractéristique sur la fiche (et se retire si tu décoches).</p>`);
   }
   if (l.classe === 'pretre' && k === 1) {
-    const optsDom = autre => Object.values(R.DOMAINES).map(d => `<option value="${d.id}" ${d.id === autre ? 'disabled' : ''}>${esc(d.nom)}</option>`).join('');
+    const div = R.DIVINITE[p.divinite];
+    const permis = div ? div.domaines : Object.keys(R.DOMAINES);
+    const optsDom = autre => Object.values(R.DOMAINES).filter(d => permis.includes(d.id) || d.id === l.domaine1 || d.id === l.domaine2).map(d => `<option value="${d.id}" ${d.id === autre ? 'disabled' : ''}>${esc(d.nom)}${permis.includes(d.id) ? '' : ' (hors des domaines de ta divinité)'}</option>`).join('');
     const carte = id => { const d = R.DOMAINES[id]; return d ? `<div class="domaine-carte"><b>${esc(d.nom)}</b><p>${esc(d.pouvoir)}</p><p class="hint">Sorts : ${d.sorts.map((x, n) => `${n + 1}. ${sortDomaineHTML(x)}`).join(' · ')}</p></div>` : ''; };
     choix.push(`<div class="choix-domaines">
       <p class="lbl">Domaines du prêtre (2, parmi ceux de ta divinité)</p>
+      ${div ? `<p class="hint">${esc(div.nom)} : ${esc(div.domaines.map(x => R.DOMAINES[x].nom).join(', '))}${div.autres.length ? ` ; et dans les suppléments : ${esc(div.autres.join(', '))} (pas encore dans l'appli, à voir avec le MJ)` : ''}.</p>` : '<p class="hint">Choisis d\'abord une divinité sur la fiche (Identité) pour ne voir que ses domaines.</p>'}
       <div class="grid">
         <label class="f"><span>Domaine 1</span><select data-bind="progression.${i}.domaine1" data-rerender><option value="">— Choisir —</option>${optsDom(l.domaine2).replace(`value="${l.domaine1}"`, `value="${l.domaine1}" selected`)}</select></label>
         <label class="f"><span>Domaine 2</span><select data-bind="progression.${i}.domaine2" data-rerender><option value="">— Choisir —</option>${optsDom(l.domaine1).replace(`value="${l.domaine2}"`, `value="${l.domaine2}" selected`)}</select></label>
