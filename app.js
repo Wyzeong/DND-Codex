@@ -2,7 +2,7 @@
 
 /* ============================================================
    Codex de campagne : fiches, grimoire et progression (D&D 3.5)
-   Données stockées dans le navigateur (localStorage).
+   Données stockées dans le navigateur (IndexedDB).
    ============================================================ */
 
 const STORE_KEY = 'codex-dd35-v1';
@@ -45,14 +45,50 @@ function toast(msg) {
 /* ---------- Stockage ---------- */
 let db = { version: APP_VERSION, personnages: [], sorts: [], sessions: [], sortsInitialises: false };
 
-function load() {
+/* Les données de l'appareil sont rangées dans IndexedDB (des centaines de Mo possibles),
+   et non plus dans localStorage, limité à environ 5 Mo. Les anciennes données y sont reprises une fois. */
+const IDB = {
+  ouvrir() {
+    if (this._p) return this._p;
+    this._p = new Promise((ok, ko) => {
+      const r = indexedDB.open('codex-campagne', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => ko(r.error);
+    });
+    return this._p;
+  },
+  async lire(cle) {
+    const d = await this.ouvrir();
+    return new Promise((ok, ko) => { const t = d.transaction('kv').objectStore('kv').get(cle); t.onsuccess = () => ok(t.result); t.onerror = () => ko(t.error); });
+  },
+  async ecrire(cle, val) {
+    const d = await this.ouvrir();
+    return new Promise((ok, ko) => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(val, cle); t.oncomplete = () => ok(); t.onerror = () => ko(t.error); t.onabort = () => ko(t.error); });
+  },
+};
+async function load() {
+  /* Des données encore présentes dans localStorage sont toujours les plus récentes :
+     la nouvelle version les supprime dès qu'elles sont copiées, et n'y écrit qu'en dernier recours. */
+  let raw = null;
+  try { raw = localStorage.getItem(STORE_KEY); } catch (e) { /* */ }
+  if (!raw) { try { raw = await IDB.lire(STORE_KEY); } catch (e) { console.warn('IndexedDB indisponible', e); } }
+  try { if (raw) db = Object.assign(db, JSON.parse(raw)); }
+  catch (e) { console.error(e); toast('Lecture des données impossible : ' + e.message); }
+  /* Reprise des anciennes données : on libère localStorage une fois la copie faite */
   try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) db = Object.assign(db, JSON.parse(raw));
-  } catch (e) {
-    console.error(e);
-    toast('Lecture des données impossible : ' + e.message);
-  }
+    if (localStorage.getItem(STORE_KEY)) { await IDB.ecrire(STORE_KEY, JSON.stringify(db)); localStorage.removeItem(STORE_KEY); }
+  } catch (e) { /* on réessaiera au prochain démarrage */ }
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) { /* */ }
+}
+let ecritureEnCours = Promise.resolve();
+function ecrireDb() {
+  const json = JSON.stringify(db);
+  ecritureEnCours = ecritureEnCours.then(() => IDB.ecrire(STORE_KEY, json)).catch(e => {
+    /* dernier recours : localStorage */
+    try { localStorage.setItem(STORE_KEY, json); } catch (e2) { alert('Enregistrement impossible sur cet appareil : ' + (e.message || e2.message)); }
+  });
+  return ecritureEnCours;
 }
 let saveTimer;
 function save() {
@@ -68,7 +104,7 @@ function signalerModif(o) {
 }
 function saveNow() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(db));
+    ecrireDb();
     const s = $('#status');
     s.textContent = 'Enregistré';
     s.classList.add('on');
@@ -4766,7 +4802,7 @@ async function envoyerPersos() {
       break;
     }
   }
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* saveNow gère l'alerte */ }
+  ecrireDb();
 }
 
 async function mettreEnLigne(p, code) {
@@ -4798,7 +4834,7 @@ async function envoyerNotes() {
       break;
     }
   }
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* */ }
+  ecrireDb();
 }
 async function chargerNotes() {
   if (!enLigne()) return;
@@ -5063,7 +5099,7 @@ function pageSortEdit(id) {
 }
 
 function pageDonnees() {
-  const taille = (new Blob([localStorage.getItem(STORE_KEY) || '']).size / 1024).toFixed(0);
+  const taille = (new Blob([JSON.stringify(db)]).size / 1024).toFixed(0);
   return `
   <div class="pagehead"><div><h1>Partage et sauvegarde</h1>
     <p class="sub">Les données restent sur cet appareil. Le partage se fait par fichier.</p></div></div>
@@ -5349,7 +5385,7 @@ document.addEventListener('toggle', ev => {
   const d = ev.target;
   if (d.matches && d.matches('details[data-section]')) {
     db.replis = { ...(db.replis || {}), [d.dataset.section]: !d.open };
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* */ }
+    ecrireDb();
     return;
   }
   if (!d.matches || !d.matches('details[data-niveau]')) return;
@@ -5634,7 +5670,7 @@ document.addEventListener('click', ev => {
       break;
     case 'comp-reduit':
       db.compReduit = b.checked;
-      try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { /* */ }
+      ecrireDb();
       render();
       break;
     case 'choisir-don':
@@ -6727,7 +6763,7 @@ setInterval(() => {
 
 /* ---------- Démarrage ---------- */
 (async function start() {
-  load();
+  await load();
   db.personnages.forEach(migrer);
   migrerSessions(db.sessions);
   render();
