@@ -2533,8 +2533,8 @@ function etapeJeu(s, e, i) {
   let propre = '';
   if (e.type === 'dialogue' && !e.texte && !e.pnj) propre = '';
   else if (e.type === 'dialogue') propre = `<blockquote class="dialogue">${e.pnj ? `<b>${lienFiche(e.pnj)}</b> : ` : ''}${formaterRecit(e.texte).replace(/^<p>|<\/p>$/g, '') || ''}</blockquote>`;
-  else if (e.type === 'image') propre = `${e.image ? `<button class="illustration" data-action="img-zoom" data-src="${e.image}" aria-label="Montrer en plein écran"><img src="${e.image}" alt=""></button>
-      <div class="btns"><button class="btn" data-action="ecran-image" data-s="${s.id}" data-i="${i}">🖥 Afficher sur l'écran des joueurs</button></div>` : '<p class="empty">Pas encore d\'image.</p>'}${e.texte ? `<p class="hint">${esc(e.texte)}</p>` : ''}`;
+  else if (e.type === 'image') propre = `${e.image ? `<button class="illustration" data-action="ecran-image" data-s="${s.id}" data-i="${i}" aria-label="Afficher sur l'écran des joueurs"><img src="${e.image}" alt=""></button>
+      <div class="btns"><button class="btn" data-action="ecran-image" data-s="${s.id}" data-i="${i}">🖥 Écran des joueurs (autre fenêtre)</button><button class="btn ghost" data-action="img-zoom" data-plein="1" data-src="${e.image}">⛶ Plein écran ici</button></div>` : '<p class="empty">Pas encore d\'image.</p>'}${e.texte ? `<p class="hint">${esc(e.texte)}</p>` : ''}`;
   else propre = e.texte ? `<div class="recit-texte">${formaterRecit(e.texte)}</div>` : '';
   if (e.type === 'rencontre' && e.combatId) {
     const c = m.combats.find(x => x.id === e.combatId);
@@ -6222,9 +6222,10 @@ document.addEventListener('click', ev => {
     case 'img-zoom': {
       const d = document.createElement('div');
       d.className = 'zoom';
-      d.innerHTML = `<img src="${b.dataset.src}" alt=""><button class="btn ghost" aria-label="Fermer">Fermer</button>`;
-      d.addEventListener('click', () => d.remove());
+      d.innerHTML = `<img src="${b.dataset.src}" alt=""><button class="zoom-fermer" aria-label="Fermer">✕</button>`;
+      d.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); d.remove(); });
       document.body.appendChild(d);
+      if (b.dataset.plein && d.requestFullscreen) d.requestFullscreen().catch(() => {});
       break;
     }
     case 'mj-session-ajout': {
