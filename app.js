@@ -2452,25 +2452,19 @@ const xpSession = s => (s.etapes || []).reduce((t, e) => t + num(e.xp), 0);
 const xpDonne = s => (s.etapes || []).filter(e => e.xpDonne).reduce((t, e) => t + num(e.xp), 0);
 
 /* Fenêtre séparée, à glisser sur l'écran ou la télévision des joueurs : elle se réutilise à chaque image */
-function afficherSurEcran(src, titre, legende) {
+function afficherSurEcran(src) {
   const w = window.open('', 'codex-ecran-joueurs', 'popup=yes,width=1280,height=760');
   if (!w) { alert('Ton navigateur a bloqué la fenêtre. Autorise les fenêtres pop-up pour ce site, puis réessaie.'); return; }
+  /* Rien d'autre que l'image : ni titre, ni légende, ni texte d'aide */
   w.document.open();
-  w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(titre || 'Illustration')}</title>
-    <style>html,body{margin:0;height:100%;background:#05090d;color:#E8E4D9;font-family:Georgia,serif;overflow:hidden}
-    .cadre{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8rem;padding:2vh}
-    img{max-width:100%;max-height:${titre || legende ? '88vh' : '96vh'};object-fit:contain;box-shadow:0 20px 60px #000}
-    h1{margin:0;font-weight:normal;letter-spacing:.08em;font-size:2.4vh;color:#D9BE8A}
-    p{margin:0;font-size:1.8vh;color:#B9B4A8}
-    .aide{position:fixed;top:1rem;right:1rem;font:13px sans-serif;color:#888;background:#111c;padding:.4rem .7rem;border-radius:6px;transition:opacity 1s}</style></head>
-    <body ondblclick="document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()">
-    <div class="cadre"><img src="${src}" alt="">${titre ? `<h1>${esc(titre)}</h1>` : ''}${legende ? `<p>${esc(legende)}</p>` : ''}</div>
-    <div class="aide" id="aide">Glisse cette fenêtre sur l'autre écran, puis double-clic (ou F11) pour le plein écran</div>
-    <script>setTimeout(function(){document.getElementById('aide').style.opacity=0},6000)</script></body></html>`);
+  w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Illustration</title>
+    <style>html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none}
+    img{position:fixed;inset:0;width:100%;height:100%;object-fit:contain}</style></head>
+    <body ondblclick="document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()"><img src="${src}" alt=""></body></html>`);
   w.document.close();
   w.focus();
+  toast('Glisse la fenêtre sur l\'écran des joueurs, puis double-clic dessus (ou F11) pour le plein écran.');
 }
-
 function pageSessionsMJ() {
   if (state.mjSession && sessionMJ(state.mjSession)) return pageSessionMJ(sessionMJ(state.mjSession));
   const ls = sessionsMJ();
@@ -6453,7 +6447,7 @@ document.addEventListener('click', ev => {
     }
     case 'ecran-image': {
       const et = sessionMJ(b.dataset.s)?.etapes[Number(b.dataset.i)];
-      if (et?.image) afficherSurEcran(et.image, et.titre || '', et.texte || '');
+      if (et?.image) afficherSurEcran(et.image);
       break;
     }
     case 'ambiance-ajout': {
