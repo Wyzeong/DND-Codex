@@ -5398,6 +5398,33 @@ function pageDonnees() {
 }
 
 /* ---------- Rendu et navigation ---------- */
+/* Repère chaque menu dépliable par sa section et son titre, pour le rouvrir après un nouvel affichage */
+function cleDetails(d) {
+  const sec = d.closest('[data-section]')?.dataset.section || '';
+  const carte = d.closest('[data-carte], [data-id]')?.getAttribute('data-carte') || d.closest('[data-id]')?.getAttribute('data-id') || '';
+  const titre = (d.querySelector(':scope > summary')?.textContent || '').replace(/\s+/g, ' ').replace(/\d+/g, '#').trim().slice(0, 60);
+  return `${location.hash}|${sec}|${carte}|${titre}`;
+}
+function etatDetails(racine) {
+  const m = new Map();
+  if (!racine) return m;
+  for (const d of racine.querySelectorAll('details:not([data-section])')) {
+    const k = cleDetails(d);
+    const n = (m.get(k + '#n') || 0); m.set(k + '#n', n + 1);
+    m.set(k + '@' + n, d.open);
+  }
+  return m;
+}
+function restaurerDetails(racine, m) {
+  if (!m || !m.size) return;
+  const vus = new Map();
+  for (const d of racine.querySelectorAll('details:not([data-section])')) {
+    const k = cleDetails(d);
+    const n = vus.get(k) || 0; vus.set(k, n + 1);
+    const etat = m.get(k + '@' + n);
+    if (etat !== undefined) d.open = etat;
+  }
+}
 function ranger_aides(racine = document) {
   for (const el of [...racine.querySelectorAll('.aide')]) {
     const carte = el.closest('details.card, section.card, .card');
@@ -5450,8 +5477,10 @@ function render(garderScroll = true) {
     case 'donnees': html = pageDonnees(); break;
     default: html = pagePersos();
   }
+  const ouverts = etatDetails($('#app'));
   $('#app').innerHTML = html;
   ranger_aides($('#app'));
+  restaurerDetails($('#app'), ouverts);
   const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
   /* Mon personnage, en haut à droite (sauf dans l'espace MJ) */
   const chip = document.getElementById('mon-perso');
@@ -5463,6 +5492,10 @@ function render(garderScroll = true) {
       chip.innerHTML = `${mien.portrait ? `<img src="${mien.portrait}" alt="">` : `<span class="initiale">${esc((mien.nom || '?')[0])}</span>`}<span class="nom">${esc(mien.nom || 'Mon personnage')}</span>`;
     }
   }
+  /* Repère visible du mode MJ sur cet appareil */
+  let badge = document.getElementById('badge-mj');
+  if (!badge && chip) { chip.insertAdjacentHTML('beforebegin', '<a id="badge-mj" class="badge-mj" href="#/mj" title="Le mode MJ est actif sur cet appareil">MJ</a>'); badge = document.getElementById('badge-mj'); }
+  if (badge) badge.hidden = !estMJ() || !enLigne();
   const navLog = document.querySelector('[data-nav="log"]');
   if (navLog) navLog.hidden = !voitJournal();
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav || (a.dataset.nav === 'sorts' && nav === 'aptitudes')));
@@ -7167,11 +7200,19 @@ const enSaisie = () => {
   const a = document.activeElement;
   return a && (a.matches('input, textarea, select') || a.isContentEditable);
 };
+/* Empreinte légère de ce que l'écran affiche, pour savoir si une actualisation a changé quelque chose */
+function empreinteDonnees() {
+  const t = JSON.stringify([db.personnages, db.recaps, db.fichesPubliees, db.bourseCommune, db.combatPublic, db.mjData, db.marche, db.marches, db.ambiances, db.classesPerso, db.conteur, db.info]);
+  let h = 0;
+  for (let i = 0; i < t.length; i += 7) h = (h * 31 + t.charCodeAt(i)) | 0;
+  return t.length + ':' + h;
+}
 async function actualiser(manuel = false) {
   if (!enLigne() || actualisationEnCours) return;
   actualisationEnCours = true;
   if (manuel) statutSync('Actualisation…', true);
   try {
+    const avant = empreinteDonnees();
     await envoyerPersos();
     await Promise.all([chargerPersos(), chargerRecaps(), chargerFiches(), chargerInfos()]);
     await chargerPersosMJ();
@@ -7179,6 +7220,8 @@ async function actualiser(manuel = false) {
     await chargerMarche();
     await chargerClasses();
     if (manuel) statutSync(state.syncErreur ? 'Hors ligne' : 'À jour');
+    /* Rien de nouveau : on ne touche pas à l'écran (les menus ouverts restent ouverts) */
+    if (!manuel && empreinteDonnees() === avant) return;
     /* On ne redessine pas sous les doigts de quelqu'un qui est en train d'écrire */
     if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette && !state.mjEdit) { state.renduDiffere = false; render(); }
     else state.renduDiffere = true;

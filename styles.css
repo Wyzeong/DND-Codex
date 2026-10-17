@@ -1563,3 +1563,6 @@ h3 { position: relative; }
 .aide-bulle[hidden] { display: none; }
 .aide-para { display: block; }
 .aide-para + .aide-para { margin-top: .4rem; padding-top: .4rem; border-top: 1px solid var(--line); }
+.badge-mj { margin-left: auto; margin-right: .4rem; padding: .2rem .55rem; border-radius: 99px; background: var(--rouge); color: #FFE5DD; border: 1px solid #C46B57; font: 700 .72rem/1 var(--font); letter-spacing: .08em; text-decoration: none; }
+.badge-mj[hidden] { display: none; }
+.badge-mj:not([hidden]) + .mon-perso { margin-left: 0; }
