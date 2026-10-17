@@ -829,6 +829,7 @@ function ongletFicheBrut(p, e) {
 
   ${(p.etats || []).some(x => x.actif !== false) ? ficheEtats(p) : ''}
   ${ficheAmeliorations(p)}
+  ${(() => { const q = fichesToutes().filter(f => porteeQuete(f) === 'personnelle' && f.extra?.persoId === p.id); return q.length ? `<section class="card"><h3>Quêtes personnelles</h3><div class="fiches">${q.map(carteFiche).join('')}</div></section>` : ''; })()}
   ${ficheCombat(p, e)}
 
   <section class="card"><h3>Défense et statistiques</h3>
@@ -4066,7 +4067,7 @@ async function publierTout() {
     }
     if (db.codeCampagne) for (const id of db.recapsSupprimes || []) await rpc('supprimer_recap', { p_code: db.codeCampagne, p_id: id });
     for (const f of fichesToutes().filter(x => statutPublication(x) !== 'publie')) {
-      await rpc('sauver_fiche', { p_code: codeFiches(), p_id: f.id, p_nom: f.nom || '', p_type: f.type || 'pnj', p_role: f.role || '', p_lieu: f.lieu || '', p_statut: f.statut || '', p_alias: f.alias || '', p_description: f.description || '' });
+      await sauverFicheRPC(f);
     }
     for (const id of db.fichesSupprimees || []) await rpc('supprimer_fiche', { p_code: codeFiches(), p_id: id });
     await chargerFiches();
@@ -4349,7 +4350,7 @@ const STATUTS_FICHE = {
   lieu: ['Visité', 'Pas encore visité'],
   savoir: [],
 };
-const champsFiche = f => JSON.stringify(['nom', 'type', 'role', 'lieu', 'statut', 'alias', 'description'].map(k => String(f[k] ?? '')));
+const champsFiche = f => JSON.stringify([...['nom', 'type', 'role', 'lieu', 'statut', 'alias', 'description'].map(k => String(f[k] ?? '')), JSON.stringify(f.extra || {})]);
 const fichesPubliees = () => db.fichesPubliees || [];
 function fichesToutes() {
   const sup = new Set(db.fichesSupprimees || []);
@@ -4371,9 +4372,11 @@ async function chargerFiches() {
   try {
     let pub;
     if (enLigne()) {
-      const ch = await lignesChangees('fiches', 'fiches', 'id,nom,type,role,lieu,statut,alias,description,maj', id => fichesPubliees().some(f => f.id === id));
+      let ch;
+      try { ch = await lignesChangees('fiches', 'fiches', 'id,nom,type,role,lieu,statut,alias,description,extra,maj', id => fichesPubliees().some(f => f.id === id)); }
+      catch (e) { ch = await lignesChangees('fiches', 'fiches', 'id,nom,type,role,lieu,statut,alias,description,maj', id => fichesPubliees().some(f => f.id === id)); }
       const parId = new Map(fichesPubliees().map(f => [f.id, f]));
-      for (const f of ch.lignes) parId.set(f.id, { ...f, role: f.role || '', lieu: f.lieu || '', statut: f.statut || '', alias: f.alias || '', description: f.description || '' });
+      for (const f of ch.lignes) parId.set(f.id, { ...f, role: f.role || '', lieu: f.lieu || '', statut: f.statut || '', alias: f.alias || '', description: f.description || '', extra: f.extra || {} });
       pub = [...parId.values()].filter(f => ch.tous.has(f.id));
       ch.valider();
     } else {
@@ -4446,12 +4449,15 @@ function badgeStatut(f) {
 }
 
 /* Quête principale : mise en avant partout */
-const estQuetePrincipale = f => f.type === 'quete' && /principale/i.test(f.role || '');
+const porteeQuete = f => f.type !== 'quete' ? '' : (f.extra && f.extra.portee) || (/principale/i.test(f.role || '') ? 'principale' : /personnelle/i.test(f.role || '') ? 'personnelle' : 'secondaire');
+const estQuetePrincipale = f => porteeQuete(f) === 'principale';
+const persoDeQuete = f => (f.extra && f.extra.persoId && findPerso(f.extra.persoId)) || null;
+const nomPersoQuete = f => persoDeQuete(f)?.nom || (f.extra && f.extra.persoNom) || '';
 function carteFiche(f) {
   const st = statutPublication(f);
-  const princ = estQuetePrincipale(f);
-  return `<a class="fiche-carte type-${f.type} ${princ ? 'quete-principale' : ''}" href="#/fiche/${f.id}">
-    ${princ ? '<span class="badge-principale">★ Quête principale</span>' : ''}
+  const princ = estQuetePrincipale(f), perso = porteeQuete(f) === 'personnelle';
+  return `<a class="fiche-carte type-${f.type} ${princ ? 'quete-principale' : ''} ${perso ? 'quete-perso' : ''}" href="#/fiche/${f.id}">
+    ${princ ? '<span class="badge-principale">★ Quête principale</span>' : ''}${perso ? `<span class="badge-perso">Quête personnelle${nomPersoQuete(f) ? ' · ' + esc(nomPersoQuete(f)) : ''}</span>` : ''}
     <span class="fiche-carte-tete"><b>${esc(f.nom)}</b>${badgeStatut(f)}</span>
     ${f.role && !princ || f.lieu ? `<small>${esc([princ ? '' : f.role, f.lieu].filter(Boolean).join(', '))}</small>` : ''}
     ${st !== 'publie' && peutEcrireFiches() ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
@@ -4496,6 +4502,14 @@ function resultatsEncyclo() {
   const groupes = Object.entries(TYPES_FICHE).filter(([k]) => !filtre || filtre === k).map(([k, l]) => {
     const liste = fiches.filter(f => f.type === k).sort((x, y) => estQuetePrincipale(y) - estQuetePrincipale(x));
     if (!liste.length) return '';
+    if (k === 'quete') {
+      const princ = liste.filter(estQuetePrincipale), pers = liste.filter(f => porteeQuete(f) === 'personnelle'), autres = liste.filter(f => porteeQuete(f) === 'secondaire');
+      const parPerso = {};
+      for (const f of pers) (parPerso[nomPersoQuete(f) || 'Sans personnage'] = parPerso[nomPersoQuete(f) || 'Sans personnage'] || []).push(f);
+      return `${princ.length ? `<section class="card bloc-principal"><h3>★ ${princ.length > 1 ? 'Quêtes principales' : 'Quête principale'}</h3><div class="fiches">${princ.map(carteFiche).join('')}</div></section>` : ''}
+        ${pers.length ? `<section class="card"><h3>Quêtes personnelles</h3>${Object.entries(parPerso).map(([n, l2]) => `<h4 class="quetes-de">${esc(n)}</h4><div class="fiches">${l2.map(carteFiche).join('')}</div>`).join('')}</section>` : ''}
+        ${autres.length ? `<section class="card"><h3>Quêtes secondaires</h3><div class="fiches">${autres.map(carteFiche).join('')}</div></section>` : ''}`;
+    }
     return `<section class="card"><h3>${l}</h3><div class="fiches">${liste.map(carteFiche).join('')}</div></section>`;
   }).join('');
   return chips + (groupes || `<section class="card intro"><p class="empty">L'encyclopédie est vide.${peutEcrireFiches() ? ' Crée une première fiche, ou importe un fichier d\'encyclopédie depuis l\'onglet Partage.' : ''}</p></section>`);
@@ -4514,7 +4528,7 @@ function pageFiche(id) {
   <article class="fiche type-${f.type}">
     <p class="recit-num">${esc(TYPE_FICHE_UN[f.type] || 'Fiche')}</p>
     <h1>${esc(f.nom)}</h1>
-    ${estQuetePrincipale(f) ? '<p class="badge-principale grand">★ Quête principale</p>' : f.role ? `<p class="sub">${esc(f.role)}</p>` : ''}
+    ${estQuetePrincipale(f) ? '<p class="badge-principale grand">★ Quête principale</p>' : porteeQuete(f) === 'personnelle' ? `<p class="badge-perso grand">Quête personnelle${nomPersoQuete(f) ? ` de ${persoDeQuete(f) ? `<a href="#/perso/${persoDeQuete(f).id}/fiche">${esc(nomPersoQuete(f))}</a>` : esc(nomPersoQuete(f))}` : ''}</p>${f.role && !/personnelle/i.test(f.role) ? `<p class="sub">${esc(f.role)}</p>` : ''}` : f.role ? `<p class="sub">${esc(f.role)}</p>` : ''}
     <div class="fiche-meta">
       ${f.lieu ? `<span>Lieu : ${lienFiche(f.lieu)}</span>` : ''}${badgeStatut(f)}
       ${f.alias ? `<span>Aussi appelé : ${esc(f.alias)}</span>` : ''}
@@ -4547,6 +4561,8 @@ function formFiche(f0) {
       ${fi(f, 'nom', 'Nom', { span: true })}
       ${sel(f, 'type', 'Type', Object.entries(TYPE_FICHE_UN))}
       ${statuts.length ? sel(f, 'statut', 'Statut', statuts) : fi(f, 'statut', 'Statut')}
+      ${f.type === 'quete' ? `<label class="f"><span>Type de quête</span><select data-bind="extra.portee" data-rerender>${[['principale', '★ Quête principale'], ['secondaire', 'Quête secondaire'], ['personnelle', 'Quête personnelle']].map(([v, l]) => `<option value="${v}" ${porteeQuete(f) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        ${porteeQuete(f) === 'personnelle' ? `<label class="f"><span>Quête de</span><select data-bind="extra.persoId" data-rerender><option value="">— Choisir un personnage —</option>${db.personnages.filter(x => estMembre(x) && (!enLigne() || x.publie || x.pnjMJ)).map(x => `<option value="${x.id}" ${f.extra?.persoId === x.id ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select></label>` : ''}` : ''}
       ${fi(f, 'role', 'Rôle ou résumé en quelques mots', { span: true, ph: 'Ex. : Aubergiste de Wellon' })}
       <label class="f span2"><span>Lieu</span><input type="text" list="liste-lieux" data-bind="lieu" value="${esc(f.lieu)}" placeholder="Ex. : Wellon"></label>
       <datalist id="liste-lieux">${lieux.map(l => `<option value="${esc(l)}">`).join('')}</datalist>
@@ -4773,9 +4789,15 @@ const estAdmin = () => !enLigne() || !!db.codeCampagne;
 /* L'encyclopédie (quêtes, PNJ, lieux…) : l'administrateur et le MJ */
 const peutEcrireFiches = () => estAdmin() || estMJ();
 const codeFiches = () => db.codeCampagne || db.codeMJ || '';
+/* Avec les informations complémentaires (base en v16) ; sinon, sans elles */
+async function sauverFicheRPC(f) {
+  const base = { p_code: codeFiches(), p_id: f.id, p_nom: f.nom || '', p_type: f.type || 'pnj', p_role: f.role || '', p_lieu: f.lieu || '', p_statut: f.statut || '', p_alias: f.alias || '', p_description: f.description || '' };
+  try { await rpc('sauver_fiche', { ...base, p_extra: f.extra || {} }); }
+  catch (e) { if (/p_extra|function|fonction|schema cache/i.test(e.message)) await rpc('sauver_fiche', base); else throw e; }
+}
 async function publierFiche(f) {
   if (!enLigne()) return;
-  await rpc('sauver_fiche', { p_code: codeFiches(), p_id: f.id, p_nom: f.nom || '', p_type: f.type || 'pnj', p_role: f.role || '', p_lieu: f.lieu || '', p_statut: f.statut || '', p_alias: f.alias || '', p_description: f.description || '' });
+  await sauverFicheRPC(f);
   await chargerFiches();
 }
 const estAMoi = p => !enLigne() || !!(db.cles || {})[p.id];
@@ -5522,6 +5544,7 @@ document.addEventListener('input', ev => {
   if (db.personnages.includes(state.ctx) && !peutModifier(state.ctx)) return;
   if (state.ctx === state.editRecapObj && !estAdmin()) return;
   if (state.ctx === state.editFicheObj && !peutEcrireFiches()) return;
+  if (state.ctx === state.editFicheObj && path === 'extra.persoId') state.ctx.extra = { ...(state.ctx.extra || {}), persoNom: findPerso(t.value)?.nom || '' };
   /* Valider un niveau est réservé au MJ (le joueur le prépare seulement) */
   if (/^progression\.\d+\.atteint$/.test(path) && enLigne() && !estMJ() && db.personnages.includes(state.ctx)) { t.checked = !t.checked; toast('C\'est le MJ qui valide le passage de niveau.'); return; }
   setP(state.ctx, path, t.type === 'checkbox' ? t.checked : t.value);
@@ -5531,7 +5554,7 @@ document.addEventListener('input', ev => {
     state.ctx.mjMaj = Date.now();
   }
   state.ctx.maj = Date.now();
-  if (path === 'nom') $('#ptitle').textContent = t.value || 'Sans nom';
+  if (path === 'nom' && $('#ptitle')) $('#ptitle').textContent = t.value || 'Sans nom';
   /* Augmentation de caractéristique : reportée sur la fiche quand le niveau est atteint */
   const mAug = path.match(/^progression\.(\d+)\.(atteint|augment)$/);
   if (mAug) appliquerAugment(state.ctx, state.ctx.progression[Number(mAug[1])]);

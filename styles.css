@@ -1475,3 +1475,11 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .niveaux-groupe { list-style: none; padding: 0; margin: .3rem 0 .5rem; display: flex; flex-direction: column; gap: .3rem; }
 .niveaux-groupe li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .35rem .5rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); font-size: .9rem; }
 .niveaux-groupe .btn { margin-left: auto; }
+/* Quêtes : principale à part, quêtes personnelles */
+.bloc-principal { border-color: var(--bronze); background: linear-gradient(180deg, rgba(183, 147, 90, .12), transparent 60%), var(--surface); }
+.bloc-principal h3 { color: var(--bronze-clair); }
+.badge-perso { display: inline-block; align-self: flex-start; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: #CFEAF8; border: 1px solid #5E9ED6; border-radius: 99px; padding: .1rem .55rem; margin-bottom: .25rem; }
+.badge-perso.grand { font-size: .8rem; padding: .2rem .8rem; margin: .3rem 0 .4rem; }
+.badge-perso a { color: inherit; }
+.fiche-carte.quete-perso { border-left-color: #5E9ED6; }
+.quetes-de { margin: .6rem 0 .3rem; color: #9FD4F0; font-size: .9rem; }
