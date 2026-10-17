@@ -1489,3 +1489,6 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .am-lecture { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .25rem 0; }
 .am-lecture small { color: var(--muted); }
 .arme.membre { border-color: #8E7BD6; box-shadow: inset 3px 0 0 #8E7BD6; }
+.ordre-arme { float: right; display: flex; gap: .2rem; margin: -.2rem -.2rem 0 .4rem; }
+.ordre-arme .icon { padding: .1rem .35rem; font-size: .8rem; }
+.petit-check { font-size: .82rem; color: var(--muted); padding: .2rem 0 0; }

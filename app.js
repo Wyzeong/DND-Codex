@@ -1332,7 +1332,8 @@ function infosMainsNues(p, e, st) {
   const fo = e.mods.for;
   const bonD = fo + (e.objets.tot.degats || 0);
   const degats = `${de}${bonD ? R.signe(bonD) : ''}`;
-  const toucher = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods.for + (R.TAILLES[e.taille]?.ca || 0));
+  const prediMN = p.predMainsNues && e.dons.has('arme-predilection') ? 1 + (e.dons.has('arme-predilection-superieure') ? 1 : 0) : 0;
+  const toucher = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods.for + (R.TAILLES[e.taille]?.ca || 0) + prediMN);
   let deluge = null;
   if (mDel) {
     const pen = mDel < 5 ? -2 : mDel < 9 ? -1 : 0;
@@ -1421,7 +1422,7 @@ function carteArmeCombat(p, e, st, it, munitions) {
   const finessable = !dist && (prise === 'legere' || ref?.finesse);
   const finesse = finessable && e.dons.has('attaque-finesse') && e.mods.dex > e.mods.for;
   const carAtt = dist || finesse ? 'dex' : 'for';
-  const predi = it.predilection && e.dons.has('arme-predilection') ? 1 + (e.dons.has('arme-predilection-superieure') ? 1 : 0) : 0;
+  const predi = (it.predilection || (it.membre && p.predMainsNues)) && e.dons.has('arme-predilection') ? 1 + (e.dons.has('arme-predilection-superieure') ? 1 : 0) : 0;
   const spe = it.specialisation && e.dons.has('specialisation-martiale') ? 2 + (e.dons.has('specialisation-superieure') ? 2 : 0) : 0;
   const tou = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods[carAtt] + taille + predi);
   /* Force aux dégâts : ×1,5 à deux mains, normale au corps à corps et pour les armes de jet */
@@ -1459,7 +1460,7 @@ function carteArmeCombat(p, e, st, it, munitions) {
     <div class="arme-tete"><b>${esc(titre)}</b><span class="tag-mode">${it.membre ? 'Corps à corps · comme à mains nues' : `${dist ? 'Distance' : R.PRISES[prise] || 'Corps à corps'}${ref?.moine ? ' · moine' : ''}`}</span></div>
     <dl class="arme-stats">
       <dt>Pour toucher</dt><dd><span class="gros">${R.signe(tou[0])}</span>${tou.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(tou)})</small>` : ''}</dd>
-      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${noteDeg}${it.critique || ref?.crit ? ` <small>critique ${esc(it.critique || ref.crit)}</small>` : ''}</dd>
+      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${noteDeg}${it.critique || ref?.crit || it.membre ? ` <small>critique ${esc(it.critique || ref?.crit || '20/×2')}</small>` : ''}</dd>
       ${it.portee || (dist && ref?.portee) ? `<dt>Portée</dt><dd>${esc(it.portee || ref.portee)}</dd>` : ''}
     </dl>
     ${liees.join('')}
@@ -1498,18 +1499,29 @@ function ficheCombat(p, e) {
     ${blocEffets(p)}
     <h4>Attaquer</h4>
     <div class="armes">
-      ${mn ? `<div class="arme">
+      ${(() => {
+        /* Cartes d'attaque dans l'ordre choisi par le joueur (flèches ↑ ↓) */
+        const cartes = [];
+        const htmlMN = mn ? `<div class="arme">
         <p class="action-type"><span>Action simple</span>${mn.toucher.length > 1 ? ' · attaque à outrance : action complexe' : ''}${mn.deluge ? ' · déluge de coups : action complexe' : ''}</p>
         <div class="arme-tete"><b>Combat à mains nues</b><span class="tag-mode">Corps à corps</span></div>
         <dl class="arme-stats">
           <dt>Pour toucher</dt><dd><span class="gros">${R.signe(mn.toucher[0])}</span>${mn.toucher.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(mn.toucher)})</small>` : ''}</dd>
-          <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span></dd>
+          <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span> <small>critique 20/×2</small></dd>
         </dl>
+        ${e.dons.has('arme-predilection') && peutModifier(p) ? `<label class="check petit-check"><input type="checkbox" data-bind="predMainsNues" data-rerender ${p.predMainsNues ? 'checked' : ''}> Mon Arme de prédilection porte sur le combat à mains nues (s'applique aussi aux membres du corps)</label>` : p.predMainsNues ? '<p class="liee"><b>Arme de prédilection</b> : +1 pour toucher, déjà inclus.</p>' : ''}
         ${mn.deluge ? `<div class="deluge"><b>Déluge de coups</b> : ${mn.deluge.liste.length} attaques à <span class="gros">${R.attTxt(mn.deluge.liste)}</span>, ${esc(mn.degats)} chacune.
           <small>Prend tout ton tour. Le malus de ${R.signe(mn.deluge.pen)} est déjà inclus${mn.deluge.pen ? '' : ' (il a disparu à ton niveau)'}.</small></div>` : ''}
         ${res.some(r => r.id === 'coup-etourdissant') ? (r => `<p class="liee"><b>Coup étourdissant</b> : uniquement à mains nues. Il t'en reste ${Math.max(0, r.max - num((p.compteurs || {})[r.id]))} sur ${r.max} (compteur plus bas).</p>`)(res.find(r => r.id === 'coup-etourdissant')) : ''}
-      </div>` : ''}
-      ${armes.map(carteArme).join('')}
+      </div>` : '';
+        if (htmlMN) cartes.push({ id: 'mn', html: htmlMN });
+        for (const it of armes) cartes.push({ id: it.id, html: carteArme(it) });
+        const ordre = p.ordreArmes || [];
+        const rang = id => { const i = ordre.indexOf(id); return i < 0 ? 999 + cartes.findIndex(c => c.id === id) : i; };
+        cartes.sort((x, y) => rang(x.id) - rang(y.id));
+        const mod = peutModifier(p) && cartes.length > 1;
+        return cartes.map((c, i) => mod ? c.html.replace('<div class="arme', `<div data-carte="${c.id}" class="arme`).replace(/<div class="arme-tete">/, `<div class="ordre-arme"><button class="icon" data-action="arme-ordre" data-id="${c.id}" data-sens="-1" ${i ? '' : 'disabled'} aria-label="Monter">↑</button><button class="icon" data-action="arme-ordre" data-id="${c.id}" data-sens="1" ${i < cartes.length - 1 ? '' : 'disabled'} aria-label="Descendre">↓</button></div><div class="arme-tete">`) : c.html).join('');
+      })()}
       ${!mn && !armes.length ? '<p class="empty">Aucune arme. Dans l\'onglet Inventaire, choisis le type « Arme » pour un objet.</p>' : ''}
     </div>
 
@@ -6869,6 +6881,14 @@ document.addEventListener('click', ev => {
       const csv = '\ufeff' + [COLONNES_PNJ.map(c => c[1]), ['Garde de Westgate', 'ennemi', '11', '15', '1', 'Épée longue +3 corps à corps (1d8+1)', 'For 13, Dex 11, Con 12, Int 10, Sag 11, Cha 9', 'Alerte au moindre bruit', '1', '4'], ['Grosse Berta', 'neutre', '6', '10', '0', 'Gourdin +0 (1d6)', '', 'Marchande de Westgate', '½', '1']].map(l => l.join(';')).join('\r\n');
       const a2 = document.createElement('a'); a2.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a2.download = 'modele-pnj.csv';
       document.body.appendChild(a2); a2.click(); setTimeout(() => { URL.revokeObjectURL(a2.href); a2.remove(); }, 1000);
+      break;
+    }
+    case 'arme-ordre': {
+      const ids = [...document.querySelectorAll('.armes [data-carte]')].map(x => x.dataset.carte);
+      const i = ids.indexOf(b.dataset.id), j = i + Number(b.dataset.sens);
+      if (i < 0 || j < 0 || j >= ids.length) break;
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      p.ordreArmes = ids; save(); render();
       break;
     }
     case 'replis-tout': {
