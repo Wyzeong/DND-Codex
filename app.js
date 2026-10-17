@@ -1432,7 +1432,9 @@ function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
   const bonusFo = carDeg !== 'for' ? fo : dist && !ref?.lancer ? Math.min(0, fo) : (prise === 'deux' || prise === 'double') && fo > 0 ? Math.floor(fo * 1.5) : fo;
   const bonusDeg = bonusFo + spe + (e.objets.tot.degats || 0);
   const de = it.degats || ref?.deg || '?';
-  const deg = `${de}${bonusDeg ? R.signe(bonusDeg) : ''}`;
+  /* « 1d6+1 » saisi sur l'objet + bonus calculés = « 1d6+7 », et non « 1d6+1+6 » */
+  const mDe = String(de).replace(/\s+/g, '').match(/^(\d+d\d+)([+-]\d+)?$/i);
+  const deg = mDe ? `${mDe[1]}${(num(mDe[2]) + bonusDeg) ? R.signe(num(mDe[2]) + bonusDeg) : ''}` : `${de}${bonusDeg ? R.signe(bonusDeg) : ''}`;
   const moine = e.classes.moine ? e.moineCumul.deluge : 0;
   const liees = [];
   if (moine && (ref?.moine || it.membre) && !dist) {
@@ -1566,6 +1568,15 @@ function ficheCombat(p, e) {
       </div>`;
     }).join('')}</div>` : '<p class="empty">Aucun sort. Ajoute ceux de ta baguette dans l\'onglet Sorts.</p>'}
 
+    ${(() => {
+      /* Ce qui joue en permanence : pouvoirs de domaine sans compteur, incantation spontanée du prêtre… */
+      const passifs = [];
+      for (const d of e.domaines || []) { const dm = R.DOMAINES[d]; if (dm && !dm.usage) passifs.push([`Domaine ${dm.nom}`, dm.pouvoir]); }
+      if (e.classes.pretre) passifs.push(['Incantation spontanée', `Tu peux sacrifier un sort préparé (hors domaine) pour lancer à la place un sort de soins du même niveau${(p.alignement || '').toLowerCase().includes('mauvais') ? ' (ou de blessure)' : ''}.`]);
+      if (e.classes.moine) passifs.push(['Esquive totale', e.classes.moine >= 2 ? 'Aucun dégât si tu réussis un jet de Réflexes contre un effet qui en inflige la moitié.' : '']);
+      const l = passifs.filter(x => x[1]);
+      return l.length ? `<h4 class="type-action">Toujours actif <small>sans action</small></h4><div class="passifs">${l.map(([n, t]) => `<details class="passif"><summary>${esc(n)}</summary><p>${esc(t)}</p></details>`).join('')}</div>` : '';
+    })()}
     ${resPar('autre').length ? `<h4>Autres capacités</h4><div class="ressources">${resPar('autre').map(r => compteur(p, r)).join('')}</div>` : ''}
 
     ${consommables.length ? `<h4>Consommables</h4><div class="consos">${consommables.map(({ it, i }) => `<div class="munition">
@@ -2146,10 +2157,10 @@ function carteXP() {
         const prochain = prog.find(l => !l.atteint);
         if (atteints >= n) return `<li><b>${esc(x.nom)}</b> : niveau ${atteints} ✓</li>`;
         if (!prochain || !prochain.classe) return `<li><b>${esc(x.nom)}</b> : niveau ${atteints}, <span class="manque">niveau ${atteints + 1} pas encore préparé</span></li>`;
-        return `<li><b>${esc(x.nom)}</b> : niveau ${atteints} → <b>${prochain.niveau}</b> préparé (${esc(R.CLASSES[prochain.classe]?.nom || prochain.classe)})
+        return `<li><b>${esc(x.nom)}</b> : niveau ${atteints} → <b>${prochain.niveau}</b> (${esc(R.CLASSES[prochain.classe]?.nom || prochain.classe)}) ${prochain.pret ? '<span class="tag-cat pret">fiche prête</span>' : '<span class="tag-cat">en préparation</span>'}
           <button class="btn petit" data-action="mj-niveau-valider" data-id="${x.id}">Valider le niveau ${prochain.niveau}</button></li>`;
       });
-      const prets = membres.filter(x => (x.progression || []).filter(l => l.atteint).length < n && (x.progression || []).find(l => !l.atteint)?.classe);
+      const prets = membres.filter(x => (x.progression || []).filter(l => l.atteint).length < n && (x.progression || []).find(l => !l.atteint)?.pret);
       return membres.length ? `<h4>Passage de niveau</h4><ul class="niveaux-groupe">${lignes.join('')}</ul>
         ${prets.length > 1 ? `<button class="btn" data-action="mj-niveau-tous">Valider pour les ${prets.length} personnages prêts</button>` : ''}
         <p class="hint">Les joueurs préparent leur prochain niveau dans la Progression ; tu le valides ici quand l'XP du groupe l'autorise.</p>` : '';
@@ -3745,7 +3756,9 @@ function carteNiveau(p, l, i, estProchain) {
             <option value="">— Choisir —</option>
             ${classeOptsHTML}
           </select></label>
-        <label class="check" ${enLigne() && !estMJ() ? 'title="Le MJ valide le passage de niveau depuis son espace"' : ''}><input type="checkbox" data-bind="progression.${i}.atteint" data-rerender ${l.atteint ? 'checked' : ''} ${enLigne() && !estMJ() ? 'disabled' : ''}> ${l.atteint ? 'Atteint' : enLigne() && !estMJ() ? 'Préparé, à valider par le MJ' : 'Atteint'}</label>
+        ${enLigne() && !estMJ() && !l.atteint
+          ? `<label class="check" title="Le MJ valide ensuite le passage de niveau"><input type="checkbox" data-bind="progression.${i}.pret" data-rerender ${l.pret ? 'checked' : ''}> Fiche prête, à valider par le MJ</label>`
+          : `<label class="check"><input type="checkbox" data-bind="progression.${i}.atteint" data-rerender ${l.atteint ? 'checked' : ''} ${enLigne() && !estMJ() ? 'disabled' : ''}> Atteint${!l.atteint && l.pret ? ' <small class="pret">(prêt)</small>' : ''}</label>`}
         <button class="icon" data-action="del-level" data-idx="${i}" aria-label="Supprimer le niveau ${n}">✕</button>
       </div>
       ${blocPrestige}
@@ -4096,19 +4109,19 @@ function carteConteur(admin) {
 /* Envoie en ligne tout ce qui n'est pas encore publié */
 async function publierTout() {
   if (!db.codeCampagne && !db.codeMJ) { toast('Saisis d\'abord le code de campagne ou le code MJ'); return; }
-  const aEnvoyer = db.codeCampagne ? recapsTous().filter(r => statutRecap(r) !== 'publie') : [];
+  const aEnvoyer = codeAdmin() ? recapsTous().filter(r => statutRecap(r) !== 'publie') : [];
   const sansPhoto = aEnvoyer.filter(r => !photoRecap(r) && !r.photoMaj);
   if (sansPhoto.length && !confirm(`${sansPhoto.map(r => 'Session ' + r.numero).join(', ')} : pas de photo. Publier quand même ?`)) return;
   try {
     for (const r of aEnvoyer) {
       await rpc('publier_recap', {
-        p_code: db.codeCampagne, p_id: r.id, p_numero: Math.round(num(r.numero)), p_date: r.date || null,
+        p_code: codeAdmin(), p_id: r.id, p_numero: Math.round(num(r.numero)), p_date: r.date || null,
         p_titre: r.titre || '', p_auteur: r.auteur || '', p_texte: r.texte || '',
         p_photo: r.photo === undefined ? null : r.photo, p_photo_type: r.photoType || '', p_photo_maj: r.photoMaj || 0,
       });
       if (r.photo !== undefined) { state.photos = state.photos || {}; state.photos[r.id] = r.photo; }
     }
-    if (db.codeCampagne) for (const id of db.recapsSupprimes || []) await rpc('supprimer_recap', { p_code: db.codeCampagne, p_id: id });
+    if (codeAdmin()) for (const id of db.recapsSupprimes || []) await rpc('supprimer_recap', { p_code: codeAdmin(), p_id: id });
     for (const f of fichesToutes().filter(x => statutPublication(x) !== 'publie')) {
       await sauverFicheRPC(f);
     }
@@ -4828,7 +4841,8 @@ function migrerSessions(liste) {
 
 /* ---------- Droits et synchronisation en ligne ---------- */
 /* Hors ligne (pas de config.js), tout reste local et tout est modifiable, comme avant. */
-const estAdmin = () => !enLigne() || !!db.codeCampagne;
+const estAdmin = () => !enLigne() || !!db.codeCampagne || !!db.codeMJ;
+const codeAdmin = () => db.codeCampagne || db.codeMJ || '';
 /* L'encyclopédie (quêtes, PNJ, lieux…) : l'administrateur et le MJ */
 const peutEcrireFiches = () => estAdmin() || estMJ();
 const codeFiches = () => db.codeCampagne || db.codeMJ || '';
@@ -5959,7 +5973,7 @@ document.addEventListener('click', ev => {
       const x = findPerso(id);
       const nom = x ? (x.joueur ? `${x.joueur} (${x.nom})` : x.nom) : '';
       const fini = () => { db.conteur = { conteur_id: id, conteur_nom: nom, session }; saveNow(); render(); toast(nom ? `${nom} racontera la session ${session || ''}` : 'Conteur retiré'); };
-      if (enLigne()) rpc('definir_conteur', { p_code: db.codeCampagne, p_id: id, p_nom: nom, p_session: session }).then(fini).catch(e => alert('Impossible : ' + e.message));
+      if (enLigne()) rpc('definir_conteur', { p_code: codeAdmin(), p_id: id, p_nom: nom, p_session: session }).then(fini).catch(e => alert('Impossible : ' + e.message));
       else fini();
       break;
     }
@@ -6866,7 +6880,7 @@ document.addEventListener('click', ev => {
     }
     case 'mj-niveau-tous': {
       const n = niveauXP(num(mjd().xp.valeur));
-      const l = db.personnages.filter(x => !x._public && estMembre(x) && (x.progression || []).filter(y => y.atteint).length < n).map(x => [x, validerNiveau(x)]).filter(([, v]) => v);
+      const l = db.personnages.filter(x => !x._public && estMembre(x) && (x.progression || []).filter(y => y.atteint).length < n && (x.progression || []).find(y => !y.atteint)?.pret).map(x => [x, validerNiveau(x)]).filter(([, v]) => v);
       toast(l.map(([x, v]) => `${x.nom} : niveau ${v}`).join(' · ')); render();
       break;
     }
