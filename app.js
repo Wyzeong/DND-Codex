@@ -825,7 +825,7 @@ function ongletFicheBrut(p, e) {
       </div>`;
       }).join('')}
     </div>
-    <p class="hint">Saisis les valeurs de base (ajustements raciaux compris, sans les objets). Les bonus des objets équipés s'ajoutent <span class="bonus-objet">en couleur</span>, et les modificateurs se calculent seuls.</p>
+    <p class="hint aide">Saisis les valeurs de base (ajustements raciaux compris, sans les objets). Les bonus des objets équipés s'ajoutent <span class="bonus-objet">en couleur</span>, et les modificateurs se calculent seuls.</p>
   </section>
 
   ${(p.etats || []).some(x => x.actif !== false) ? ficheEtats(p) : ''}
@@ -1006,7 +1006,7 @@ function ficheEtats(p) {
       </select>
       <button class="btn ghost" data-action="etat-add">Ajouter</button>
     </div>
-    <p class="hint">Les états actifs apparaissent en haut de la fiche, sur l'accueil et dans l'espace MJ. Leurs effets chiffrés s'appliquent aux statistiques.</p>` : ''}
+    <p class="hint aide">Les états actifs apparaissent en haut de la fiche, sur l'accueil et dans l'espace MJ. Leurs effets chiffrés s'appliquent aux statistiques.</p>` : ''}
   </section>`;
 }
 
@@ -1170,7 +1170,7 @@ function ongletInventaire(p, e) {
     </div>
     ${lignes}
     ${mod ? `<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>${estMJ() ? blocAjoutRapide('perso') : ''}` : ''}
-    <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Armure » et « Bouclier » : la CA, la Dextérité maximale et le malus aux compétences se calculent seuls. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
+    <p class="hint aide">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Armure » et « Bouclier » : la CA, la Dextérité maximale et le malus aux compétences se calculent seuls. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
   </section>
   </section>`;
 }
@@ -1724,7 +1724,7 @@ function pageMJ() {
     <button class="btn danger" data-action="mj-sortir">Quitter le mode MJ</button></div>
 
   <section class="card"><h3>Le groupe</h3>
-    <p class="hint">Données réelles des fiches : idéal pour les jets secrets (Détection, Perception auditive, Psychologie) sans demander aux joueurs.</p>
+    <p class="hint aide">Données réelles des fiches : idéal pour les jets secrets (Détection, Perception auditive, Psychologie) sans demander aux joueurs.</p>
     <div class="mj-persos">${cartes || '<p class="empty">Aucun personnage.</p>'}</div>
   </section>
 
@@ -1855,7 +1855,7 @@ function carteVitalite(p) {
       <div class="f"><span>Rations</span>
         <div class="dv-ligne"><b>${total}</b><small>${r ? `par défaut : ${esc(r.nom || 'ration')}` : 'aucune : ajoute-les dans l\'Inventaire'}</small></div></div>
     </div>
-    <p class="hint">Les PV et les dés de vie sont rechargés par le MJ avec « Jour suivant ». Il voit tes PV en direct et peut les ajuster.</p>
+    <p class="hint aide">Les PV et les dés de vie sont rechargés par le MJ avec « Jour suivant ». Il voit tes PV en direct et peut les ajuster.</p>
   </section>`;
 }
 
@@ -1895,7 +1895,7 @@ function projectionPublique(p) {
 function carteVisibilite(p) {
   const v = p.visibilite || {};
   return `<section class="card visibilite"><h3>Visible des joueurs</h3>
-    <p class="hint">Personnage du MJ : les joueurs ne voient que ce qui est coché ici, plus les objets marqués « visible » dans l'inventaire. Le reste n'est jamais envoyé à leurs appareils.</p>
+    <p class="hint aide">Personnage du MJ : les joueurs ne voient que ce qui est coché ici, plus les objets marqués « visible » dans l'inventaire. Le reste n'est jamais envoyé à leurs appareils.</p>
     <label class="check membre"><input type="checkbox" data-bind="membreGroupe" data-rerender ${p.membreGroupe ? 'checked' : ''}> <span><b>Membre du groupe</b> : joué par le MJ comme un personnage joueur (rations, jour suivant, combats, coffre commun, marché)</span></label>
     ${p.membreGroupe ? '' : fi(p, 'xp', 'Expérience de ce personnage (visible du MJ seulement)', { type: 'number' })}
     <div class="vis-grille">${VISIBILITE_SECTIONS.map(([k, l]) => `<label class="check"><input type="checkbox" data-bind="visibilite.${k}" data-rerender ${(k === 'portrait' ? v[k] !== false : v[k]) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
@@ -2046,16 +2046,16 @@ function pageMJReelle() {
       <button class="btn" data-action="mj-ration">🍞 Ration consommée</button>
       <button class="btn" data-action="mj-jour">☀ Jour suivant</button>
     </div>
-    <p class="hint"><b>Ration consommée</b> retire une ration (celle choisie par défaut) à chaque joueur. <b>Jour suivant</b> rend à tous leurs PV max, leurs dés de vie, leurs sorts et leurs capacités du jour.</p>
+    <p class="hint aide"><b>Ration consommée</b> retire une ration (celle choisie par défaut) à chaque joueur. <b>Jour suivant</b> rend à tous leurs PV max, leurs dés de vie, leurs sorts et leurs capacités du jour.</p>
   </section>
 
   <section class="card"><h3>Le groupe</h3>
-    <p class="hint">Points de vie en direct (actualisés toutes les 15 secondes), personnages des joueurs puis personnages du MJ. Les boutons modifient directement la fiche.</p>
+    <p class="hint aide">Points de vie en direct (actualisés toutes les 15 secondes), personnages des joueurs puis personnages du MJ. Les boutons modifient directement la fiche.</p>
     <div class="mj-persos">${cartes || '<p class="empty">Aucun personnage joueur.</p>'}</div>
   </section>
 
   <section class="card"><h3>Personnages du MJ</h3>
-    <p class="hint">Visibles dans « Personnages », mais confidentiels : tu choisis sur chaque fiche ce que les joueurs peuvent voir. Coche « Membre du groupe » sur la fiche d'un personnage que tu joues dans le groupe : il compte alors partout comme un personnage joueur.</p>
+    <p class="hint aide">Visibles dans « Personnages », mais confidentiels : tu choisis sur chaque fiche ce que les joueurs peuvent voir. Coche « Membre du groupe » sur la fiche d'un personnage que tu joues dans le groupe : il compte alors partout comme un personnage joueur.</p>
     ${db.personnages.filter(pnjComplet).length ? `<div class="fiches">${db.personnages.filter(pnjComplet).map(x => { const b = barrePV(x); return `<a class="fiche-carte" href="#/perso/${x.id}/fiche"><span class="fiche-carte-tete"><b>${esc(x.nom)}</b><span class="statut-fiche">${b.max ? `${b.act}/${b.max} PV` : 'PNJ'}</span></span><small>${esc([raceNom(x), classesTxt(etat(x))].filter(Boolean).join(', ') || 'À compléter')}</small></a>`; }).join('')}</div>` : '<p class="empty">Aucun pour l\'instant.</p>'}
     <button class="btn ghost" data-action="mj-nouveau-perso" style="margin-top:.6rem">+ Créer un personnage MJ</button>
   </section>
@@ -2163,7 +2163,7 @@ function carteXP() {
       const prets = membres.filter(x => (x.progression || []).filter(l => l.atteint).length < n && (x.progression || []).find(l => !l.atteint)?.pret);
       return membres.length ? `<h4>Passage de niveau</h4><ul class="niveaux-groupe">${lignes.join('')}</ul>
         ${prets.length > 1 ? `<button class="btn" data-action="mj-niveau-tous">Valider pour les ${prets.length} personnages prêts</button>` : ''}
-        <p class="hint">Les joueurs préparent leur prochain niveau dans la Progression ; tu le valides ici quand l'XP du groupe l'autorise.</p>` : '';
+        <p class="hint aide">Les joueurs préparent leur prochain niveau dans la Progression ; tu le valides ici quand l'XP du groupe l'autorise.</p>` : '';
     })()}
   </section>`;
 }
@@ -2254,7 +2254,7 @@ function carteBestiaire() {
   const types = BESTIAIRE ? [...new Set(BESTIAIRE.creatures.map(c => c.typeBase))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'fr')) : [];
   return `<section class="card"><details class="bestiaire" ${state.bestFerme ? '' : 'open'}>
     <summary><h3 class="inline">Bestiaire <small>(Manuel des Monstres, en français)</small></h3></summary>
-    <p class="hint">Les créatures du document de référence libre de D&D 3.5, de FP ½ à 5. Cherche par nom, filtre par FP ou par type, puis ajoute-les à tes PNJ ou directement à un combat préparé. Une fois ajoutées, tu peux les renommer et les ajuster.</p>
+    <p class="hint aide">Les créatures du document de référence libre de D&D 3.5, de FP ½ à 5. Cherche par nom, filtre par FP ou par type, puis ajoute-les à tes PNJ ou directement à un combat préparé. Une fois ajoutées, tu peux les renommer et les ajuster.</p>
     <div class="row best-filtres">
       <input type="search" id="best-q" value="${esc(state.bestQ || '')}" placeholder="Chercher : gobelin, squelette, loup…" aria-label="Chercher une créature">
       <select id="best-fp" aria-label="Facteur de puissance">${FILTRES_FP.map(([v, l]) => `<option value="${v}" ${(state.bestFP || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -2409,7 +2409,7 @@ function carteHistoriqueMJ() {
   const l = state.histo && state.histo.cle === cle ? state.histo.liste : null;
   return `<section class="card"><details class="bestiaire" ${state.histoOuvert ? 'open' : ''}>
     <summary><h3 class="inline">Historique et restauration</h3></summary>
-    <p class="hint">Avant chaque modification, la base garde l'ancienne version (les 30 dernières par catégorie). En cas d'erreur, choisis une version et restaure-la.</p>
+    <p class="hint aide">Avant chaque modification, la base garde l'ancienne version (les 30 dernières par catégorie). En cas d'erreur, choisis une version et restaure-la.</p>
     <div class="btns" style="margin-bottom:.6rem">
       <button class="btn ghost" data-action="mj-sauvegarde">⬇ Sauvegarder les données du MJ</button>
       <button class="btn ghost" data-action="mj-import-sauvegarde">⬆ Importer une sauvegarde</button>
@@ -2518,7 +2518,7 @@ function pageCombatMJ() {
   const actifs = c.combattants.filter(x => x.actif);
   if (c.phase === 'initiative') {
     return `<section class="card"><h3>${esc(c.nom)} : initiatives</h3>
-      <p class="hint">Coche qui participe, puis note le résultat du jet d'initiative de chacun (d20 + bonus). Les PNJ peuvent être lancés automatiquement.</p>
+      <p class="hint aide">Coche qui participe, puis note le résultat du jet d'initiative de chacun (d20 + bonus). Les PNJ peuvent être lancés automatiquement.</p>
       <div class="init-saisie">${c.combattants.map((x, i) => `<div class="row init-ligne ${x.type}">
         <label class="check"><input type="checkbox" data-mjbind="combat.combattants.${i}.actif" data-rerender ${x.actif ? 'checked' : ''}> <b>${esc(x.nom)}</b></label>
         <small>bonus ${R.signe(num(x.bonusInit))}</small>
@@ -2543,7 +2543,7 @@ function pageCombatMJ() {
       </li>`;
     }).join('')}</ol>
     <div class="btns"><button class="btn" data-action="mj-suivant">Tour suivant</button><button class="btn danger" data-action="mj-combat-fin">Terminer le combat</button></div>
-    <p class="hint">Les PV des personnages joueurs sont ceux de leur fiche : les modifier ici les modifie chez le joueur. Un PNJ qui tombe à 0 PV, ou que tu marques ☠, est déclaré mort : son butin part dans « Objets en attente ».</p>
+    <p class="hint aide">Les PV des personnages joueurs sont ceux de leur fiche : les modifier ici les modifie chez le joueur. Un PNJ qui tombe à 0 PV, ou que tu marques ☠, est déclaré mort : son butin part dans « Objets en attente ».</p>
   </section>`;
 }
 
@@ -2588,7 +2588,7 @@ function pageObjetsMJ() {
     </div>`;
   };
   return `<section class="card"><h3>Objets en attente</h3>
-    <p class="hint">Butin et cadeaux se <b>donnent</b> directement à un personnage. Les objets <b>à vendre</b> partent au Marché, où les joueurs les achètent. Classés par PNJ détenteur.</p>
+    <p class="hint aide">Butin et cadeaux se <b>donnent</b> directement à un personnage. Les objets <b>à vendre</b> partent au Marché, où les joueurs les achètent. Classés par PNJ détenteur.</p>
     ${groupes.map(g => `<h4 class="groupe-inv">${esc(g || 'Sans PNJ')} <small>${objets.filter(it => (it.detenteur || '') === g).length}</small></h4>
       <div class="objets">${objets.filter(it => (it.detenteur || '') === g).map(ligne).join('')}</div>`).join('') || '<p class="empty">Aucun objet en attente.</p>'}
     <div class="btns" style="margin-top:.6rem"><button class="btn ghost" data-action="mj-obj-ajout">+ Préparer un objet</button><button class="btn ghost" data-action="mj-obj-ajout" data-type="vente">+ Préparer un objet à vendre</button></div>
@@ -2642,7 +2642,7 @@ function pageSessionsMJ() {
   if (state.mjSession && sessionMJ(state.mjSession)) return pageSessionMJ(sessionMJ(state.mjSession));
   const ls = sessionsMJ();
   return `<section class="card"><h3>Sessions</h3>
-    <p class="hint">Prépare le scénario séance par séance : scènes, dialogues, rencontres, objets, quêtes, XP et illustrations, dans l'ordre où ils arriveront.</p>
+    <p class="hint aide">Prépare le scénario séance par séance : scènes, dialogues, rencontres, objets, quêtes, XP et illustrations, dans l'ordre où ils arriveront.</p>
     <div class="sessions-liste">${ls.map(s => {
       const n = (s.etapes || []).filter(e => e.type !== 'titre').length, faits = (s.etapes || []).filter(e => e.fait && e.type !== 'titre').length;
       return `<button class="session-prep" data-action="mj-session-ouvrir" data-id="${s.id}">
@@ -2960,7 +2960,7 @@ function tableauPorteMJ(persos) {
         ${t.divers ? `<p class="porte-divers">+ ${t.divers} objet${t.divers > 1 ? 's' : ''} divers dans le sac</p>` : ''}
       </article>`;
     }).join('')}</div>
-    <p class="hint">Un point • signale un objet avec des bonus : survole-le pour les voir. Touche un nom pour ouvrir le détail complet.</p>
+    <p class="hint aide">Un point • signale un objet avec des bonus : survole-le pour les voir. Touche un nom pour ouvrir le détail complet.</p>
   </section>`;
 }
 function tiroirMJ() {
@@ -3106,7 +3106,7 @@ function blocAjoutRapide(cible) {
   const res = st ? analyserObjets(st.texte) : null;
   const mj = cible === 'mj';
   return `<details class="ajout-rapide" ${st ? 'open' : ''}><summary>⚡ Ajout rapide : copier-coller depuis Excel</summary>
-    <p class="hint">Sélectionne tes lignes dans Excel (ou Google Sheets), copie, puis colle-les ici. Une ligne par objet. Garde la ligne d'en-tête si tu peux : les colonnes sont alors reconnues dans n'importe quel ordre.</p>
+    <p class="hint aide">Sélectionne tes lignes dans Excel (ou Google Sheets), copie, puis colle-les ici. Une ligne par objet. Garde la ligne d'en-tête si tu peux : les colonnes sont alors reconnues dans n'importe quel ordre.</p>
     <p class="hint">Colonnes : <b>${COLONNES_OBJET.filter(c => mj || !['detenteur', 'vente', 'marche'].includes(c[0])).map(c => c[1]).join(' · ')}</b>. Catégories acceptées : arme, armure, bouclier, vêtement, objet magique, munition, potion, fourniture, ration, trésor, babiole. Les armes et armures des règles (« Épée longue », « Cuirasse »…) sont reconnues avec leurs caractéristiques.</p>
     <textarea id="ajout-rapide-${cible}" rows="6" placeholder="Nom&#9;Catégorie&#9;Quantité&#9;Valeur&#10;Potion de soins légers&#9;potion&#9;3&#9;50 po">${esc(st?.texte || '')}</textarea>
     <div class="btns">
@@ -3368,7 +3368,7 @@ function pageMarche() {
 function carteMarchesMJ() {
   const ms = listeMarches();
   return `<section class="card"><h3>Marchés</h3>
-    <p class="hint">Chaque marché a son nom, son ambiance et son image de fond. Un marché fermé reste invisible aux joueurs.</p>
+    <p class="hint aide">Chaque marché a son nom, son ambiance et son image de fond. Un marché fermé reste invisible aux joueurs.</p>
     <div class="marches-mj">${ms.map(m => `<div class="marche-mj">
       <button class="marche-mj-image" data-action="marche-image" data-id="${m.id}" style="background-image:url('${esc(m.image || '')}')" aria-label="Changer l'image de ${esc(m.nom)}"><span>Changer l'image</span></button>
       <div class="grid">
@@ -3382,7 +3382,7 @@ function carteMarchesMJ() {
     </div>`).join('')}</div>
     <button class="btn ghost" data-action="marche-ajout">+ Nouveau marché</button>
     <h4>Ambiances</h4>
-    <p class="hint">En plus des quatre ambiances de base (port, ville, marché noir, ambulant), crée les tiennes : couleurs de l'auvent rayé et étal clair ou sombre.</p>
+    <p class="hint aide">En plus des quatre ambiances de base (port, ville, marché noir, ambulant), crée les tiennes : couleurs de l'auvent rayé et étal clair ou sombre.</p>
     <div class="ambiances-mj">${ambiancesPerso().map(a => `<div class="ambiance-mj">
       <span class="ambiance-apercu" style="--toile-a:${esc(a.toileA || '#EDE6D6')};--toile-b:${esc(a.toileB || '#7A4E9C')}"></span>
       <input type="text" data-ambiance="${a.id}.nom" value="${esc(a.nom)}" aria-label="Nom de l'ambiance">
@@ -3453,7 +3453,7 @@ function ficheCompetences(p, e) {
       <div class="cl-col">${tete}${toutes.slice(moitie).join('')}</div>
     </div>
     <button class="btn ghost" data-action="add-comp-perso" style="margin-top:.6rem">+ Autre compétence (langage secret, etc.)</button>
-    <p class="hint cl-legende"><b>Val</b> : le bonus à ajouter au d20 quand le MJ demande un jet. <b>Rg</b> : rangs. <b>Car</b> : modificateur de caractéristique. <b>Div</b> : bonus divers (objets, circonstances). La case ✱ indique une compétence de classe : touche-la pour changer si ton MJ l'autorise.<br>* Utilisable non entraîné · ◘ Pénalité d'armure ou d'encombrement · Un « — » signifie qu'il faut au moins 1 rang pour l'utiliser.</p>
+    <p class="hint cl-legende aide"><b>Val</b> : le bonus à ajouter au d20 quand le MJ demande un jet. <b>Rg</b> : rangs. <b>Car</b> : modificateur de caractéristique. <b>Div</b> : bonus divers (objets, circonstances). La case ✱ indique une compétence de classe : touche-la pour changer si ton MJ l'autorise.<br>* Utilisable non entraîné · ◘ Pénalité d'armure ou d'encombrement · Un « — » signifie qu'il faut au moins 1 rang pour l'utiliser.</p>
   </section>`;
 }
 
@@ -3605,7 +3605,7 @@ function ongletSorts(p) {
       ? `<p>${nonRelies ? `<b>${nonRelies} sort${nonRelies > 1 ? 's' : ''} non relié${nonRelies > 1 ? 's' : ''}</b> à un focalisateur : ${nonRelies > 1 ? 'ils sont inutilisables' : 'il est inutilisable'} tant que ce n'est pas fait.` : 'Tous tes sorts sont reliés à un focalisateur.'}</p>
          ${nonRelies ? `<div class="row"><select id="focal-tous">${focs.map(f => `<option value="${f.id}">${esc(f.nom)}</option>`).join('')}</select><button class="btn ghost" data-action="focal-tous">Relier les sorts non reliés</button></div>` : ''}`
       : '<p><b>Aucun focalisateur.</b> Pour lancer des sorts, il faut une baguette (case Baguette de la fiche) ou un objet magique marqué « Focalisateur » dans l\'inventaire.</p>'}
-    <p class="hint">Sans son focalisateur (baguette perdue, objet rangé ou retiré de l'inventaire), un sort ne peut plus être lancé.</p>
+    <p class="hint aide">Sans son focalisateur (baguette perdue, objet rangé ou retiré de l'inventaire), un sort ne peut plus être lancé.</p>
   </div>` : '';
   return `
   <section class="card"><h3>Sorts du personnage</h3>
@@ -3705,7 +3705,7 @@ function carteClassesPrestige(p) {
     </div>`;
   };
   return `<section class="card"><h3>Classes de prestige</h3>
-    <p class="hint"><b>Communes à toute la campagne</b> : une classe saisie ici apparaît dans le menu « Classe » de tous les personnages. Les classes de prestige du Guide du Maître sont déjà dans le menu « Classe » de chaque niveau, avec leurs prérequis vérifiés : défenseur nain, danseur de l'ombre, duelliste, théurge mystique, chevalier occulte, archer-mage. Une classe d'un autre livre (Poing sacré du Codex divin, par exemple) se saisit ici à partir du livre ; elle apparaît ensuite dans le même menu.</p>
+    <p class="hint aide"><b>Communes à toute la campagne</b> : une classe saisie ici apparaît dans le menu « Classe » de tous les personnages. Les classes de prestige du Guide du Maître sont déjà dans le menu « Classe » de chaque niveau, avec leurs prérequis vérifiés : défenseur nain, danseur de l'ombre, duelliste, théurge mystique, chevalier occulte, archer-mage. Une classe d'un autre livre (Poing sacré du Codex divin, par exemple) se saisit ici à partir du livre ; elle apparaît ensuite dans le même menu.</p>
     ${defs.map((d, i) => mod && state.editPrestige === d.id ? formulaire(d, i) : `<div class="pnj">
       <div class="pnj-tete"><b>${esc(d.nom || 'Sans nom')}</b>${mod ? `<button class="lien" data-action="pp-edit" data-id="${d.id}">Modifier</button>` : ''}</div>
       <p class="pnj-stats">d${esc(d.dv || 8)} · BBA ${esc(d.bba || 'moyen')} · ${esc(d.max || 10)} niveaux${(() => { const c = d.cumul || (d.cumulMoine ? { mn: 1, ca: 1, deluge: 1, vitesse: 1 } : {}); const l = [['mn', 'mains nues'], ['ca', 'CA'], ['deluge', 'déluge'], ['vitesse', 'vitesse']].filter(([k2]) => c[k2]).map(([, t]) => t); return l.length ? ' · cumule avec le moine : ' + l.join(', ') : ''; })()}${(e.classes['pp-' + d.id]) ? ` · niveau ${e.classes['pp-' + d.id]} pour ce personnage` : ''}${(() => { const n = db.personnages.filter(x => (x.progression || []).some(l => l.classe === 'pp-' + d.id)).map(x => x.nom); return n.length ? ` · utilisée par ${esc(n.join(', '))}` : ''; })()}</p>
@@ -4628,7 +4628,7 @@ function formFiche(f0) {
     ${barreOutils()}
     <textarea data-bind="description" id="zone-recit" rows="10" aria-label="Description">${esc(f.description)}</textarea>
     <details class="apercu" open><summary>Aperçu</summary><div class="recit-texte" id="apercu-recit">${formaterRecit(f.description) || '<p class="empty">La description apparaîtra ici.</p>'}</div></details>
-    <p class="hint">Écris <b>@[Nom]</b> pour créer un lien vers une autre fiche (ex. @[Wellon]). Les autres noms servent à retrouver la fiche dans les récits, même avec une autre orthographe.</p>
+    <p class="hint aide">Écris <b>@[Nom]</b> pour créer un lien vers une autre fiche (ex. @[Wellon]). Les autres noms servent à retrouver la fiche dans les récits, même avec une autre orthographe.</p>
     <div class="btns">
       ${enLigne() ? '<button class="btn" data-action="fiche-publier">Enregistrer et publier</button><button class="btn ghost" data-action="fiche-fin">Enregistrer sans publier</button>' : '<button class="btn" data-action="fiche-fin">Terminé</button>'}
       <button class="btn danger" data-action="del-fiche" data-id="${f.id}">Supprimer</button>
@@ -4748,13 +4748,13 @@ function resultatsJournal() {
   }).join('');
   return `
   ${fils.length ? `<section class="card"><h3>Fils rouges</h3>
-    <p class="hint">Questions et quêtes encore ouvertes, toutes sessions confondues. Coche « Résolu » quand c'est réglé.</p>
+    <p class="hint aide">Questions et quêtes encore ouvertes, toutes sessions confondues. Coche « Résolu » quand c'est réglé.</p>
     <ul class="notes">${fils.join('')}</ul></section>` : ''}
   <section class="card"><h3>Sessions</h3>
     ${cartes ? `<div class="sessions">${cartes}</div>` : '<p class="empty">Aucune session. Crée la première au début de ta prochaine partie.</p>'}
   </section>
   ${index.length ? `<section class="card"><h3>Index</h3>
-    <p class="hint">Tout ce que tu as mentionné avec @ dans tes notes. Touche un nom pour retrouver chaque passage.</p>
+    <p class="hint aide">Tout ce que tu as mentionné avec @ dans tes notes. Touche un nom pour retrouver chaque passage.</p>
     <div class="chips">${index.map(m => `<a class="chip" href="#/notes/recherche/${encodeURIComponent(m.nom)}">${esc(m.nom)} <small>${m.n}</small></a>`).join('')}</div>
   </section>` : ''}`;
 }
@@ -4785,7 +4785,7 @@ function pageSession(id) {
     </div>
     <textarea id="nouvelle-note" rows="2" placeholder="Ce qui vient de se passer… (Entrée pour enregistrer)" aria-label="Nouvelle note"></textarea>
     <div class="btns" style="margin-top:.5rem"><button class="btn" data-action="add-note">Ajouter la note</button></div>
-    <p class="hint">Écris <b>@Nom</b> pour un PNJ, un lieu ou un objet (<b>@[Nom en plusieurs mots]</b> s'il y a des espaces) : il rejoint l'index de tes notes. Maj + Entrée pour aller à la ligne.</p>
+    <p class="hint aide">Écris <b>@Nom</b> pour un PNJ, un lieu ou un objet (<b>@[Nom en plusieurs mots]</b> s'il y a des espaces) : il rejoint l'index de tes notes. Maj + Entrée pour aller à la ligne.</p>
     ${notes.length ? `<ul class="notes">${notes.map(({ n, i }) => noteHtml(n, i, null, true)).join('')}</ul>` : '<p class="empty">Pas encore de note pour cette session.</p>'}
   </section>
 
@@ -4982,7 +4982,7 @@ function pageJournalModifs() {
         <ul>${(x.lignes || []).map(t => `<li>${esc(t)}</li>`).join('')}</ul>
       </article>`;
     }).join('') || '<p class="empty">Aucune modification enregistrée pour l\'instant.</p>'}</div>
-    <p class="hint">Seules les modifications faites par les joueurs depuis leur propre appareil sont notées. Les actions du MJ (PV, rations, objets donnés, jour suivant…) n'apparaissent pas ici.</p>`;
+    <p class="hint aide">Seules les modifications faites par les joueurs depuis leur propre appareil sont notées. Les actions du MJ (PV, rations, objets donnés, jour suivant…) n'apparaissent pas ici.</p>`;
 }
 
 async function chargerPersos() {
@@ -5398,6 +5398,29 @@ function pageDonnees() {
 }
 
 /* ---------- Rendu et navigation ---------- */
+function ranger_aides(racine = document) {
+  for (const el of [...racine.querySelectorAll('.aide')]) {
+    const carte = el.closest('details.card, section.card, .card');
+    const titre = carte && (carte.querySelector(':scope > summary h3') || carte.querySelector(':scope > h3') || carte.querySelector('h3'));
+    if (!titre) continue;
+    let bulle = titre.querySelector('.aide-bulle');
+    if (!bulle) {
+      titre.insertAdjacentHTML('beforeend', '<button type="button" class="aide-btn" aria-label="Explications" aria-expanded="false">?</button><span class="aide-bulle" hidden></span>');
+      bulle = titre.querySelector('.aide-bulle');
+    }
+    bulle.insertAdjacentHTML('beforeend', `<span class="aide-para">${el.innerHTML}</span>`);
+    el.remove();
+  }
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('.aide-btn');
+  document.querySelectorAll('.aide-bulle:not([hidden])').forEach(x => { if (!b || x !== b.nextElementSibling) { x.hidden = true; x.previousElementSibling.setAttribute('aria-expanded', 'false'); } });
+  if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const bulle = b.nextElementSibling;
+  bulle.hidden = !bulle.hidden;
+  b.setAttribute('aria-expanded', String(!bulle.hidden));
+}, true);
 function render(garderScroll = true) {
   const y = window.scrollY;
   const h = location.hash.replace(/^#\/?/, '') || 'persos';
@@ -5428,6 +5451,7 @@ function render(garderScroll = true) {
     default: html = pagePersos();
   }
   $('#app').innerHTML = html;
+  ranger_aides($('#app'));
   const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
   /* Mon personnage, en haut à droite (sauf dans l'espace MJ) */
   const chip = document.getElementById('mon-perso');
