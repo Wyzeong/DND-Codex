@@ -1492,3 +1492,26 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .ordre-arme { float: right; display: flex; gap: .2rem; margin: -.2rem -.2rem 0 .4rem; }
 .ordre-arme .icon { padding: .1rem .35rem; font-size: .8rem; }
 .petit-check { font-size: .82rem; color: var(--muted); padding: .2rem 0 0; }
+/* En combat : actions rangées par type */
+.type-action { display: flex; align-items: baseline; gap: .5rem; border-bottom: 1px solid var(--line-bronze); padding-bottom: .2rem; margin-top: 1.1rem; }
+.type-action small { color: var(--muted); font-family: var(--font); font-weight: 400; font-size: .78rem; letter-spacing: 0; text-transform: none; }
+.actions-complexes { display: flex; flex-direction: column; gap: .5rem; }
+.action-complexe { border: 1px solid var(--line-bronze); border-radius: var(--radius-s); background: var(--inset); padding: .5rem .7rem; }
+.action-complexe > summary { cursor: pointer; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.action-complexe > summary b { font-family: var(--font-titre); font-size: 1.02rem; }
+.action-complexe > summary small { color: var(--muted); }
+.table-deluge { width: 100%; border-collapse: collapse; margin: .4rem 0; font-size: .9rem; }
+.table-deluge th, .table-deluge td { text-align: left; padding: .35rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.table-deluge thead th { color: var(--bronze); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
+.table-deluge tbody th { font-weight: 600; }
+.table-deluge tbody th small { color: var(--muted); font-weight: 400; }
+/* Cartes d'arme compactes */
+.armes { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .5rem; }
+.arme { padding: .5rem .65rem; }
+.arme .arme-tete b { font-size: .98rem; }
+.arme .arme-stats { margin: .3rem 0 .1rem; }
+.arme .gros { font-size: 1.02rem; }
+.arme-plus { margin-top: .25rem; font-size: .82rem; }
+.arme-plus > summary { cursor: pointer; color: var(--muted); }
+.arme-plus .liee { margin: .3rem 0 0; }
+.carte-identite > summary h3, .carte-identite > h3 { margin-bottom: .4rem; }

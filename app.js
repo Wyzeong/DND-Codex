@@ -789,7 +789,7 @@ function ongletFicheBrut(p, e) {
   ${p.pnjMJ && peutModifier(p) ? carteVisibilite(p) : ''}
   ${carteVitalite(p)}
   <div class="fiche-haut">
-  <section class="card carte-identite">
+  <section class="card carte-identite"><h3>Identité</h3>
     <div class="identite">
       ${blocImages(p)}
       <div class="grid">
@@ -1413,8 +1413,9 @@ function compteur(p, r) {
   </div>`;
 }
 
+const titreArme = (it, ref, dist) => { const t = ref ? ref.nom : (dist ? 'Arme à distance' : 'Arme'); return it.membre ? (it.nom || 'Membre') : it.nom && norm(it.nom) !== norm(t) ? `${t} : ${it.nom}` : t; };
 /* Une arme dans « En combat » : jets calculés et capacités qui s'y appliquent */
-function carteArmeCombat(p, e, st, it, munitions) {
+function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
   const ref = R.ARME[it.armeType] || null;
   const prise = ref ? ref.prise : (it.mode === 'distance' ? 'distance' : 'une');
   const dist = it.mode === 'distance' || prise === 'distance';
@@ -1439,8 +1440,7 @@ function carteArmeCombat(p, e, st, it, munitions) {
     const base = tou.map(x => x + pen);
     const liste = [base[0], ...base];
     if (moine >= 11) liste.unshift(base[0]);
-    liees.push(`<div class="deluge"><b>Déluge de coups</b> : ${liste.length} attaques à <span class="gros">${R.attTxt(liste)}</span>, ${esc(deg)} chacune.
-      <small>${it.membre ? `${esc(it.nom || 'Ce membre')} fait partie de ton corps : chaque attaque du déluge peut se faire avec lui ou avec tes poings (une attaque à la fois, au choix)` : `${esc(ref.nom)} est une arme spéciale de moine`}. Prend tout ton tour ; le malus de ${R.signe(pen)} est déjà inclus${pen ? '' : ' (disparu à ton niveau)'}.</small></div>`);
+    (sortie.deluge = sortie.deluge || []).push({ nom: titreArme(it, ref, dist), liste, deg, pen, note: it.membre ? 'fait partie de ton corps' : 'arme spéciale de moine', noteDeg: carDeg !== 'for' ? ({ sag: 'Sagesse', dex: 'Dextérité', con: 'Constitution', int: 'Intelligence', cha: 'Charisme', aucune: 'sans caractéristique' })[carDeg] : '' });
   }
   if (finesse) liees.push(`<p class="liee"><b>Attaque en finesse</b> : ta Dextérité (${R.signe(e.mods.dex)}) remplace ta Force pour toucher.</p>`);
   if (dist && e.dons.has('tir-bout-portant')) liees.push('<p class="liee"><b>Tir à bout portant</b> : +1 pour toucher et aux dégâts si la cible est à 9 m ou moins.</p>');
@@ -1454,16 +1454,17 @@ function carteArmeCombat(p, e, st, it, munitions) {
   const typeNom = ref ? ref.nom : (dist ? 'Arme à distance' : 'Arme');
   const titre = it.membre ? (it.nom || 'Membre') : it.nom && norm(it.nom) !== norm(typeNom) ? `${typeNom} : ${it.nom}` : typeNom;
   const recharge = /arbalete-(legere|poing)/.test(it.armeType || '') ? 'action de mouvement' : it.armeType === 'arbalete-lourde' ? 'action complexe' : '';
+  if (tou.length > 1) (sortie.outrance = sortie.outrance || []).push({ nom: titreArme(it, ref, dist), liste: tou, deg });
   const noteDeg = carDeg !== 'for' ? ` <small>(${carDeg === 'aucune' ? 'sans caractéristique' : 'avec ' + ({ sag: 'Sagesse', dex: 'Dextérité', con: 'Constitution', int: 'Intelligence', cha: 'Charisme' })[carDeg]})</small>` : '';
   return `<div class="arme ${it.membre ? 'membre' : ''}">
-    <p class="action-type"><span>Action simple</span>${tou.length > 1 ? ' · attaque à outrance : action complexe' : ''}${recharge ? ` · recharger : ${recharge}` : ''}</p>
+    ${recharge ? `<p class="action-type">recharger : ${recharge}</p>` : ''}
     <div class="arme-tete"><b>${esc(titre)}</b><span class="tag-mode">${it.membre ? 'Corps à corps · comme à mains nues' : `${dist ? 'Distance' : R.PRISES[prise] || 'Corps à corps'}${ref?.moine ? ' · moine' : ''}`}</span></div>
     <dl class="arme-stats">
       <dt>Pour toucher</dt><dd><span class="gros">${R.signe(tou[0])}</span>${tou.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(tou)})</small>` : ''}</dd>
       <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${noteDeg}${it.critique || ref?.crit || it.membre ? ` <small>critique ${esc(it.critique || ref?.crit || '20/×2')}</small>` : ''}</dd>
       ${it.portee || (dist && ref?.portee) ? `<dt>Portée</dt><dd>${esc(it.portee || ref.portee)}</dd>` : ''}
     </dl>
-    ${liees.join('')}
+    ${liees.length ? `<details class="arme-plus"><summary>${liees.length} règle${liees.length > 1 ? 's' : ''} liée${liees.length > 1 ? 's' : ''}</summary>${liees.join('')}</details>` : ''}
     ${mun.map(({ it: m, i }) => `<div class="munition">
       <span><b>${esc(m.nom || 'Munition')}</b> <small>× ${esc(m.qte || 0)}</small>${m.effet ? `<br><small>${esc(m.effet)}</small>` : ''}</span>
       <button class="btn ghost" data-action="objet-use" data-idx="${i}" ${num(m.qte) > 0 ? '' : 'disabled'}>Tirer</button>
@@ -1480,7 +1481,10 @@ function ficheCombat(p, e) {
   const res = ressources(p, e);
   const taille = R.TAILLES[e.taille]?.ca || 0;
 
-  const carteArme = it => carteArmeCombat(p, e, st, it, munitions);
+  const sortie = {};
+  const carteArme = it => carteArmeCombat(p, e, st, it, munitions, sortie);
+  const typeRes = r => /libre|annonce|avant l'attaque/i.test(r.action || '') ? 'libre' : /complexe/i.test(r.action || '') ? 'complexe' : /simple|standard/i.test(r.action || '') ? 'simple' : 'autre';
+  const resPar = t => res.filter(r => typeRes(r) === t);
 
   const sorts = (p.sorts || []).map((x, i) => ({ x, i, s: findSort(x.id) })).filter(o => o.s);
   return `<section class="card combat"><h3>En combat</h3>
@@ -1497,21 +1501,20 @@ function ficheCombat(p, e) {
     </div>
 
     ${blocEffets(p)}
-    <h4>Attaquer</h4>
+    ${resPar('libre').length ? `<h4 class="type-action">Actions libres</h4><div class="ressources">${resPar('libre').map(r => compteur(p, r)).join('')}</div>` : ''}
+    <h4 class="type-action">Actions simples <small>une attaque</small></h4>
     <div class="armes">
       ${(() => {
         /* Cartes d'attaque dans l'ordre choisi par le joueur (flèches ↑ ↓) */
         const cartes = [];
         const htmlMN = mn ? `<div class="arme">
-        <p class="action-type"><span>Action simple</span>${mn.toucher.length > 1 ? ' · attaque à outrance : action complexe' : ''}${mn.deluge ? ' · déluge de coups : action complexe' : ''}</p>
         <div class="arme-tete"><b>Combat à mains nues</b><span class="tag-mode">Corps à corps</span></div>
         <dl class="arme-stats">
           <dt>Pour toucher</dt><dd><span class="gros">${R.signe(mn.toucher[0])}</span>${mn.toucher.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(mn.toucher)})</small>` : ''}</dd>
           <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span> <small>critique 20/×2</small></dd>
         </dl>
-        ${e.dons.has('arme-predilection') && peutModifier(p) ? `<label class="check petit-check"><input type="checkbox" data-bind="predMainsNues" data-rerender ${p.predMainsNues ? 'checked' : ''}> Mon Arme de prédilection porte sur le combat à mains nues (s'applique aussi aux membres du corps)</label>` : p.predMainsNues ? '<p class="liee"><b>Arme de prédilection</b> : +1 pour toucher, déjà inclus.</p>' : ''}
-        ${mn.deluge ? `<div class="deluge"><b>Déluge de coups</b> : ${mn.deluge.liste.length} attaques à <span class="gros">${R.attTxt(mn.deluge.liste)}</span>, ${esc(mn.degats)} chacune.
-          <small>Prend tout ton tour. Le malus de ${R.signe(mn.deluge.pen)} est déjà inclus${mn.deluge.pen ? '' : ' (il a disparu à ton niveau)'}.</small></div>` : ''}
+        ${e.dons.has('arme-predilection') && peutModifier(p) ? `<details class="arme-plus"><summary>Réglages</summary><label class="check petit-check"><input type="checkbox" data-bind="predMainsNues" data-rerender ${p.predMainsNues ? 'checked' : ''}> Mon Arme de prédilection porte sur le combat à mains nues (s'applique aussi aux membres du corps)</label></details>` : ''}
+
         ${res.some(r => r.id === 'coup-etourdissant') ? (r => `<p class="liee"><b>Coup étourdissant</b> : uniquement à mains nues. Il t'en reste ${Math.max(0, r.max - num((p.compteurs || {})[r.id]))} sur ${r.max} (compteur plus bas).</p>`)(res.find(r => r.id === 'coup-etourdissant')) : ''}
       </div>` : '';
         if (htmlMN) cartes.push({ id: 'mn', html: htmlMN });
@@ -1524,6 +1527,23 @@ function ficheCombat(p, e) {
       })()}
       ${!mn && !armes.length ? '<p class="empty">Aucune arme. Dans l\'onglet Inventaire, choisis le type « Arme » pour un objet.</p>' : ''}
     </div>
+    ${resPar('simple').length ? `<div class="ressources">${resPar('simple').map(r => compteur(p, r)).join('')}</div>` : ''}
+    ${(() => {
+      const del = [...(mn?.deluge ? [{ nom: 'Combat à mains nues', liste: mn.deluge.liste, deg: mn.degats, pen: mn.deluge.pen, note: 'tes poings, pieds, coudes…' }] : []), ...(sortie.deluge || [])];
+      const out = [...(mn && mn.toucher.length > 1 ? [{ nom: 'Combat à mains nues', liste: mn.toucher, deg: mn.degats }] : []), ...(sortie.outrance || [])];
+      const blocs = [];
+      if (del.length) blocs.push(`<details class="action-complexe deluge-bloc"><summary><b>Déluge de coups</b> <span class="gros">${R.attTxt(del[0].liste)}</span> <small>${del[0].liste.length} attaques</small></summary>
+        <p class="hint">Tout ton tour (tu peux faire un pas de 1,5 m). Chaque attaque se fait avec l'une des options ci-dessous, au choix, en les mélangeant si tu veux. Le malus de ${R.signe(del[0].pen)} est déjà inclus${del[0].pen ? '' : ' (il a disparu à ton niveau)'}. Impossible en armure ou avec un bouclier.</p>
+        <table class="table-deluge"><thead><tr><th>Avec</th><th>Pour toucher</th><th>Dégâts</th></tr></thead>
+        <tbody>${del.map(d => `<tr><th>${esc(d.nom)}<br><small>${esc(d.note || '')}</small></th><td><b>${R.attTxt(d.liste)}</b></td><td><b>${esc(d.deg)}</b>${d.noteDeg ? ` <small>(${esc(d.noteDeg)})</small>` : ''}</td></tr>`).join('')}</tbody></table>
+        ${res.some(r => r.id === 'coup-etourdissant') ? '<p class="liee"><b>Coup étourdissant</b> : utilisable sur l\'une de ces attaques, à mains nues (à annoncer avant le jet).</p>' : ''}
+      </details>`);
+      if (out.length) blocs.push(`<details class="action-complexe"><summary><b>Attaque à outrance</b> <small>toutes tes attaques avec une arme</small></summary>
+        <table class="table-deluge"><thead><tr><th>Avec</th><th>Pour toucher</th><th>Dégâts</th></tr></thead>
+        <tbody>${out.map(d => `<tr><th>${esc(d.nom)}</th><td><b>${R.attTxt(d.liste)}</b></td><td><b>${esc(d.deg)}</b></td></tr>`).join('')}</tbody></table></details>`);
+      blocs.push(...resPar('complexe').map(r => compteur(p, r)));
+      return blocs.length ? `<h4 class="type-action">Actions complexes <small>tout le tour</small></h4><div class="actions-complexes">${blocs.join('')}</div>` : '';
+    })()}
 
     <h4>Lancer un sort</h4>
     ${sorts.length ? `<div class="sorts-combat">${sorts.map(({ x, i, s }) => {
@@ -1546,8 +1566,7 @@ function ficheCombat(p, e) {
       </div>`;
     }).join('')}</div>` : '<p class="empty">Aucun sort. Ajoute ceux de ta baguette dans l\'onglet Sorts.</p>'}
 
-    <h4>Capacités spéciales</h4>
-    ${res.length ? `<div class="ressources">${res.map(r => compteur(p, r)).join('')}</div>` : '<p class="empty">Pas de capacité à utilisations limitées pour l\'instant.</p>'}
+    ${resPar('autre').length ? `<h4>Autres capacités</h4><div class="ressources">${resPar('autre').map(r => compteur(p, r)).join('')}</div>` : ''}
 
     ${consommables.length ? `<h4>Consommables</h4><div class="consos">${consommables.map(({ it, i }) => `<div class="munition">
       <span><b>${esc(it.nom || 'Objet')}</b> <small>× ${esc(it.qte || 0)}</small>${it.effet ? `<br><small>${esc(it.effet)}</small>` : ''}</span>
