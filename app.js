@@ -225,6 +225,7 @@ const CIBLES_BONUS = [
   ['Jets de sauvegarde', [['js', 'Tous les jets de sauvegarde'], ['vig', 'Vigueur'], ['ref', 'Réflexes'], ['vol', 'Volonté']]],
   ['Combat', [['attaque', 'Jets d\'attaque'], ['degats', 'Dégâts'], ['init', 'Initiative'], ['vitesse', 'Vitesse (m)']]],
   ['Résistances (valeur = points ignorés)', ENERGIES.map(([k, l]) => ['res:' + k, 'Résistance ' + l])],
+  ['Dégâts reçus divisés par 2 (valeur : 1)', ENERGIES.map(([k, l]) => ['moitie:' + k, 'Moitié des dégâts ' + l.replace(/^(à l'|au |à la )/, m => ({ "à l'": "d'", 'au ': 'de ', 'à la ': 'de ' })[m])])],
   ['Protections', [['rm', 'Résistance à la magie'], ['rd', 'Réduction des dégâts'], ...IMMUNITES.map(([k, l]) => ['imm:' + k, 'Immunité : ' + l]), ...JS_CONTRE.map(([k, l]) => ['jsc:' + k, 'Jets de sauvegarde contre ' + l])]],
   ['Compétences', R.COMPETENCES.map(c => ['comp:' + c.id, c.nom])],
 ];
@@ -1035,14 +1036,15 @@ function protections(p, e, st) {
   const rmRace = rc && rc.rm === 'niv+11' ? 11 + (e.niveau || 0) : num(rc?.rm);
   const rm = Math.max(st.rm || 0, ob.rm || 0, num(a.rm), rmRace);
   const rd = [...st.rd, ...(ob.rd ? [`${ob.rd}/—`] : []), ...(a.rd ? [a.rd] : [])];
-  return { res, imm: [...imm], jsc, rm, rd, sources };
+  const moitie = new Set(ENERGIES.filter(([k]) => ob['moitie:' + k] > 0).map(([k]) => k));
+  return { res, imm: [...imm], jsc, rm, rd, sources, moitie };
 }
 function blocProtections(p, e, st) {
   const pr = protections(p, e, st);
   const nomE = Object.fromEntries(ENERGIES), nomI = Object.fromEntries(IMMUNITES), nomJ = Object.fromEntries(JS_CONTRE);
   return `<h4>Résistances et protections</h4>
     <div class="stats resistances">
-      ${ENERGIES.map(([k, l]) => `<div class="stat ${pr.imm.includes(k) ? 'immun' : pr.res[k] ? 'actif' : 'vide'}"><span>${l.replace(/^(à l'|au |à la )/, '').replace(/^./, x => x.toUpperCase())}</span><b>${pr.imm.includes(k) ? 'Immunité' : pr.res[k] ? pr.res[k] : '—'}</b></div>`).join('')}
+      ${ENERGIES.map(([k, l]) => `<div class="stat ${pr.imm.includes(k) ? 'immun' : pr.res[k] || pr.moitie.has(k) ? 'actif' : 'vide'}"><span>${l.replace(/^(à l'|au |à la )/, '').replace(/^./, x => x.toUpperCase())}</span><b>${pr.imm.includes(k) ? 'Immunité' : [pr.moitie.has(k) ? '½ dégâts' : '', pr.res[k] ? pr.res[k] : ''].filter(Boolean).join(' + ') || '—'}</b></div>`).join('')}
       <div class="stat ${pr.rm ? 'actif' : 'vide'}"><span>Résistance à la magie</span><b>${pr.rm || '—'}</b></div>
       <div class="stat ${pr.rd.length ? 'actif' : 'vide'}"><span>Réduction des dégâts</span><b>${esc(pr.rd.join(', ') || '—')}</b></div>
     </div>
@@ -1185,6 +1187,8 @@ function ligneObjetEdition(p, it, i) {
           <option value="">Autre (à remplir à la main)</option>
           ${Object.entries(R.CATS_ARMES).map(([c, l]) => `<optgroup label="${l}">${R.ARMES.filter(a => a.cat === c).map(a => `<option value="${a.id}" ${it.armeType === a.id ? 'selected' : ''}>${esc(a.nom)}${a.moine ? ' (moine)' : ''}</option>`).join('')}</optgroup>`).join('')}
         </select></label>
+        <label class="f"><span>Caractéristique aux dégâts</span><select data-bind="equipement.${i}.carDegats" data-rerender>${[['', 'Force (normal)'], ['sag', 'Sagesse'], ['dex', 'Dextérité'], ['con', 'Constitution'], ['int', 'Intelligence'], ['cha', 'Charisme'], ['aucune', 'Aucune']].map(([v, l]) => `<option value="${v}" ${(it.carDegats || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="check ligne-entiere"><input type="checkbox" data-bind="equipement.${i}.membre" data-rerender ${it.membre ? 'checked' : ''}> Fait partie du corps (prothèse, griffes…) : frappe comme à mains nues et compte pour le déluge de coups</label>
         ${ref ? `<p class="hint arme-ref">${R.PRISES[ref.prise]}, ${({ courante: 'arme courante', guerre: 'arme de guerre', exotique: 'arme exotique' })[ref.cat]}${ref.moine ? ', <b>arme spéciale de moine</b> : déluge de coups possible' : ''}${ref.finesse || ref.prise === 'legere' ? ', compatible Attaque en finesse' : ''}.</p>` : ''}
         <select data-bind="equipement.${i}.mode" data-rerender aria-label="Type d'attaque"><option value="">Corps à corps</option><option value="distance" ${it.mode === 'distance' ? 'selected' : ''}>Distance</option></select>
         <input type="text" data-bind="equipement.${i}.degats" data-recalc value="${esc(it.degats)}" placeholder="Dégâts (1d8)" aria-label="Dégâts">
@@ -1421,20 +1425,21 @@ function carteArmeCombat(p, e, st, it, munitions) {
   const spe = it.specialisation && e.dons.has('specialisation-martiale') ? 2 + (e.dons.has('specialisation-superieure') ? 2 : 0) : 0;
   const tou = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods[carAtt] + taille + predi);
   /* Force aux dégâts : ×1,5 à deux mains, normale au corps à corps et pour les armes de jet */
-  const fo = e.mods.for;
-  const bonusFo = dist && !ref?.lancer ? Math.min(0, fo) : (prise === 'deux' || prise === 'double') && fo > 0 ? Math.floor(fo * 1.5) : fo;
+  const carDeg = it.carDegats || 'for';
+  const fo = carDeg === 'aucune' ? 0 : e.mods[carDeg] ?? e.mods.for;
+  const bonusFo = carDeg !== 'for' ? fo : dist && !ref?.lancer ? Math.min(0, fo) : (prise === 'deux' || prise === 'double') && fo > 0 ? Math.floor(fo * 1.5) : fo;
   const bonusDeg = bonusFo + spe + (e.objets.tot.degats || 0);
   const de = it.degats || ref?.deg || '?';
   const deg = `${de}${bonusDeg ? R.signe(bonusDeg) : ''}`;
   const moine = e.classes.moine ? e.moineCumul.deluge : 0;
   const liees = [];
-  if (moine && ref?.moine && !dist) {
+  if (moine && (ref?.moine || it.membre) && !dist) {
     const pen = moine < 5 ? -2 : moine < 9 ? -1 : 0;
     const base = tou.map(x => x + pen);
     const liste = [base[0], ...base];
     if (moine >= 11) liste.unshift(base[0]);
     liees.push(`<div class="deluge"><b>Déluge de coups</b> : ${liste.length} attaques à <span class="gros">${R.attTxt(liste)}</span>, ${esc(deg)} chacune.
-      <small>${esc(ref.nom)} est une arme spéciale de moine. Prend tout ton tour ; le malus de ${R.signe(pen)} est déjà inclus${pen ? '' : ' (disparu à ton niveau)'}.</small></div>`);
+      <small>${it.membre ? `${esc(it.nom || 'Ce membre')} fait partie de ton corps : chaque attaque du déluge peut se faire avec lui ou avec tes poings (une attaque à la fois, au choix)` : `${esc(ref.nom)} est une arme spéciale de moine`}. Prend tout ton tour ; le malus de ${R.signe(pen)} est déjà inclus${pen ? '' : ' (disparu à ton niveau)'}.</small></div>`);
   }
   if (finesse) liees.push(`<p class="liee"><b>Attaque en finesse</b> : ta Dextérité (${R.signe(e.mods.dex)}) remplace ta Force pour toucher.</p>`);
   if (dist && e.dons.has('tir-bout-portant')) liees.push('<p class="liee"><b>Tir à bout portant</b> : +1 pour toucher et aux dégâts si la cible est à 9 m ou moins.</p>');
@@ -1446,14 +1451,15 @@ function carteArmeCombat(p, e, st, it, munitions) {
   if (ref?.allonge) liees.push('<p class="liee"><b>Allonge</b> : tu frappes à 3 m, mais pas un ennemi collé à toi.</p>');
   const mun = munitions.filter(m => m.it.lien === it.id);
   const typeNom = ref ? ref.nom : (dist ? 'Arme à distance' : 'Arme');
-  const titre = it.nom && norm(it.nom) !== norm(typeNom) ? `${typeNom} : ${it.nom}` : typeNom;
+  const titre = it.membre ? (it.nom || 'Membre') : it.nom && norm(it.nom) !== norm(typeNom) ? `${typeNom} : ${it.nom}` : typeNom;
   const recharge = /arbalete-(legere|poing)/.test(it.armeType || '') ? 'action de mouvement' : it.armeType === 'arbalete-lourde' ? 'action complexe' : '';
-  return `<div class="arme">
+  const noteDeg = carDeg !== 'for' ? ` <small>(${carDeg === 'aucune' ? 'sans caractéristique' : 'avec ' + ({ sag: 'Sagesse', dex: 'Dextérité', con: 'Constitution', int: 'Intelligence', cha: 'Charisme' })[carDeg]})</small>` : '';
+  return `<div class="arme ${it.membre ? 'membre' : ''}">
     <p class="action-type"><span>Action simple</span>${tou.length > 1 ? ' · attaque à outrance : action complexe' : ''}${recharge ? ` · recharger : ${recharge}` : ''}</p>
-    <div class="arme-tete"><b>${esc(titre)}</b><span class="tag-mode">${dist ? 'Distance' : R.PRISES[prise] || 'Corps à corps'}${ref?.moine ? ' · moine' : ''}</span></div>
+    <div class="arme-tete"><b>${esc(titre)}</b><span class="tag-mode">${it.membre ? 'Corps à corps · comme à mains nues' : `${dist ? 'Distance' : R.PRISES[prise] || 'Corps à corps'}${ref?.moine ? ' · moine' : ''}`}</span></div>
     <dl class="arme-stats">
       <dt>Pour toucher</dt><dd><span class="gros">${R.signe(tou[0])}</span>${tou.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(tou)})</small>` : ''}</dd>
-      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${it.critique || ref?.crit ? ` <small>critique ${esc(it.critique || ref.crit)}</small>` : ''}</dd>
+      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${noteDeg}${it.critique || ref?.crit ? ` <small>critique ${esc(it.critique || ref.crit)}</small>` : ''}</dd>
       ${it.portee || (dist && ref?.portee) ? `<dt>Portée</dt><dd>${esc(it.portee || ref.portee)}</dd>` : ''}
     </dl>
     ${liees.join('')}
@@ -2937,7 +2943,7 @@ function tiroirMJ() {
     ${ligne('Armes', listeObjetsMJ(t.armes, nomArme(t)))}
     ${ligne('Baguette', x.baguette?.nom || x.baguette?.photo ? `${esc(x.baguette.nom || 'sans nom')}${sortA ? ` <small>(sort ancré : ${esc(sortA.nom)})</small>` : ''}` : '<span class="vide">—</span>')}
     ${ligne('Sauvegardes', `Vig ${R.signe(st.js.vig)} · Réf ${R.signe(st.js.ref)} · Vol ${R.signe(st.js.vol)} · Init ${R.signe(st.init)}`)}
-    ${ligne('Protections', [ENERGIES.filter(([k]) => pr.res[k]).map(([k, l]) => `résist. ${l.replace(/^(à l'|au |à la )/, '')} ${pr.res[k]}`).join(', '), pr.rm ? `RM ${pr.rm}` : '', pr.rd.length ? `RD ${pr.rd.join(', ')}` : '', pr.imm.length ? `immunités : ${pr.imm.map(k => nomI[k]).join(', ')}` : ''].filter(Boolean).join(' · ') || '<span class="vide">—</span>')}
+    ${ligne('Protections', [ENERGIES.filter(([k]) => pr.res[k]).map(([k, l]) => `résist. ${l.replace(/^(à l'|au |à la )/, '')} ${pr.res[k]}`).join(', '), ENERGIES.filter(([k]) => pr.moitie.has(k)).map(([k, l]) => `½ dégâts ${l.replace(/^(à l'|au |à la )/, '')}`).join(', '), pr.rm ? `RM ${pr.rm}` : '', pr.rd.length ? `RD ${pr.rd.join(', ')}` : '', pr.imm.length ? `immunités : ${pr.imm.map(k => nomI[k]).join(', ')}` : ''].filter(Boolean).join(' · ') || '<span class="vide">—</span>')}
     ${Object.keys(e.objets.cond).length ? ligne('Conditionnels', Object.entries(e.objets.cond).flatMap(([k, l]) => l.map(c => `<span class="bonus-cond">${R.signe(c.val)} ${esc(NOM_CIBLE[k] || k)}</span> <small>${esc(c.quand)}</small>`)).join('<br>')) : ''}
     ${ligne('Bourse', esc(piecesTxt(x.argent)) + historiqueBourse(x, 3))}
     ${ligne('Rations', `${nbRations(x)}`)}

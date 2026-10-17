@@ -1488,3 +1488,4 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 @media (max-width: 560px) { .am-ligne { grid-template-columns: 4.2rem minmax(0, 1fr) auto; } .am-ligne select[data-bind$=".permanent"], .am-ligne input[data-bind$=".note"] { grid-column: 1 / -1; } }
 .am-lecture { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .25rem 0; }
 .am-lecture small { color: var(--muted); }
+.arme.membre { border-color: #8E7BD6; box-shadow: inset 3px 0 0 #8E7BD6; }
