@@ -1433,3 +1433,32 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .journal-entree header small { color: var(--muted); }
 .journal-entree ul { margin: .25rem 0 0; padding-left: 1.1rem; font-size: .88rem; }
 .gen-choix { margin: .5rem 0; } .gen-fiche { border-top: none; padding: 0; }
+.histo-liste { display: flex; flex-direction: column; gap: .35rem; margin-top: .5rem; }
+.histo-version { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); font-size: .88rem; }
+.histo-version small { color: var(--muted); }
+
+/* En-tête : mon personnage */
+.topbar { display: flex; align-items: center; }
+.mon-perso { margin-left: auto; display: flex; align-items: center; gap: .45rem; text-decoration: none; color: var(--ivoire); padding: .2rem .55rem .2rem .2rem; border: 1px solid var(--line-bronze); border-radius: 99px; background: rgba(11, 30, 45, .6); max-width: 46vw; }
+.mon-perso[hidden] { display: none; }
+.mon-perso img, .mon-perso .initiale { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; object-position: 50% 18%; border: 1px solid var(--bronze); flex: none; }
+.mon-perso .initiale { display: grid; place-items: center; font-family: var(--font-titre); color: var(--bronze-clair); background: var(--surface); font-size: .9rem; }
+.mon-perso .nom { font-family: var(--font-titre); font-size: .82rem; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Bourse en lecture seule */
+.pieces-lecture { display: flex; flex-wrap: wrap; gap: .5rem 1.2rem; }
+.pieces-lecture b { font-family: var(--font-titre); font-size: 1.3rem; color: var(--ivoire); }
+.pieces-lecture small { color: var(--muted); }
+/* Objets du coffre commun */
+.coffre-objets { display: flex; flex-direction: column; gap: .35rem; margin-bottom: .5rem; }
+.coffre-objet { display: grid; grid-template-columns: 40px 1fr auto; gap: .5rem; align-items: center; padding: .35rem .5rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); }
+.coffre-objet img { width: 40px; height: 40px; object-fit: contain; }
+.coffre-objet .icone { font-size: 1.5rem; text-align: center; }
+.coffre-objet small { color: var(--muted); }
+/* Historique de la bourse */
+.histo-bourse { list-style: none; padding: 0; margin: .3rem 0 0; display: flex; flex-direction: column; gap: .25rem; }
+.histo-bourse li { display: grid; grid-template-columns: auto 1fr auto; column-gap: .5rem; align-items: baseline; padding: .3rem .5rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); font-size: .86rem; }
+.histo-bourse .quand { color: var(--muted); font-size: .76rem; white-space: nowrap; }
+.histo-bourse b.pos { color: #8FD3C0; }
+.histo-bourse b.neg { color: var(--rouge-clair); }
+.histo-bourse small { grid-column: 2 / -1; color: var(--muted); font-size: .74rem; }
+.tiroir-ligne .histo-bourse { margin-top: .3rem; }

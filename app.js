@@ -77,7 +77,7 @@ async function load() {
   catch (e) { console.error(e); toast('Lecture des données impossible : ' + e.message); }
   /* Reprise des anciennes données : on libère localStorage une fois la copie faite */
   try {
-    if (localStorage.getItem(STORE_KEY)) { await IDB.ecrire(STORE_KEY, JSON.stringify(db)); localStorage.removeItem(STORE_KEY); }
+    if (localStorage.getItem(STORE_KEY)) { delete db.versions; await IDB.ecrire(STORE_KEY, JSON.stringify(db)); localStorage.removeItem(STORE_KEY); }
   } catch (e) { /* on réessaiera au prochain démarrage */ }
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) { /* */ }
 }
@@ -702,6 +702,7 @@ function pagePerso(id, tab) {
   if (!p) return `<p>Personnage introuvable. <a href="#/persos">Retour à la liste</a></p>`;
   if (p.pnjMJ && !peutModifier(p)) { state.ctx = null; return pagePersoPublic(p); }
   state.ctx = p;
+  if (!p.pnjMJ && (!enLigne() || (db.cles || {})[p.id]) && db.monPerso !== p.id) { db.monPerso = p.id; saveNow(); }
   if (state.effetForm && state.effetForm.persoId === p.id) return formEffet() + pagePersoSuite(p, tab);
   return pagePersoSuite(p, tab);
 }
@@ -1096,6 +1097,32 @@ function groupesInvHTML(p, items, mod) {
   return html || (items.length ? '<p class="empty">Aucun objet ne correspond.</p>' : '<p class="empty">Aucun objet.</p>');
 }
 
+/* La bourse : seul le MJ la modifie (le marché et le coffre commun la font aussi évoluer) */
+/* Les 10 derniers mouvements, tenus par la base (achats, coffre commun, MJ) */
+const deltaTxt = d => Object.entries(d || {}).filter(([, v]) => num(v)).map(([k, v]) => `${num(v) > 0 ? '+' : ''}${num(v)} ${k}`).join(', ');
+function historiqueBourse(p, n = 10) {
+  const h = (p.histoBourse || []).slice(0, n);
+  if (!h.length) return '';
+  return `<ul class="histo-bourse">${h.map(x => {
+    const negatif = Object.values(x.delta || {}).reduce((t, v) => t + num(v), 0) < 0;
+    return `<li><span class="quand">${new Date(num(x.quand)).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+      <span class="quoi">${esc(x.quoi || '')}</span>
+      <b class="${negatif ? 'neg' : 'pos'}">${esc(deltaTxt(x.delta))}</b>
+      ${x.solde ? `<small>reste ${esc(piecesTxt(x.solde))}</small>` : ''}</li>`;
+  }).join('')}</ul>`;
+}
+function carteBourse(p) {
+  const libre = !enLigne() || estMJ();
+  return `<section class="card bourse-perso"><h3>Bourse</h3>
+    ${libre ? `<div class="grid">
+      ${fi(p, 'argent.pp', 'Pièces de platine', { type: 'number' })}${fi(p, 'argent.po', 'Pièces d\'or', { type: 'number' })}
+      ${fi(p, 'argent.pa', 'Pièces d\'argent', { type: 'number' })}${fi(p, 'argent.pc', 'Pièces de cuivre', { type: 'number' })}
+    </div>` : `<div class="pieces-lecture">${[['pp', 'platine'], ['po', 'or'], ['pa', 'argent'], ['pc', 'cuivre']].map(([k, l]) => `<span><b>${num((p.argent || {})[k])}</b> ${k} <small>${l}</small></span>`).join('')}</div>
+      <p class="hint">Seul le MJ modifie la bourse. Elle évolue aussi avec les achats au marché et le coffre commun.</p>`}
+    ${(p.histoBourse || []).length ? `<h4>Derniers mouvements</h4>${historiqueBourse(p)}` : enLigne() ? '<p class="hint">Les prochains mouvements (achats, coffre commun, pièces du MJ) s\'afficheront ici.</p>' : ''}
+  </section>`;
+}
+
 function ongletInventaire(p, e) {
   const items = p.equipement || [];
   for (const it of items) if (!it.id) it.id = uid();
@@ -1107,7 +1134,7 @@ function ongletInventaire(p, e) {
       <div class="chips">${[['', 'Tout'], ...GROUPES_INV.map(([t, c]) => [c[0] || 'objet', t.replace(/ \(.*\)$/, '')])].filter(([k]) => !k || items.some(it => (it.cat || 'objet') === k || (k === 'armure' && it.cat === 'bouclier'))).map(([k, l]) => `<button class="chip ${(state.invCat || '') === k ? 'on' : ''}" data-action="inv-cat" data-c="${k}">${esc(l)}</button>`).join('')}</div>
     </div>
     <div id="inv-groupes">${groupesInvHTML(p, items, mod)}</div>`;
-  return `<section class="card"><h3>Inventaire et équipement</h3>
+  return carteBourse(p) + `<section class="card"><h3>Inventaire et équipement</h3>
     <div class="inv-resume">
       <span>Objets<b>${items.length}</b></span>
       ${poids ? `<span>Poids total<b>${poidsTxt(poids)}</b></span>` : ''}
@@ -1118,11 +1145,6 @@ function ongletInventaire(p, e) {
     ${mod ? `<button class="btn" data-action="add-item" data-list="equipement">+ Ajouter un objet</button>${estMJ() ? blocAjoutRapide('perso') : ''}` : ''}
     <p class="hint">Type « Arme » : elle apparaît dans « En combat » avec ses jets calculés. « Armure » et « Bouclier » : la CA, la Dextérité maximale et le malus aux compétences se calculent seuls. « Munition » : reliée à une arme, avec son effet et un compteur. « Consommable » : potion, parchemin… Un objet équipé avec un bonus (ex. un anneau +1 en Intelligence) met à jour la fiche tout seul. Décoche « Équipé » s'il est rangé dans le sac.</p>
   </section>
-  <section class="card"><h3>Bourse</h3>
-    <div class="grid">
-      ${fi(p, 'argent.pp', 'Pièces de platine', { type: 'number' })}${fi(p, 'argent.po', 'Pièces d\'or', { type: 'number' })}
-      ${fi(p, 'argent.pa', 'Pièces d\'argent', { type: 'number' })}${fi(p, 'argent.pc', 'Pièces de cuivre', { type: 'number' })}
-    </div>
   </section>`;
 }
 function ligneObjetEdition(p, it, i) {
@@ -1801,7 +1823,7 @@ function carteVisibilite(p) {
   const v = p.visibilite || {};
   return `<section class="card visibilite"><h3>Visible des joueurs</h3>
     <p class="hint">Personnage du MJ : les joueurs ne voient que ce qui est coché ici, plus les objets marqués « visible » dans l'inventaire. Le reste n'est jamais envoyé à leurs appareils.</p>
-    <label class="check membre"><input type="checkbox" data-bind="membreGroupe" data-rerender ${p.membreGroupe ? 'checked' : ''}> <span><b>Membre du groupe</b> : joué par le MJ comme un personnage joueur (rations, jour suivant, combats, bourse commune, marché)</span></label>
+    <label class="check membre"><input type="checkbox" data-bind="membreGroupe" data-rerender ${p.membreGroupe ? 'checked' : ''}> <span><b>Membre du groupe</b> : joué par le MJ comme un personnage joueur (rations, jour suivant, combats, coffre commun, marché)</span></label>
     ${p.membreGroupe ? '' : fi(p, 'xp', 'Expérience de ce personnage (visible du MJ seulement)', { type: 'number' })}
     <div class="vis-grille">${VISIBILITE_SECTIONS.map(([k, l]) => `<label class="check"><input type="checkbox" data-bind="visibilite.${k}" data-rerender ${(k === 'portrait' ? v[k] !== false : v[k]) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
   </section>`;
@@ -1976,7 +1998,19 @@ function saveMJ(cle) {
 async function envoyerMJ() {
   for (const cle of [...mjAttente]) {
     try {
-      await rpc('mj_ecrire', { p_code: db.codeMJ, p_cle: cle, p_data: mjd()[cle] ?? null });
+      let local = mjd()[cle] ?? null;
+      if (Array.isArray(local)) {
+        let srv = null;
+        try { srv = (await rpc('mj_lire_cles', { p_code: db.codeMJ, p_cles: [cle] }) || {})[cle]; } catch (e) { /* base pas encore en v8 */ }
+        if (Array.isArray(srv) && local.length < srv.length - 1) {
+          /* l'appareil a une liste incomplète : on garde tout ce qui est dans la base, plus les ajouts de l'appareil */
+          const ids = new Set(srv.map(x => x && x.id));
+          local = [...srv, ...local.filter(x => !ids.has(x && x.id))];
+          mjd()[cle] = local; saveNow(); render();
+          toast(`Liste « ${cle} » reprise depuis la base (${srv.length} éléments retrouvés)`);
+        }
+      }
+      await rpc('mj_ecrire', { p_code: db.codeMJ, p_cle: cle, p_data: local });
       mjAttente.delete(cle);
     } catch (e) {
       statutSync('Préparation MJ non envoyée : ' + e.message, true);
@@ -1987,7 +2021,7 @@ async function envoyerMJ() {
 async function chargerMJ() {
   if (!enLigne() || !estMJ()) return;
   try {
-    const videLocal = !db.mjData || !Object.keys(db.mjData).some(k => k.startsWith('session:') || (Array.isArray(db.mjData[k]) && db.mjData[k].length));
+    const videLocal = !chargerMJ.fait || !db.mjData || !Object.keys(db.mjData).some(k => k.startsWith('session:') || (Array.isArray(db.mjData[k]) && db.mjData[k].length));
     const m = mjd();
     let v = null;
     try { v = await rpc('mj_versions', { p_code: db.codeMJ }); } catch (e) { /* base pas encore en v8 */ }
@@ -2001,11 +2035,20 @@ async function chargerMJ() {
     const cles = Object.keys(serveur).filter(k => !mjAttente.has(k) && (videLocal || connus[k] !== serveur[k] || !(k in m)));
     if (cles.length) {
       const d = await rpc('mj_lire_cles', { p_code: db.codeMJ, p_cles: cles }) || {};
-      for (const [k, x] of Object.entries(d)) m[k] = x;
+      for (const [k, x] of Object.entries(d)) {
+        const loc = m[k];
+        if (Array.isArray(loc) && Array.isArray(x) && loc.length > x.length + 1 && !(state.mjConflits || {})[k]) {
+          state.mjConflits = { ...(state.mjConflits || {}), [k]: true };
+          const garder = confirm(`Cet appareil contient ${loc.length} élément(s) dans « ${k} », la base seulement ${x.length}.\n\nOK : garder ceux de cet appareil (et ajouter ceux de la base).\nAnnuler : prendre la version de la base.`);
+          if (garder) { const ids = new Set(loc.map(y => y && y.id)); m[k] = [...loc, ...x.filter(y => !ids.has(y && y.id))]; saveMJ(k); continue; }
+        }
+        m[k] = x;
+      }
     }
     /* Sessions supprimées depuis un autre appareil */
     for (const k of Object.keys(m)) if (k.startsWith('session:') && !(k in serveur) && !mjAttente.has(k) && k in connus) delete m[k];
     db.versions.mj = { ...serveur };
+    chargerMJ.fait = true;
     db.versions.persosMJ = v.persos_mj || {};
     saveNow();
   } catch (e) { console.warn('Préparation MJ indisponible (base pas encore en v6 ?)', e); }
@@ -2252,6 +2295,29 @@ function pnjDepuisGen(r, nom) {
     notes: [r.titre, 'Compétences : ' + r.comps.join(', '), 'Dons : ' + r.dons.join(', '), r.sorts, 'Équipement : ' + r.equip, r.notes].filter(Boolean).join('\n'), butin: [], fp: r.fp };
 }
 
+/* ----- Historique des données du MJ (base en v13) ----- */
+const CATS_HISTO = [['objets', 'Objets en attente'], ['pnj', 'PNJ et créatures'], ['combats', 'Combats préparés'], ['notes', 'Notes'], ['xp', 'XP du groupe']];
+function carteHistoriqueMJ() {
+  const sessions = sessionsMJ().map(x => ['session:' + x.id, `Session ${x.numero} : ${x.titre || 'sans titre'}`]);
+  const cle = state.histoCle || 'objets';
+  const l = state.histo && state.histo.cle === cle ? state.histo.liste : null;
+  return `<section class="card"><details class="bestiaire" ${state.histoOuvert ? 'open' : ''}>
+    <summary><h3 class="inline">Historique et restauration</h3></summary>
+    <p class="hint">Avant chaque modification, la base garde l'ancienne version (les 30 dernières par catégorie). En cas d'erreur, choisis une version et restaure-la.</p>
+    <div class="btns" style="margin-bottom:.6rem">
+      <button class="btn ghost" data-action="mj-sauvegarde">⬇ Sauvegarder les données du MJ</button>
+      <button class="btn ghost" data-action="mj-import-sauvegarde">⬆ Importer une sauvegarde</button>
+      <input type="file" id="mj-import-fichier" accept=".json,.txt,application/json,text/plain" hidden>
+    </div>
+    <div class="row"><select id="histo-cle">${[...CATS_HISTO, ...sessions].map(([k, t]) => `<option value="${esc(k)}" ${k === cle ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+      <button class="btn ghost" data-action="histo-voir">Voir les versions</button></div>
+    ${l ? (l.length ? `<div class="histo-liste">${l.map(v => `<div class="histo-version">
+        <div><b>${new Date(v.maj).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</b>${v.nombre != null ? ` · ${v.nombre} élément${v.nombre > 1 ? 's' : ''}` : ''}
+        ${v.apercu ? `<br><small>${esc(v.apercu)}${v.nombre > 8 ? '…' : ''}</small>` : ''}</div>
+        <button class="btn ghost petit" data-action="histo-restaurer" data-id="${v.id}">Restaurer</button></div>`).join('')}</div>` : '<p class="empty">Aucune ancienne version gardée pour l\'instant (l\'historique démarre avec la mise à jour v13).</p>') : ''}
+  </details></section>`;
+}
+
 /* ----- Préparation : PNJ (bestiaire), combats ----- */
 const nouveauPNJ = () => ({ id: uid(), nom: 'Nouveau PNJ', camp: 'ennemi', pvMax: '', ca: '', init: '', attaques: '', caracs: '', notes: '', butin: [] });
 const champMJ = (path, label, opt = {}) => `<label class="f${opt.span ? ' span2' : ''}"><span>${esc(label)}</span>${opt.area
@@ -2411,7 +2477,7 @@ function pageObjetsMJ() {
       ${it.notes || nombre(it.valeur) ? `<p class="objet-det">${esc([nombre(it.valeur) ? prixTxt(it.valeur, it.valeurUnite) : '', it.notes].filter(Boolean).join(' · '))}</p>` : ''}
       ${it.type === 'vente'
         ? `<div class="btns"><button class="btn ghost" data-action="mj-vers-marche" data-i="${i}">Envoyer au marché</button></div>`
-        : `<div class="row donner"><select id="cible-${it.id}" aria-label="Donner à">${cibles.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
+        : `<div class="row donner"><select id="cible-${it.id}" aria-label="Donner à">${cibles.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}<option value="__coffre__">Coffre commun</option></select>
           <button class="btn ghost" data-action="mj-donner" data-i="${i}">Donner</button></div>`}
     </div>`;
   };
@@ -2424,7 +2490,7 @@ function pageObjetsMJ() {
   </section>
   ${carteMarchesMJ()}
   <section class="card"><h3>Donner des pièces</h3>
-    <label class="f"><span>À</span><select id="argent-cible"><option value="__commune__">La bourse commune</option>${cibles.filter(estMembre).map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select></label>
+    <label class="f"><span>À</span><select id="argent-cible"><option value="__commune__">Le coffre commun</option>${cibles.filter(estMembre).map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select></label>
     ${champsPieces('mjp')}
     <button class="btn" data-action="mj-argent">Donner</button>
     <p class="hint">Un nombre négatif retire des pièces.</p>
@@ -2558,7 +2624,7 @@ function etapeJeu(s, e, i) {
         ${o.image ? `<button class="vignette" data-action="img-zoom" data-src="${o.image}" aria-label="Agrandir"><img src="${o.image}" alt=""></button>` : ''}
         <div class="objet-vue-tete"><b>${esc(o.nom || 'Objet')}</b>${num(o.qte) > 1 ? ` <span class="qte">× ${esc(o.qte)}</span>` : ''}${o.cat ? `<span class="tag-cat cat-${o.cat}">${CATS_OBJET[o.cat]}</span>` : ''}</div>
         ${o.notes ? `<p class="objet-det">${esc(o.notes)}</p>` : ''}
-        <div class="row donner"><select id="cible-${o.id}" aria-label="Donner à">${cibles.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>
+        <div class="row donner"><select id="cible-${o.id}" aria-label="Donner à">${cibles.map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}<option value="__coffre__">Coffre commun</option></select>
           <button class="btn ghost" data-action="mj-donner" data-i="${i2}" data-session="${s.id}" data-etape="${i}">Donner</button></div>
       </div>`;
     }).join('');
@@ -2815,7 +2881,7 @@ function tiroirMJ() {
     ${ligne('Sauvegardes', `Vig ${R.signe(st.js.vig)} · Réf ${R.signe(st.js.ref)} · Vol ${R.signe(st.js.vol)} · Init ${R.signe(st.init)}`)}
     ${ligne('Protections', [ENERGIES.filter(([k]) => pr.res[k]).map(([k, l]) => `résist. ${l.replace(/^(à l'|au |à la )/, '')} ${pr.res[k]}`).join(', '), pr.rm ? `RM ${pr.rm}` : '', pr.rd.length ? `RD ${pr.rd.join(', ')}` : '', pr.imm.length ? `immunités : ${pr.imm.map(k => nomI[k]).join(', ')}` : ''].filter(Boolean).join(' · ') || '<span class="vide">—</span>')}
     ${Object.keys(e.objets.cond).length ? ligne('Conditionnels', Object.entries(e.objets.cond).flatMap(([k, l]) => l.map(c => `<span class="bonus-cond">${R.signe(c.val)} ${esc(NOM_CIBLE[k] || k)}</span> <small>${esc(c.quand)}</small>`)).join('<br>')) : ''}
-    ${ligne('Bourse', esc(piecesTxt(x.argent)))}
+    ${ligne('Bourse', esc(piecesTxt(x.argent)) + historiqueBourse(x, 3))}
     ${ligne('Rations', `${nbRations(x)}`)}
     ${ligne('Langues', esc((x.langues || []).join(', ') || '—'))}
     ${(x.etats || []).filter(et => et.actif !== false).length ? ligne('États', (x.etats || []).filter(et => et.actif !== false).map(et => `<span class="etat-puce ${gravite(et)}">${esc(et.nom)}</span>`).join(' ')) : ''}
@@ -2945,7 +3011,7 @@ function pageMJ2() {
   else if (o === 'objets') corps = pageObjetsMJ();
   else if (o === 'notes') corps = `<section class="card"><h3>Notes secrètes</h3>${champMJ('notes', 'Rien que pour toi', { area: true, rows: 14 })}</section>`;
   else if (o === 'prepa') {
-    corps = `${carteBestiaire()}${cartePNJGen()}<section class="card"><h3>PNJ et créatures</h3>
+    corps = `${carteBestiaire()}${cartePNJGen()}${carteHistoriqueMJ()}<section class="card"><h3>PNJ et créatures</h3>
       <div class="pnjs">${m.pnj.map((x, i) => state.mjEdit === 'pnj:' + x.id ? formPNJ(x, i) : cartePNJ(x, i)).join('') || '<p class="empty">Aucun PNJ préparé.</p>'}</div>
       <button class="btn ghost" data-action="mj-pnj-ajout">+ Préparer un PNJ</button></section>
       <section class="card"><h3>Combats préparés</h3>
@@ -2988,14 +3054,16 @@ const champsPieces = prefixe => `<div class="pieces">${[['po', 'Or'], ['pa', 'Ar
   `<label class="f"><span>${l}</span><input type="text" inputmode="numeric" id="${prefixe}-${k}" placeholder="0"></label>`).join('')}</div>`;
 const lirePieces = prefixe => Object.fromEntries(['po', 'pa', 'pc'].map(k => [k, String(Math.round(nombre($(`#${prefixe}-${k}`)?.value)))]));
 
-/* ===== Bourse commune ===== */
-const bc = () => (db.bourseCommune = { bourse: {}, porteur_id: '', journal: [], ...(db.bourseCommune || {}) });
+/* ===== Coffre commun (pièces et objets) ===== */
+const bc = () => (db.bourseCommune = { bourse: {}, porteur_id: '', journal: [], objets: [], ...(db.bourseCommune || {}) });
 function carteBourseCommune() {
   const b = bc();
   const porteur = findPerso(b.porteur_id);
   const mes = db.personnages.filter(x => !x._public && estMembre(x) && (enLigne() ? !!(db.cles || {})[x.id] || estMJ() : true));
   const tous = db.personnages.filter(x => estMembre(x) && (!enLigne() || x.publie));
-  return `<section class="card bourse-commune"><h3>Bourse commune</h3>
+  const objets = b.objets || [];
+  const persoCo = findPerso(state.coPerso) || mes[0];
+  return `<section class="card bourse-commune"><h3>Coffre commun</h3>
     <p class="bc-total"><b>${esc(piecesTxt(b.bourse))}</b>${bourseEnPc(b.bourse) ? ` <small>(${prixTxt(Math.round(bourseEnPc(b.bourse)) / 100, 'po')} au total)</small>` : ''}</p>
     <p class="hint">${porteur ? `<b>${esc(porteur.nom)}</b> porte le coffre commun. Cet argent ne s'ajoute pas à sa bourse personnelle.` : 'Personne ne porte le coffre commun pour l\'instant.'}</p>
     ${mes.length ? `<details class="effet" ${state.bcOuvert ? 'open' : ''}><summary>Déposer, prendre, changer de porteur</summary>
@@ -3005,7 +3073,19 @@ function carteBourseCommune() {
       <div class="row" style="margin-top:.6rem"><select id="bc-porteur" aria-label="Porteur du coffre"><option value="">— Personne —</option>${tous.map(x => `<option value="${x.id}" ${b.porteur_id === x.id ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select>
         <button class="btn ghost" data-action="bc-porteur">Confier le coffre</button></div>
     </details>` : '<p class="hint">Associe ton personnage à cet appareil pour déposer ou prendre de l\'argent.</p>'}
-    ${(b.journal || []).length ? `<details class="effet"><summary>Derniers mouvements</summary><ul class="journal">${b.journal.slice(0, 12).map(j => `<li><small>${new Date(num(j.quand)).toLocaleDateString('fr-FR')}</small> <b>${esc(j.qui)}</b> ${esc(j.quoi)} : ${esc(Object.entries(j.delta || {}).filter(([, v]) => num(v)).map(([k, v]) => `${num(v) > 0 ? '+' : ''}${num(v)} ${k}`).join(', '))}</li>`).join('')}</ul></details>` : ''}
+    <h4>Objets dans le coffre ${objets.length ? `<small>${objets.length}</small>` : ''}</h4>
+    ${objets.length ? `<div class="coffre-objets">${objets.map(o => `<div class="coffre-objet">
+        ${o.image ? `<img src="${o.image}" alt="">` : `<span class="icone">${ICONES_CAT[o.cat || ''] || '📦'}</span>`}
+        <div><b>${esc(o.nom || 'Objet')}</b>${num(o.qte) > 1 ? ` <small>× ${esc(o.qte)}</small>` : ''}${o.deposePar ? `<br><small>déposé par ${esc(o.deposePar)}</small>` : ''}</div>
+        ${mes.length ? `<button class="btn ghost petit" data-action="coffre-prendre" data-id="${o.id}">Prendre</button>` : ''}
+      </div>`).join('')}</div>` : '<p class="empty">Aucun objet dans le coffre.</p>'}
+    ${mes.length ? `<details class="effet" ${state.coOuvert ? 'open' : ''}><summary>Déposer ou prendre un objet</summary>
+      <label class="f"><span>Personnage</span><select id="co-perso">${mes.map(x => `<option value="${x.id}" ${persoCo && persoCo.id === x.id ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select></label>
+      ${persoCo && (persoCo.equipement || []).length ? `<div class="row"><select id="co-objet" aria-label="Objet à déposer">${(persoCo.equipement || []).map(it => `<option value="${it.id}">${esc(it.nom || 'Objet')}${num(it.qte) > 1 ? ' ×' + esc(it.qte) : ''}</option>`).join('')}</select>
+        <button class="btn" data-action="coffre-deposer">Déposer dans le coffre</button></div>` : '<p class="hint">Ce personnage n\'a pas d\'objet à déposer.</p>'}
+      <p class="hint">Le bouton « Prendre » d'un objet du coffre le place dans l'inventaire du personnage choisi ici.</p>
+    </details>` : ''}
+    ${(b.journal || []).length ? `<details class="effet"><summary>Derniers mouvements</summary><ul class="journal">${b.journal.slice(0, 12).map(j => `<li><small>${new Date(num(j.quand)).toLocaleDateString('fr-FR')}</small> <b>${esc(j.qui)}</b> ${esc(j.quoi)}${Object.values(j.delta || {}).some(v => num(v)) ? ' : ' + esc(Object.entries(j.delta || {}).filter(([, v]) => num(v)).map(([k, v]) => `${num(v) > 0 ? '+' : ''}${num(v)} ${k}`).join(', ')) : ''}</li>`).join('')}</ul></details>` : ''}
   </section>`;
 }
 function journalLocal(qui, quoi, delta) {
@@ -3104,7 +3184,7 @@ function pageMarche() {
       ${a.notes || bonus.length ? `<details class="marchandise-detail"><summary>Détails</summary>${a.notes ? `<p>${esc(a.notes)}</p>` : ''}${bonus.length ? `<p class="objet-bonus">${bonus.map(x => `<span class="${x.cond ? 'bonus-cond' : 'bonus-objet'}">${R.signe(num(x.val))} ${esc(NOM_CIBLE[x.cible] || x.cible)}</span>`).join('')}</p>` : ''}</details>` : ''}
       ${!epuise && a.aVendre && mes.length ? (ouvert ? `<div class="achat">
           <input type="text" inputmode="numeric" class="s" id="qte-${a.id}" value="1" aria-label="Quantité">
-          <select id="payeur-${a.id}" aria-label="Payer avec">${mes.map(x => `<option value="${x.id}|0">Bourse de ${esc(x.nom)}</option><option value="${x.id}|1">Bourse commune (${esc(x.nom)})</option>`).join('')}</select>
+          <select id="payeur-${a.id}" aria-label="Payer avec">${mes.map(x => `<option value="${x.id}|0">Bourse de ${esc(x.nom)}</option><option value="${x.id}|1">Coffre commun (${esc(x.nom)})</option>`).join('')}</select>
           <button class="btn" data-action="acheter" data-id="${a.id}">Payer</button>
         </div>` : `<button class="btn ghost achat-btn" data-action="achat-ouvrir" data-id="${a.id}">Acheter</button>`) : ''}
       ${mj ? `<div class="mj-article">
@@ -3847,7 +3927,7 @@ async function chargerInfos() {
     let l;
     l = await api('campagne_info?select=*');
     if (l && l[0]) db.combatPublic = l[0].combat || {};
-    if (l && l[0] && l[0].bourse) db.bourseCommune = { bourse: l[0].bourse, porteur_id: l[0].porteur_id || '', journal: l[0].bourse_journal || [] };
+    if (l && l[0] && l[0].bourse) db.bourseCommune = { bourse: l[0].bourse, porteur_id: l[0].porteur_id || '', journal: l[0].bourse_journal || [], objets: l[0].coffre_objets || [] };
     db.conteur = (l && l[0]) || null;
     if (l && l[0] && l[0].jour) db.jour = l[0].jour;
     saveNow();
@@ -4699,6 +4779,11 @@ async function chargerJournal() {
   try { state.journal = await rpc('journal_lire', { p_code: code, p_limite: 300 }) || []; state.journalErreur = ''; }
   catch (e) { state.journalErreur = e.message; }
 }
+/* Le personnage de cet appareil : le dernier ouvert parmi ceux dont on a le code */
+function monPerso() {
+  const mes = db.personnages.filter(x => !x._public && !x.pnjMJ && (!enLigne() || (db.cles || {})[x.id]));
+  return mes.find(x => x.id === db.monPerso) || mes[0] || null;
+}
 const voitJournal = () => estMJ() || !!db.codeCampagne;
 function pageJournalModifs() {
   if (!voitJournal()) return '<section class="card intro"><p class="empty">Réservé au MJ et à l\'administrateur.</p></section>';
@@ -5166,6 +5251,16 @@ function render(garderScroll = true) {
   }
   $('#app').innerHTML = html;
   const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
+  /* Mon personnage, en haut à droite (sauf dans l'espace MJ) */
+  const chip = document.getElementById('mon-perso');
+  if (chip) {
+    const mien = monPerso();
+    chip.hidden = !mien || page === 'mj';
+    if (mien) {
+      chip.href = `#/perso/${mien.id}/fiche`;
+      chip.innerHTML = `${mien.portrait ? `<img src="${mien.portrait}" alt="">` : `<span class="initiale">${esc((mien.nom || '?')[0])}</span>`}<span class="nom">${esc(mien.nom || 'Mon personnage')}</span>`;
+    }
+  }
   const navLog = document.querySelector('[data-nav="log"]');
   if (navLog) navLog.hidden = !voitJournal();
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav || (a.dataset.nav === 'sorts' && nav === 'aptitudes')));
@@ -5195,6 +5290,8 @@ document.addEventListener('input', ev => {
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
     return;
   }
+  if (t.id === 'co-perso') { state.coPerso = t.value; state.coOuvert = true; render(); return; }
+  if (t.id === 'histo-cle') { state.histoCle = t.value; state.histo = null; render(); return; }
   if (['gen-modele', 'gen-niveau', 'gen-race', 'gen-nom', 'gen-nb'].includes(t.id)) {
     const g = state.gen;
     if (t.id === 'gen-modele') g.modele = t.value; else if (t.id === 'gen-niveau') g.niveau = Number(t.value); else if (t.id === 'gen-race') g.race = t.value;
@@ -5341,7 +5438,7 @@ document.addEventListener('input', ev => {
 /* Mémorise les groupes d'inventaire ouverts ou fermés */
 document.addEventListener('click', ev => {
   const sb = ev.target.closest && ev.target.closest('details.bestiaire > summary');
-  if (sb) setTimeout(() => { if (sb.parentElement.classList.contains('generateur')) state.genFerme = !sb.parentElement.open; else state.bestFerme = !sb.parentElement.open; }, 0);
+  if (sb) setTimeout(() => { const d = sb.parentElement; if (d.classList.contains('generateur')) state.genFerme = !d.open; else if (d.querySelector('#histo-cle')) state.histoOuvert = d.open; else state.bestFerme = !d.open; }, 0);
   const sm = ev.target.closest && ev.target.closest('details.groupe-inv-d > summary');
   if (!sm || state.invQ || state.invCat) return;
   const d = sm.parentElement;
@@ -5395,7 +5492,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -6101,6 +6198,14 @@ document.addEventListener('click', ev => {
       break;
     case 'mj-donner': {
       const i = Number(b.dataset.i), obj = mjd().objets[i];
+      if ($('#cible-' + obj.id).value === '__coffre__') {
+        const { source, type, detenteur, ...propre } = obj;
+        const item = { ...propre, id: uid(), deposePar: 'MJ' };
+        const fin = () => { bc().objets = [...(bc().objets || []), item]; mjd().objets.splice(i, 1); saveMJ('objets'); render(); toast(`${obj.nom || 'Objet'} déposé dans le coffre commun`); };
+        if (enLigne()) rpc('coffre_deposer', { p_id: null, p_code: db.codeMJ, p_objet: item }).then(fin).catch(e => alert('Impossible (la base est-elle en v14 ?) : ' + e.message));
+        else fin();
+        break;
+      }
       const cible = findPerso($('#cible-' + obj.id).value);
       if (!cible) break;
       const { source, type, detenteur, ...propre } = obj;
@@ -6117,6 +6222,30 @@ document.addEventListener('click', ev => {
       };
       if (enLigne() && !cible.pnjMJ) rpc('mj_donner_objet', { p_code: db.codeMJ, p_id: cible.id, p_objet: item }).then(fini).catch(e => alert('Impossible : ' + e.message));
       else { fini(); if (cible.pnjMJ) persoModifie(cible); }
+      break;
+    }
+    case 'coffre-deposer': {
+      state.coOuvert = true;
+      const x = findPerso($('#co-perso').value);
+      const it = x && (x.equipement || []).find(o => o.id === $('#co-objet').value);
+      if (!it || !confirm(`Déposer « ${it.nom || 'cet objet'} » dans le coffre commun ?`)) break;
+      const objet = { ...it, equipe: undefined, deposePar: x.nom };
+      const retirer = () => { x.equipement = x.equipement.filter(o => o.id !== it.id); x.maj = Date.now(); saveNow(); persoModifie(x); };
+      if (enLigne()) rpc('coffre_deposer', { p_id: x.id, p_code: codePour(x), p_objet: objet })
+        .then(() => { retirer(); bc().objets = [...(bc().objets || []), objet]; toast(`${it.nom} est dans le coffre`); return actualiser(); })
+        .then(render).catch(e => alert('Impossible (la base est-elle en v14 ?) : ' + e.message));
+      else { retirer(); bc().objets = [...(bc().objets || []), objet]; journalLocal(x.nom, 'dépose ' + (it.nom || 'un objet'), {}); saveNow(); render(); }
+      break;
+    }
+    case 'coffre-prendre': {
+      const x = findPerso(($('#co-perso') || {}).value) || db.personnages.find(y => !y._public && estMembre(y) && (!enLigne() || (db.cles || {})[y.id] || estMJ()));
+      const o = (bc().objets || []).find(y => y.id === b.dataset.id);
+      if (!x || !o || !confirm(`${x.nom} prend « ${o.nom || 'cet objet'} » dans le coffre ?`)) break;
+      const ajouter = obj => { const { deposePar, ...propre } = obj; x.equipement = [...(x.equipement || []), { ...propre, id: uid() }]; x.maj = Date.now(); bc().objets = (bc().objets || []).filter(y => y.id !== o.id); saveNow(); persoModifie(x); };
+      if (enLigne()) rpc('coffre_prendre', { p_id: x.id, p_code: codePour(x), p_objet_id: o.id })
+        .then(obj => { ajouter(obj); toast(`${o.nom} est dans l'inventaire de ${x.nom}`); return actualiser(); })
+        .then(render).catch(e => { alert('Impossible : ' + e.message); actualiser().then(render); });
+      else { ajouter(o); journalLocal(x.nom, 'prend ' + (o.nom || 'un objet'), {}); saveNow(); render(); }
       break;
     }
     case 'bc-deposer':
@@ -6197,7 +6326,7 @@ document.addEventListener('click', ev => {
       const [pid, commune] = $('#payeur-' + art.id).value.split('|');
       const x = findPerso(pid);
       const total = Math.round(nombre(art.prix) * (MULT_PC[art.unite || 'po'] || 100)) * qte;
-      if (!confirm(`Acheter ${qte} × ${art.nom} pour ${prixTxt(total / 100, 'po')} avec ${commune === '1' ? 'la bourse commune' : 'la bourse de ' + x.nom} ?`)) break;
+      if (!confirm(`Acheter ${qte} × ${art.nom} pour ${prixTxt(total / 100, 'po')} avec ${commune === '1' ? 'le coffre commun' : 'la bourse de ' + x.nom} ?`)) break;
       b.disabled = true;
       if (enLigne() && pnjComplet(x)) {
         (async () => {
@@ -6535,6 +6664,27 @@ document.addEventListener('click', ev => {
       saveMJ('combats'); toast(`${n} × ${pnj.nom} → ${cb.nom}`); render();
       break;
     }
+    case 'histo-voir': {
+      const cle = state.histoCle || 'objets';
+      state.histoOuvert = true;
+      rpc('mj_historique_lire', { p_code: db.codeMJ, p_cle: cle })
+        .then(l => { state.histo = { cle, liste: l || [] }; render(); })
+        .catch(e => alert('Historique indisponible (la base est-elle en v13 ?) : ' + e.message));
+      break;
+    }
+    case 'histo-restaurer': {
+      if (!confirm('Restaurer cette version ? La version actuelle restera dans l\'historique, tu pourras y revenir.')) break;
+      rpc('mj_historique_restaurer', { p_code: db.codeMJ, p_id: Number(b.dataset.id) })
+        .then(r => { mjd()[r.cle] = r.data; saveNow(); if (db.versions) delete db.versions.mj; state.histo = null; toast('Version restaurée'); render(); })
+        .catch(e => alert('Restauration impossible : ' + e.message));
+      break;
+    }
+    case 'mj-sauvegarde':
+      download(`sauvegarde-mj-${new Date().toISOString().slice(0, 10)}.json`, { type: 'mj', version: APP_VERSION, date: new Date().toISOString(), mjData: mjd() });
+      break;
+    case 'mj-import-sauvegarde':
+      $('#mj-import-fichier').value = ''; $('#mj-import-fichier').click();
+      break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -6671,6 +6821,31 @@ async function reduireImage(file, max, type) {
     URL.revokeObjectURL(url);
   }
 }
+/* Import d'une sauvegarde du MJ : un fichier « sauvegarde-mj », ou une copie brute des données d'un appareil.
+   Les listes sont fusionnées (rien n'est supprimé) et envoyées dans la base. */
+document.addEventListener('change', async ev => {
+  if (ev.target.id !== 'mj-import-fichier' || !ev.target.files[0] || !estMJ()) return;
+  try {
+    let txt = await ev.target.files[0].text();
+    txt = txt.trim().replace(/^"|"$/g, '');
+    let o; try { o = JSON.parse(txt); } catch (e) { o = JSON.parse(JSON.parse('"' + txt + '"')); }
+    if (typeof o === 'string') o = JSON.parse(o);
+    const src = o.mjData || (o.type === 'mj' ? o.mjData : null);
+    if (!src) throw new Error('aucune donnée du MJ dans ce fichier');
+    const m = mjd(); const bilan = [];
+    for (const [k, v] of Object.entries(src)) {
+      if (Array.isArray(v)) {
+        const cur = Array.isArray(m[k]) ? m[k] : [];
+        const ids = new Set(cur.map(x => x && x.id));
+        const ajout = v.filter(x => x && !ids.has(x.id));
+        if (ajout.length) { m[k] = [...cur, ...ajout]; saveMJ(k); bilan.push(`${ajout.length} dans « ${k} »`); }
+      } else if (k.startsWith('session:') && !m[k]) { m[k] = v; saveMJ(k); bilan.push(`session ${v.numero || ''}`); }
+    }
+    render();
+    alert(bilan.length ? `Récupéré : ${bilan.join(', ')}.` : 'Rien de nouveau dans ce fichier : tout y était déjà.');
+  } catch (e) { alert('Import impossible : ' + e.message); }
+});
+
 $('#imginput').addEventListener('change', async ev => {
   const file = ev.target.files[0];
   const p = state.ctx;
@@ -6742,12 +6917,23 @@ async function actualiser(manuel = false) {
     await chargerClasses();
     if (manuel) statutSync(state.syncErreur ? 'Hors ligne' : 'À jour');
     /* On ne redessine pas sous les doigts de quelqu'un qui est en train d'écrire */
-    if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette && !state.mjEdit) render();
+    if (!enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette && !state.mjEdit) { state.renduDiffere = false; render(); }
+    else state.renduDiffere = true;
   } finally {
     actualisationEnCours = false;
   }
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') actualiser(); });
+/* Au retour sur l'appli (y compris sur iPhone, où le minuteur s'arrête en arrière-plan) */
+let derniereActu = 0;
+const actuRetour = () => { if (document.visibilityState === 'visible' && Date.now() - derniereActu > 5000) { derniereActu = Date.now(); actualiser(); } };
+document.addEventListener('visibilitychange', actuRetour);
+window.addEventListener('pageshow', actuRetour);
+window.addEventListener('focus', actuRetour);
+window.addEventListener('online', actuRetour);
+/* Les nouveautés arrivées pendant une saisie s'affichent dès que la saisie est terminée */
+document.addEventListener('focusout', () => setTimeout(() => {
+  if (state.renduDiffere && !enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette && !state.mjEdit) { state.renduDiffere = false; render(); }
+}, 400));
 /* Toutes les 15 s dans l'espace MJ, 30 s sur une fiche, 60 s ailleurs */
 let tic = 0;
 setInterval(() => {
