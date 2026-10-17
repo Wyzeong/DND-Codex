@@ -1483,3 +1483,8 @@ select.unite { flex: 0 0 auto; width: auto; min-width: 6.5rem; }
 .badge-perso a { color: inherit; }
 .fiche-carte.quete-perso { border-left-color: #5E9ED6; }
 .quetes-de { margin: .6rem 0 .3rem; color: #9FD4F0; font-size: .9rem; }
+.am-ligne { grid-template-columns: 4.2rem minmax(0, 1fr) 7.5rem minmax(0, 1fr) auto; }
+.am-ligne.malus input.s { color: var(--rouge-clair); }
+@media (max-width: 560px) { .am-ligne { grid-template-columns: 4.2rem minmax(0, 1fr) auto; } .am-ligne select[data-bind$=".permanent"], .am-ligne input[data-bind$=".note"] { grid-column: 1 / -1; } }
+.am-lecture { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .25rem 0; }
+.am-lecture small { color: var(--muted); }

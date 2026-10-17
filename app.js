@@ -934,20 +934,26 @@ function puceEtats(p, max = 6) {
   if (!l.length) return '';
   return `<div class="etats-puces">${l.slice(0, max).map(x => `<span class="etat-puce ${gravite(x)}" title="${esc(x.description || '')}">${esc(x.nom)}</span>`).join('')}${l.length > max ? `<span class="etat-puce">+${l.length - max}</span>` : ''}</div>`;
 }
-/* Améliorations temporaires : +4 CA, +2 For… comptées dans toute la fiche */
+/* Bonus et malus : +4 CA, −2 For… temporaires ou permanents, comptés dans toute la fiche.
+   Ceux accordés par le MJ ne peuvent être modifiés ou retirés que par lui. */
 function ficheAmeliorations(p) {
   const mod = peutModifier(p);
+  const mj = estMJ() || !enLigne();
   const l = p.ameliorations || [];
   if (!l.length && !mod) return '';
   const opts = cur => CIBLES_BONUS.map(([g, li]) => `<optgroup label="${g}">${li.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
-  return `<section class="card ameliorations"><h3>Améliorations temporaires</h3>
-    ${l.length ? `<div class="am-liste">${l.map((am, i) => mod ? `<div class="am-ligne">
-        <input type="text" inputmode="numeric" class="s" data-bind="ameliorations.${i}.val" data-recalc value="${esc(am.val)}" aria-label="Valeur">
-        <select data-bind="ameliorations.${i}.cible" data-rerender aria-label="Ce qui est amélioré"><option value="">— Choisir —</option>${opts(am.cible)}</select>
-        <input type="text" data-bind="ameliorations.${i}.note" value="${esc(am.note)}" placeholder="Origine (sort, potion…)" aria-label="Origine">
+  const lecture = am => `<p class="am-lecture"><span class="${num(am.val) < 0 ? 'malus-etat' : 'bonus-objet'}">${R.signe(num(am.val))} ${esc(NOM_CIBLE[am.cible] || am.cible)}</span>
+    <span class="tag-cat">${am.permanent ? 'Permanent' : 'Temporaire'}</span>${am.parMJ ? '<span class="tag-cat tag-mj">accordé par le MJ</span>' : ''}${am.note ? ` <small>${esc(am.note)}</small>` : ''}</p>`;
+  return `<section class="card ameliorations"><h3>Bonus et malus</h3>
+    ${l.length ? `<div class="am-liste">${l.map((am, i) => mod && (mj || !am.parMJ) ? `<div class="am-ligne ${num(am.val) < 0 ? 'malus' : ''}">
+        <input type="text" inputmode="numeric" class="s" data-bind="ameliorations.${i}.val" data-recalc value="${esc(am.val)}" placeholder="+2 / −2" aria-label="Valeur (négative pour un malus)">
+        <select data-bind="ameliorations.${i}.cible" data-rerender aria-label="Ce qui est modifié"><option value="">— Choisir —</option>${opts(am.cible)}</select>
+        <select data-bind="ameliorations.${i}.permanent" data-rerender aria-label="Durée"><option value="" ${am.permanent ? '' : 'selected'}>Temporaire</option><option value="1" ${am.permanent ? 'selected' : ''}>Permanent</option></select>
+        <input type="text" data-bind="ameliorations.${i}.note" value="${esc(am.note)}" placeholder="Origine (sort, malédiction, récompense…)" aria-label="Origine">
         <button class="icon" data-action="am-suppr" data-idx="${i}" aria-label="Retirer">✕</button>
-      </div>` : `<p><span class="bonus-objet">${R.signe(num(am.val))} ${esc(NOM_CIBLE[am.cible] || am.cible)}</span>${am.note ? ` <small>${esc(am.note)}</small>` : ''}</p>`).join('')}</div>` : '<p class="hint">Aucune. Ajoute ici un bonus passager (« +4 CA », « +2 Force »…) : il est compté partout sur la fiche tant qu\'il est là.</p>'}
-    ${mod ? '<button class="btn ghost petit" data-action="am-ajout">+ Amélioration</button>' : ''}
+      </div>` : lecture(am)).join('')}</div>` : '<p class="hint">Aucun. Ajoute ici un bonus ou un malus (« +4 CA », « −2 Force »…) : il est compté partout sur la fiche tant qu\'il est là.</p>'}
+    ${mod ? `<div class="btns"><button class="btn ghost petit" data-action="am-ajout">+ Bonus</button><button class="btn ghost petit" data-action="am-ajout" data-malus="1">+ Malus</button></div>
+      <p class="hint">Une valeur négative est un malus.${estMJ() && enLigne() ? ' Ceux que tu ajoutes sont « accordés par le MJ » : le joueur les voit mais ne peut ni les modifier ni les retirer.' : ''}</p>` : ''}
   </section>`;
 }
 function ficheEtats(p) {
@@ -1067,7 +1073,7 @@ function ligneObjetVue(it, i, items, modifiable) {
   const det = detailsObjet(it, items);
   const chipBonus = b => b.cond
     ? `<span class="bonus-cond" title="${esc(b.quand || 'sous condition')}">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}* <small>(${esc(b.quand || 'sous condition')})</small></span>`
-    : `<span class="bonus-objet">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`;
+    : `<span class="${num(b.val) < 0 ? 'malus-etat' : 'bonus-objet'}">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`;
   return `<div class="objet-vue ${bonus.length && it.equipe === false ? 'range' : ''} ${it.focalisateur ? 'focalisateur' : ''} ${it.image ? 'avec-image' : ''}">
     ${it.image ? `<button class="vignette" data-action="img-zoom" data-src="${it.image}" aria-label="Agrandir l'image de ${esc(it.nom || 'l\'objet')}"><img src="${it.image}" alt=""></button>` : ''}
     <div class="objet-vue-tete">
@@ -1237,7 +1243,7 @@ function ligneObjetEdition(p, it, i) {
         ${b.cond ? `<input type="text" class="cond-quand" data-bind="equipement.${i}.bonus.${j}.quand" data-recalc value="${esc(b.quand)}" placeholder="Quand ? (ex. uniquement la nuit)" aria-label="Condition">` : ''}
       </div>`).join('')}
       <div class="objet-pied">
-        <button class="lien" data-action="add-bonus" data-idx="${i}">+ Bonus de statistique</button>
+        <button class="lien" data-action="add-bonus" data-idx="${i}">+ Bonus ou malus</button><span class="hint"> (valeur négative pour un malus)</span>
         ${(bonus.length || ['vetement', 'magique', 'babiole'].includes(it.cat)) && it.cat !== 'armure' && it.cat !== 'bouclier' ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.equipe" data-rerender ${it.equipe === false ? '' : 'checked'}> ${['vetement', 'magique', 'babiole'].includes(it.cat) ? 'Porté' : 'Équipé'}</label>` : ''}
       </div>
       <button class="btn" data-action="objet-fin">Terminé</button>
@@ -5547,10 +5553,12 @@ document.addEventListener('input', ev => {
   if (state.ctx === state.editFicheObj && path === 'extra.persoId') state.ctx.extra = { ...(state.ctx.extra || {}), persoNom: findPerso(t.value)?.nom || '' };
   /* Valider un niveau est réservé au MJ (le joueur le prépare seulement) */
   if (/^progression\.\d+\.atteint$/.test(path) && enLigne() && !estMJ() && db.personnages.includes(state.ctx)) { t.checked = !t.checked; toast('C\'est le MJ qui valide le passage de niveau.'); return; }
+  const mAm = path.match(/^ameliorations\.(\d+)\./);
+  if (mAm && enLigne() && !estMJ() && state.ctx.ameliorations?.[Number(mAm[1])]?.parMJ) return;
   setP(state.ctx, path, t.type === 'checkbox' ? t.checked : t.value);
   if (state.ctx === state.draft) return; // le sort n'est enregistré qu'au clic sur le bouton
   if (estMJ() && enLigne() && db.personnages.includes(state.ctx) && !state.ctx.pnjMJ) {
-    state.ctx.mjChamps = { ...(state.ctx.mjChamps || {}), [path]: Date.now() };
+    state.ctx.mjChamps = { ...(state.ctx.mjChamps || {}), [path.startsWith('ameliorations.') ? 'ameliorations' : path]: Date.now() };
     state.ctx.mjMaj = Date.now();
   }
   state.ctx.maj = Date.now();
@@ -6825,12 +6833,22 @@ document.addEventListener('click', ev => {
       toast(l.map(([x, v]) => `${x.nom} : niveau ${v}`).join(' · ')); render();
       break;
     }
-    case 'am-ajout':
-      p.ameliorations = [...(p.ameliorations || []), { id: uid(), cible: 'caParade', val: '', note: '' }]; save(); render();
+    case 'am-ajout': {
+      const am = { id: uid(), cible: 'caParade', val: b.dataset.malus ? '-1' : '', note: '', permanent: '' };
+      if (estMJ() && enLigne()) am.parMJ = true;
+      p.ameliorations = [...(p.ameliorations || []), am];
+      if (estMJ() && enLigne()) { p.mjChamps = { ...(p.mjChamps || {}), ameliorations: Date.now() }; p.mjMaj = Date.now(); }
+      save(); render();
       break;
-    case 'am-suppr':
-      p.ameliorations.splice(idx, 1); save(); render();
+    }
+    case 'am-suppr': {
+      const am = p.ameliorations[idx];
+      if (am?.parMJ && enLigne() && !estMJ()) { toast('Seul le MJ peut retirer ce bonus ou malus.'); break; }
+      p.ameliorations.splice(idx, 1);
+      if (estMJ() && enLigne()) { p.mjChamps = { ...(p.mjChamps || {}), ameliorations: Date.now() }; p.mjMaj = Date.now(); }
+      save(); render();
       break;
+    }
     case 'ajout-pnj-voir':
       state.ajoutPNJ = $('#ajout-pnj').value; render();
       break;
