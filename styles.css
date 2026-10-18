@@ -1603,3 +1603,7 @@ h3 { position: relative; }
 .mun-ligne .btn.petit { padding: .15rem .5rem; font-size: .75rem; }
 .arme .action-type { font-size: .7rem; margin: 0 0 .15rem; }
 .arme small.crit { color: var(--muted); white-space: nowrap; } .arme small.crit::before { content: 'crit. '; }
+.choix-don { margin: .3rem 0 .2rem; }
+.choix-don.a-choisir select { border-color: var(--bronze); }
+.choix-don > span { color: var(--bronze-clair); }
+.liee.petit { font-size: .78rem; color: var(--muted); margin: .2rem 0 0; }

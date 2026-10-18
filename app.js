@@ -408,6 +408,36 @@ function migrerClassesDesFiches() {
   }
   if (n) { saveNow(); enregistrerClassesCommunes(); if (enLigne()) envoyerClasses(); }
 }
+/* Dons qui portent sur un choix (arme, école, compétence) */
+const CHOIX_DONS = {
+  'arme-predilection': 'arme', 'arme-predilection-superieure': 'arme', 'specialisation-martiale': 'arme', 'specialisation-superieure': 'arme',
+  'science-critique': 'arme', 'maniement-arme-exotique': 'arme', 'ecole-renforcee': 'ecole', 'ecole-renforcee-superieure': 'ecole', 'talent': 'competence',
+};
+function optionsChoixDon(type) {
+  if (type === 'arme') return [['mains-nues', 'Combat à mains nues (et membres du corps)'], ['lutte', 'Lutte'], ['rayon', 'Rayons (sorts)'], ...R.ARMES.map(a => [a.id, a.nom])];
+  if (type === 'ecole') return ECOLES.filter(x => x !== 'Universel').map(x => [x, x]);
+  return R.COMPETENCES.map(c => [c.id, c.nom]);
+}
+/* Choix faits pour chaque don, dans l'ordre où le don a été pris (un même don peut être pris plusieurs fois) */
+function choixDesDons(p, e) {
+  const res = {}, vus = {};
+  for (const x of e.donsListe) {
+    if (!CHOIX_DONS[x.id]) continue;
+    const n = vus[x.id] = (vus[x.id] || 0) + 1;
+    const v = (p.choixDons || {})[`${x.id}#${n}`];
+    if (v) (res[x.id] = res[x.id] || new Set()).add(v);
+  }
+  return res;
+}
+const ddEcole = (e, ecole) => (aChoix(e, 'ecole-renforcee', ecole) ? 1 : 0) + (aChoix(e, 'ecole-renforcee-superieure', ecole) ? 1 : 0);
+const aChoix = (e, don, v) => !!(e.choix && e.choix[don] && e.choix[don].has(v));
+/* Science du critique : zone de critique doublée (19-20 → 17-20 ; 20 → 19-20) */
+function critDouble(crit) {
+  const m = String(crit || '20/×2').match(/^(\d+)(?:-20)?\s*\/\s*(.+)$/);
+  if (!m) return crit;
+  const bas = Number(m[1]), taille = 21 - bas, nb = 21 - taille * 2;
+  return `${nb}-20/${m[2]}`;
+}
 function etat(p, n, prevus = false, sauf = null) {
   enregistrerPrestigesPerso(p);
   const tous = [...(p.progression || [])].sort((a, b) => a.niveau - b.niveau);
@@ -473,6 +503,7 @@ function etat(p, n, prevus = false, sauf = null) {
     if (!lc) return 0;
     return lc.debut ? (k >= lc.debut ? Math.floor(k / 2) : 0) : k;
   }));
+  e.choix = choixDesDons(p, e);
   return e;
 }
 
@@ -541,6 +572,7 @@ const BONUS_DONS_COMP = {
   'affinite-magique': ['art-magie', 'utilisation-objets'], negociation: ['diplomatie', 'psychologie'], 'doigts-de-fee': ['desamorcage', 'crochetage'],
   persuasion: ['bluff', 'intimidation'], autonome: ['premiers-secours', 'survie'], discret: ['discretion', 'deplacement-silencieux'],
 };
+function bonusCompChoix(id, e) { return aChoix(e, 'talent', id) ? 3 : 0; }
 function bonusComp(id, e) {
   let b = e.race?.comp?.[id] || 0;
   for (const [d, l] of Object.entries(BONUS_DONS_COMP)) if (e.dons.has(d) && l.includes(id)) b += 2;
@@ -1194,8 +1226,7 @@ function ligneObjetEdition(p, it, i) {
         <input type="text" data-bind="equipement.${i}.degats" data-recalc value="${esc(it.degats)}" placeholder="Dégâts (1d8)" aria-label="Dégâts">
         <input type="text" data-bind="equipement.${i}.critique" value="${esc(it.critique)}" placeholder="Critique (19-20/×2)" aria-label="Critique">
         <input type="text" data-bind="equipement.${i}.portee" value="${esc(it.portee)}" placeholder="Portée (24 m)" aria-label="Portée">
-        ${e.dons.has('arme-predilection') ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.predilection" data-rerender ${it.predilection ? 'checked' : ''}> Arme de prédilection</label>` : ''}
-        ${e.dons.has('specialisation-martiale') ? `<label class="check"><input type="checkbox" data-bind="equipement.${i}.specialisation" data-rerender ${it.specialisation ? 'checked' : ''}> Spécialisation martiale</label>` : ''}
+        ${e.dons.has('arme-predilection') || e.dons.has('specialisation-martiale') ? '<p class="hint ligne-entiere">Arme de prédilection, Spécialisation martiale, Science du critique : l\'arme concernée se choisit sur la carte du don (Fiche, Dons) et s\'applique toute seule.</p>' : ''}
       </div>` : it.cat === 'armure' || it.cat === 'bouclier' ? (() => {
         const refA = R.ARMURE[it.armureType];
         const liste = it.cat === 'bouclier'
@@ -1266,7 +1297,7 @@ function ligneComp(e, c, v, base, opts) {
   const mod = c.car ? e.mods[c.car] : 0;
   const malusArm = !perso && MALUS_ARMURE.has(c.id) ? (e.objets.acp || 0) * (c.id === 'natation' ? 2 : 1) : 0;
   const bonusObjet = perso ? 0 : (e.objets.tot['comp:' + c.id] || 0);
-  const bonus = (perso ? 0 : bonusComp(c.id, e)) + malusArm + bonusObjet;
+  const bonus = (perso ? 0 : bonusComp(c.id, e) + bonusCompChoix(c.id, e)) + malusArm + bonusObjet;
   const total = rangs + mod + bonus + num(v.divers);
   const inutilisable = c.formation && rangs === 0;
   const spe = !perso && ['artisanat', 'profession', 'representation', 'langue'].includes(c.id);
@@ -1330,9 +1361,9 @@ function infosMainsNues(p, e, st) {
     ? [[1, '1d4'], [4, '1d6'], [8, '1d8'], [12, '1d10'], [16, '2d6'], [20, '2d8']]
     : [[1, '1d6'], [4, '1d8'], [8, '1d10'], [12, '2d6'], [16, '2d8'], [20, '2d10']]) : (petit ? '1d2' : '1d3');
   const fo = e.mods.for;
-  const bonD = fo + (e.objets.tot.degats || 0);
+  const bonD = fo + (e.objets.tot.degats || 0) + (aChoix(e, 'specialisation-martiale', 'mains-nues') ? 2 : 0) + (aChoix(e, 'specialisation-superieure', 'mains-nues') ? 2 : 0);
   const degats = `${de}${bonD ? R.signe(bonD) : ''}`;
-  const prediMN = p.predMainsNues && e.dons.has('arme-predilection') ? 1 + (e.dons.has('arme-predilection-superieure') ? 1 : 0) : 0;
+  const prediMN = (aChoix(e, 'arme-predilection', 'mains-nues') || (!e.choix?.['arme-predilection'] && p.predMainsNues && e.dons.has('arme-predilection')) ? 1 : 0) + (aChoix(e, 'arme-predilection-superieure', 'mains-nues') ? 1 : 0);
   const toucher = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods.for + (R.TAILLES[e.taille]?.ca || 0) + prediMN);
   let deluge = null;
   if (mDel) {
@@ -1342,7 +1373,7 @@ function infosMainsNues(p, e, st) {
     if (mDel >= 11) liste.unshift(base[0]);
     deluge = { liste, pen };
   }
-  return { de, degats, toucher, deluge };
+  return { de, degats, toucher, deluge, predi: prediMN };
 }
 
 /* Ressources qui se rechargent chaque nuit */
@@ -1423,8 +1454,13 @@ function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
   const finessable = !dist && (prise === 'legere' || ref?.finesse);
   const finesse = finessable && e.dons.has('attaque-finesse') && e.mods.dex > e.mods.for;
   const carAtt = dist || finesse ? 'dex' : 'for';
-  const predi = (it.predilection || (it.membre && p.predMainsNues)) && e.dons.has('arme-predilection') ? 1 + (e.dons.has('arme-predilection-superieure') ? 1 : 0) : 0;
-  const spe = it.specialisation && e.dons.has('specialisation-martiale') ? 2 + (e.dons.has('specialisation-superieure') ? 2 : 0) : 0;
+  const cleArme = it.membre ? 'mains-nues' : it.armeType;
+  const choixFaits = e.choix && Object.keys(e.choix).length;
+  const predi = (aChoix(e, 'arme-predilection', cleArme) || (!e.choix?.['arme-predilection'] && (it.predilection || (it.membre && p.predMainsNues)) && e.dons.has('arme-predilection')) ? 1 : 0)
+    + (aChoix(e, 'arme-predilection-superieure', cleArme) ? 1 : 0);
+  const spe = (aChoix(e, 'specialisation-martiale', cleArme) || (!e.choix?.['specialisation-martiale'] && it.specialisation && e.dons.has('specialisation-martiale')) ? 2 : 0)
+    + (aChoix(e, 'specialisation-superieure', cleArme) ? 2 : 0);
+  const critArme = aChoix(e, 'science-critique', cleArme) ? critDouble(it.critique || ref?.crit || '20/×2') : (it.critique || ref?.crit || (it.membre ? '20/×2' : ''));
   const tou = R.attaques(Math.max(0, st.bba)).map(x => x + e.mods[carAtt] + taille + predi);
   /* Force aux dégâts : ×1,5 à deux mains, normale au corps à corps et pour les armes de jet */
   const carDeg = it.carDegats || 'for';
@@ -1463,7 +1499,7 @@ function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
     <div class="arme-tete"><b title="${esc(titre)}">${esc(it.nom || (ref ? ref.nom : 'Arme'))}</b><span class="tag-mode">${it.membre ? 'mains nues' : [it.nom && ref ? ref.nom : '', dist ? 'distance' : (R.PRISES[prise] || '').toLowerCase(), ref?.moine ? 'moine' : ''].filter(Boolean).join(' · ')}</span></div>
     <dl class="arme-stats">
       <dt>Pour toucher</dt><dd><span class="gros">${R.signe(tou[0])}</span>${tou.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(tou)})</small>` : ''}</dd>
-      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${noteDeg}${it.critique || ref?.crit || it.membre ? ` <small class="crit" title="Critique">${esc(it.critique || ref?.crit || '20/×2')}</small>` : ''}</dd>
+      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${noteDeg}${critArme ? ` <small class="crit" title="Critique">${esc(critArme)}</small>` : ''}</dd>
       ${it.portee || (dist && ref?.portee) ? `<dt>Portée</dt><dd>${esc(it.portee || ref.portee)}</dd>` : ''}
     </dl>
     ${liees.length ? `<details class="arme-plus"><summary>${liees.length} règle${liees.length > 1 ? 's' : ''} liée${liees.length > 1 ? 's' : ''}</summary>${liees.join('')}</details>` : ''}
@@ -1513,9 +1549,9 @@ function ficheCombat(p, e) {
         <div class="arme-tete"><b>Combat à mains nues</b><span class="tag-mode">Corps à corps</span></div>
         <dl class="arme-stats">
           <dt>Pour toucher</dt><dd><span class="gros">${R.signe(mn.toucher[0])}</span>${mn.toucher.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(mn.toucher)})</small>` : ''}</dd>
-          <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span> <small class="crit" title="Critique">20/×2</small></dd>
+          <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span> <small class="crit" title="Critique">${aChoix(e, 'science-critique', 'mains-nues') ? '19-20/×2' : '20/×2'}</small></dd>
         </dl>
-        ${e.dons.has('arme-predilection') && peutModifier(p) ? `<details class="arme-plus"><summary>Réglages</summary><label class="check petit-check"><input type="checkbox" data-bind="predMainsNues" data-rerender ${p.predMainsNues ? 'checked' : ''}> Mon Arme de prédilection porte sur le combat à mains nues (s'applique aussi aux membres du corps)</label></details>` : ''}
+        ${mn.predi || aChoix(e, 'specialisation-martiale', 'mains-nues') ? `<p class="liee petit">${[mn.predi ? `Arme de prédilection ${R.signe(mn.predi)}` : '', aChoix(e, 'specialisation-martiale', 'mains-nues') ? 'Spécialisation martiale' : ''].filter(Boolean).join(' · ')} : inclus.</p>` : ''}
 
 
       </div>` : '';
@@ -1556,7 +1592,7 @@ function ficheCombat(p, e) {
         <div class="sort-c-tete"><b>${esc(s.nom)}</b>
           ${infini ? '<span class="reste">∞ à volonté</span>' : max ? `<span class="reste">${reste} / ${max}</span>` : ''}</div>
         <p class="usages">${tagsUsages(s)}</p>
-        <details class="effet"><summary>${esc(s.ecole)}${s.portee ? ', ' + esc(s.portee.split(' (')[0]) : ''} : voir l'effet</summary>
+        <details class="effet"><summary>${esc(s.ecole)}${ddEcole(e, s.ecole) ? ` <span class="tag-cat" title="École renforcée">DD ${R.signe(ddEcole(e, s.ecole))}</span>` : ''}${s.portee ? ', ' + esc(s.portee.split(' (')[0]) : ''} : voir l'effet</summary>
           <p>${esc(s.description || '')}</p>
           <dl class="fiche-sort">${[['Temps', s.incantation], ['Portée', s.portee], ['Cible', s.cible], ['Durée', s.duree], ['Jet de sauvegarde', s.sauvegarde], ['Résistance à la magie', s.rm]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
         </details>
@@ -3457,11 +3493,18 @@ function ficheCompetences(p, e) {
   </section>`;
 }
 
-function carteDon(d, e, p, source, libre = false) {
+function carteDon(d, e, p, source, libre = false, cleChoix = '') {
   const pr = libre ? { ok: true, txt: 'ne s\'appliquent pas (don accordé par la classe)' } : prerequis(d, e, p);
   const calc = d.calc ? d.calc(e) : '';
   return `<div class="don">
     <div class="don-tete"><b>${esc(d.nom)}</b> <span class="type-don">${R.TYPES_DONS[d.type]}</span>${source ? `<span class="source">${esc(source)}</span>` : ''}</div>
+    ${CHOIX_DONS[d.id] && cleChoix ? (() => {
+      const cur = (p.choixDons || {})[cleChoix] || '';
+      const libelle = { arme: 'Arme choisie', ecole: 'École choisie', competence: 'Compétence choisie' }[CHOIX_DONS[d.id]];
+      return peutModifier(p)
+        ? `<label class="f choix-don ${cur ? '' : 'a-choisir'}"><span>${libelle}</span><select data-choix-don="${esc(cleChoix)}"><option value="">— À choisir —</option>${optionsChoixDon(CHOIX_DONS[d.id]).map(([v, l]) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`
+        : `<p class="choix-don"><b>${libelle} :</b> ${esc((optionsChoixDon(CHOIX_DONS[d.id]).find(o => o[0] === cur) || [, '—'])[1])}</p>`;
+    })() : ''}
     <p>${esc(d.texte)}</p>
     ${calc ? `<p class="calcul">${esc(calc)}</p>` : ''}
     <p class="prereq ${pr.ok ? '' : 'ko'}">Prérequis : ${esc(pr.txt)}${pr.ok ? '' : ` (manque : ${esc(pr.manque.join(', '))})`}</p>
@@ -3469,7 +3512,8 @@ function carteDon(d, e, p, source, libre = false) {
 }
 
 function ficheDons(p, e) {
-  const cartes = e.donsListe.map(x => carteDon(R.DON[x.id], e, p, x.source, x.libre)).join('');
+  const vus = {};
+  const cartes = e.donsListe.map(x => { const n = vus[x.id] = (vus[x.id] || 0) + 1; return carteDon(R.DON[x.id], e, p, x.source, x.libre, CHOIX_DONS[x.id] ? `${x.id}#${n}` : ''); }).join('');
   const dejaSupp = new Set(p.donsSupp || []);
   return `<section class="card"><h3>Dons</h3>
     <div class="dons">${cartes || '<p class="empty">Aucun don pour l\'instant. Ils se choisissent niveau par niveau dans l\'onglet Progression.</p>'}</div>
@@ -3588,7 +3632,7 @@ function ongletSorts(p) {
   const nonRelies = items.filter(({ e }) => etatFocal(p, e) === 'non-relie').length;
   const linked = items.map(({ e, i, s }) => `
     <div class="item ${ecoleClass(s?.ecole)} focal-${etatFocal(p, e)}">
-      <div>${s ? `<a href="#/sort/${s.id}">${esc(s.nom)}</a><span class="meta">${esc(s.ecole)}, ${esc(niveauxTxt(s))}</span><span class="usages">${tagsUsages(s)}</span>`
+      <div>${s ? `<a href="#/sort/${s.id}">${esc(s.nom)}</a><span class="meta">${esc(s.ecole)}${ddEcole(e, s.ecole) ? ` (DD ${R.signe(ddEcole(e, s.ecole))})` : ''}, ${esc(niveauxTxt(s))}</span><span class="usages">${tagsUsages(s)}</span>`
         : '<em>Sort supprimé du grimoire</em>'}</div>
       <select data-bind="sorts.${i}.statut" aria-label="Statut">
         ${STATUTS.map(st => `<option ${e.statut === st ? 'selected' : ''}>${st}</option>`).join('')}
@@ -5507,6 +5551,13 @@ document.addEventListener('input', ev => {
   }
 });
 document.addEventListener('change', ev => {
+  if (ev.target.dataset && ev.target.dataset.choixDon && state.ctx && db.personnages.includes(state.ctx)) {
+    const p = state.ctx;
+    p.choixDons = { ...(p.choixDons || {}), [ev.target.dataset.choixDon]: ev.target.value };
+    if (estMJ() && enLigne() && !p.pnjMJ) { p.mjChamps = { ...(p.mjChamps || {}), choixDons: Date.now() }; p.mjMaj = Date.now(); }
+    save(); render();
+    return;
+  }
   if (ev.target.id === 'bulle-session') { db.sessionBulle = ev.target.value; saveNow(); state.bulleRedessiner = true; majBulle(); }
 });
 document.addEventListener('click', ev => {
