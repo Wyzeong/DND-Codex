@@ -4695,6 +4695,7 @@ function noteHtml(n, i, s, editable) {
   </li>`;
 }
 
+function remettreBulle() { return db.bulleNotes === false && monPerso() ? `<p class="hint">La bulle de notes est masquée. <button class="lien" data-action="bulle-remettre">L'afficher de nouveau</button></p>` : ''; }
 function pageNotes(mode, q) {
   if (mode === 'recherche' && q != null) state.jq = decodeURIComponent(q);
   const carnet = carnetActif();
@@ -4714,7 +4715,7 @@ function pageNotes(mode, q) {
   }
   const sessions = sessionsTriees();
   const mine = mesPersos();
-  return `${sousNav('notes')}
+  return `${sousNav('notes')}${remettreBulle()}
   <div class="pagehead">
     <div><h1>Mes notes</h1><p class="sub">${enLigne() ? `Carnet de ${esc(findPerso(carnet)?.nom || '')}, visible de toi seul` : 'Personnelles : elles restent sur cet appareil'}</p></div>
     <div class="btns">
@@ -4779,6 +4780,10 @@ function pageSession(id) {
     </div>
   </section>
 
+  <section class="card"><h3>Notes libres</h3>
+    <textarea data-bind="texte" rows="4" placeholder="Tout ce que tu veux noter, en vrac : ce bloc est le même que celui de la bulle de notes.">${esc(s.texte || '')}</textarea>
+    <p class="hint aide">Ce bloc est aussi accessible depuis la bulle 📝, sur toutes les pages, sans quitter ta fiche. Les boutons PNJ, Lieu, Quête et Objet de la bulle y insèrent un nom de l'encyclopédie.</p>
+  </section>
   <section class="card saisie"><h3>Prise de notes</h3>
     <div class="chips types" role="group" aria-label="Type de la prochaine note">
       ${Object.entries(TYPES_NOTES).map(([k, l]) => `<button class="chip note-${k} ${type === k ? 'on' : ''}" data-action="type-note" data-type="${k}" aria-pressed="${type === k}">${l}</button>`).join('')}
@@ -4810,6 +4815,7 @@ function brouillonRecap(s) {
     'La dernière fois…', '', '(Écris ici le récit à lire en début de session, puis supprime les listes ci-dessous.)', '',
     ...bloc('Quêtes', 'quete'), ...bloc('Indices', 'indice'), ...bloc('PNJ', 'pnj'), ...bloc('Lieux', 'lieu'),
     ...bloc('Butin', 'butin'), ...bloc('Questions en suspens', 'question'), ...bloc('Autres notes', 'note'),
+    ...(String(s.texte || '').trim() ? ['Notes libres', sansMentions(s.texte).trim(), ''] : []),
   ].join('\n').trim();
 }
 
@@ -5425,6 +5431,106 @@ function restaurerDetails(racine, m) {
     if (etat !== undefined) d.open = etat;
   }
 }
+/* Les zones de texte prennent la hauteur de leur contenu : plus besoin de les agrandir à la main */
+function ajusterTexte(t) {
+  if (!t || t.offsetParent === null) return;
+  t.style.height = 'auto';
+  t.style.height = (t.scrollHeight + 2) + 'px';
+}
+function ajusterTextes(racine) { if (racine) racine.querySelectorAll('textarea').forEach(ajusterTexte); }
+document.addEventListener('input', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target); });
+document.addEventListener('toggle', ev => { if (ev.target.tagName === 'DETAILS' && ev.target.open) ajusterTextes(ev.target); }, true);
+window.addEventListener('resize', () => ajusterTextes($('#app')));
+/* ===== Bulle de notes : un bloc de texte par séance, accessible sur toutes les pages ===== */
+const TYPES_INSERTION = [['pnj', 'PNJ'], ['lieu', 'Lieu'], ['quete', 'Quête'], ['objet', 'Objet'], ['faction', 'Faction']];
+function sessionBulle() {
+  const mien = monPerso();
+  if (!mien) return null;
+  const l = sessionsTriees().filter(x => x.persoId === mien.id || (!enLigne() && !x.persoId));
+  return l.find(x => x.id === db.sessionBulle) || l[0] || null;
+}
+function nomsInsertion(type, q) {
+  const qq = norm(q || '');
+  let noms = fichesToutes().filter(f => f.type === type || (type === 'pnj' && f.type === 'pj')).map(f => f.nom);
+  if (type === 'pnj') noms = [...noms, ...db.personnages.filter(x => !x._public || x.nom).map(x => x.nom)];
+  noms = [...new Set(noms.filter(Boolean))].filter(n => !qq || norm(n).includes(qq)).sort((a, b) => a.localeCompare(b, 'fr'));
+  return noms.slice(0, 40);
+}
+function majBulle() {
+  const z = document.getElementById('bulle-notes');
+  if (!z) return;
+  const page = (location.hash.split('/')[1] || 'persos');
+  const visible = !!monPerso() && db.bulleNotes !== false;
+  if (!visible) { z.innerHTML = ''; return; }
+  const ouvert = !!state.bulleOuverte;
+  const s = sessionBulle();
+  const choix = state.bulleType;
+  if (!ouvert) {
+    z.innerHTML = `<button class="bulle-btn" data-bulle="ouvrir" aria-label="Ouvrir mes notes de séance" title="Mes notes de séance">📝</button>`;
+    return;
+  }
+  const sessions = sessionsTriees().filter(x => x.persoId === monPerso().id || (!enLigne() && !x.persoId));
+  const actif = document.activeElement && document.activeElement.id === 'bulle-texte';
+  if (actif && z.querySelector('.bulle-panneau') && z.dataset.session === (s && s.id) && !state.bulleRedessiner) return;
+  state.bulleRedessiner = false;
+  z.dataset.session = s ? s.id : '';
+  z.innerHTML = `<div class="bulle-panneau" role="dialog" aria-label="Notes de séance">
+    <div class="bulle-tete">
+      ${s ? `<select id="bulle-session" aria-label="Séance">${sessions.map(x => `<option value="${x.id}" ${x.id === s.id ? 'selected' : ''}>${esc(titreSession(x))}</option>`).join('')}</select>` : '<b>Mes notes</b>'}
+      <button class="icon" data-bulle="nouvelle" aria-label="Nouvelle séance" title="Nouvelle séance">＋</button>
+      <button class="icon" data-bulle="fermer" aria-label="Fermer">✕</button>
+    </div>
+    ${s ? `<div class="bulle-insertion">${TYPES_INSERTION.map(([k, l]) => `<button class="chip ${choix === k ? 'on' : ''}" data-bulle="type" data-type="${k}">${l}</button>`).join('')}</div>
+      ${choix ? `<div class="bulle-choix">
+        <input type="search" id="bulle-cherche" placeholder="Chercher un nom…" value="${esc(state.bulleQ || '')}" aria-label="Chercher un nom">
+        <div class="bulle-noms">${nomsInsertion(choix, state.bulleQ).map(n => `<button class="chip" data-bulle="inserer" data-nom="${esc(n)}">${esc(n)}</button>`).join('') || `<span class="hint">Aucun nom trouvé.</span>`}
+          ${state.bulleQ && !nomsInsertion(choix, state.bulleQ).some(n => norm(n) === norm(state.bulleQ)) ? `<button class="chip nouveau" data-bulle="inserer" data-nom="${esc(state.bulleQ)}">+ « ${esc(state.bulleQ)} »</button>` : ''}</div>
+      </div>` : ''}
+      <textarea id="bulle-texte" placeholder="Note ce que tu veux, en vrac…">${esc(s.texte || '')}</textarea>
+      <div class="bulle-pied"><a href="#/session/${s.id}">Toutes mes notes de cette séance</a><button class="lien" data-bulle="masquer">Masquer la bulle</button></div>`
+    : `<p class="hint">Pas encore de notes de séance pour ${esc(monPerso().nom)}.</p><button class="btn" data-bulle="nouvelle">Commencer les notes de la séance</button>`}
+  </div>`;
+  const t = document.getElementById('bulle-texte');
+  if (t) { ajusterTexte(t); if (state.bulleCurseur != null) { t.focus(); t.setSelectionRange(state.bulleCurseur, state.bulleCurseur); state.bulleCurseur = null; } }
+}
+let bulleTimer = null;
+/* La position du curseur est retenue, pour insérer un nom au bon endroit même après avoir touché un bouton */
+['keyup', 'click', 'select', 'input'].forEach(ev => document.addEventListener(ev, e => { if (e.target && e.target.id === 'bulle-texte') state.bulleCaret = e.target.selectionStart; }));
+document.addEventListener('input', ev => {
+  if (ev.target.id === 'bulle-texte') {
+    const s = sessionBulle(); if (!s) return;
+    s.texte = ev.target.value; s.maj = Date.now();
+    clearTimeout(bulleTimer); bulleTimer = setTimeout(() => { saveNow(); notesModifiees(s.persoId); }, 600);
+  } else if (ev.target.id === 'bulle-cherche') {
+    state.bulleQ = ev.target.value; state.bulleRedessiner = true; majBulle();
+    const c = document.getElementById('bulle-cherche'); c.focus(); c.setSelectionRange(c.value.length, c.value.length);
+  }
+});
+document.addEventListener('change', ev => {
+  if (ev.target.id === 'bulle-session') { db.sessionBulle = ev.target.value; saveNow(); state.bulleRedessiner = true; majBulle(); }
+});
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-bulle]');
+  if (!b) return;
+  const a = b.dataset.bulle;
+  if (a === 'ouvrir') { state.bulleOuverte = true; majBulle(); setTimeout(() => document.getElementById('bulle-texte')?.focus(), 30); }
+  else if (a === 'fermer') { state.bulleOuverte = false; state.bulleType = null; majBulle(); }
+  else if (a === 'masquer') { db.bulleNotes = false; state.bulleOuverte = false; saveNow(); majBulle(); toast('Bulle masquée. Tu peux la remettre depuis Journal → Mes notes.'); }
+  else if (a === 'nouvelle') {
+    const ns = nouvelleSession(); ns.persoId = monPerso().id;
+    db.sessions = db.sessions || []; db.sessions.push(ns); db.sessionBulle = ns.id; saveNow(); notesModifiees(ns.persoId);
+    state.bulleRedessiner = true; majBulle(); document.getElementById('bulle-texte')?.focus();
+  }
+  else if (a === 'type') { state.bulleType = state.bulleType === b.dataset.type ? null : b.dataset.type; state.bulleQ = ''; state.bulleRedessiner = true; majBulle(); document.getElementById('bulle-cherche')?.focus(); }
+  else if (a === 'inserer') {
+    const s = sessionBulle(), t = document.getElementById('bulle-texte'); if (!s || !t) return;
+    const nom = b.dataset.nom, pos = Math.min(state.bulleCaret ?? t.value.length, t.value.length);
+    const avant = t.value.slice(0, pos), apres = t.value.slice(pos);
+    const ajout = (avant && !/\s$/.test(avant) ? ' ' : '') + nom + (!apres || /^\S/.test(apres) ? ' ' : '');
+    s.texte = avant + ajout + apres; s.maj = Date.now(); saveNow(); notesModifiees(s.persoId);
+    state.bulleCurseur = (avant + ajout).length; state.bulleType = null; state.bulleQ = ''; state.bulleRedessiner = true; majBulle();
+  }
+});
 function ranger_aides(racine = document) {
   for (const el of [...racine.querySelectorAll('.aide')]) {
     const carte = el.closest('details.card, section.card, .card');
@@ -5481,6 +5587,8 @@ function render(garderScroll = true) {
   $('#app').innerHTML = html;
   ranger_aides($('#app'));
   restaurerDetails($('#app'), ouverts);
+  ajusterTextes($('#app'));
+  majBulle();
   const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
   /* Mon personnage, en haut à droite (sauf dans l'espace MJ) */
   const chip = document.getElementById('mon-perso');
@@ -5736,7 +5844,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -6981,6 +7089,9 @@ document.addEventListener('click', ev => {
       p.ordreArmes = ids; save(); render();
       break;
     }
+    case 'bulle-remettre':
+      db.bulleNotes = true; saveNow(); render();
+      break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });

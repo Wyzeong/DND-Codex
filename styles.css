@@ -1566,3 +1566,24 @@ h3 { position: relative; }
 .badge-mj { margin-left: auto; margin-right: .4rem; padding: .2rem .55rem; border-radius: 99px; background: var(--rouge); color: #FFE5DD; border: 1px solid #C46B57; font: 700 .72rem/1 var(--font); letter-spacing: .08em; text-decoration: none; }
 .badge-mj[hidden] { display: none; }
 .badge-mj:not([hidden]) + .mon-perso { margin-left: 0; }
+/* Zones de texte à la hauteur de leur contenu */
+#app textarea { overflow: hidden; resize: none; min-height: 3.2rem; line-height: 1.5; }
+
+/* ===== Bulle de notes ===== */
+#bulle-notes { position: fixed; z-index: 60; right: max(.8rem, env(safe-area-inset-right, 0px)); bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px)); }
+.bulle-btn { width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--bronze); background: var(--surface); font-size: 1.35rem; cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, .45); }
+.bulle-panneau { width: min(380px, calc(100vw - 1.6rem)); max-height: min(72vh, 640px); display: flex; flex-direction: column; gap: .45rem; padding: .6rem .7rem; border: 1px solid var(--bronze); border-radius: 14px; background: var(--nuit-profonde); box-shadow: 0 14px 40px rgba(0, 0, 0, .55); }
+.bulle-tete { display: flex; align-items: center; gap: .35rem; }
+.bulle-tete select { flex: 1; min-width: 0; }
+.bulle-insertion { display: flex; flex-wrap: wrap; gap: .3rem; }
+.bulle-choix { border: 1px solid var(--line); border-radius: var(--radius-s); padding: .4rem; background: var(--inset); }
+.bulle-noms { display: flex; flex-wrap: wrap; gap: .25rem; max-height: 9rem; overflow-y: auto; margin-top: .35rem; }
+.bulle-noms .chip.nouveau { border-style: dashed; }
+#bulle-texte { flex: 1; min-height: 9rem; max-height: 46vh; overflow-y: auto !important; resize: none; }
+.bulle-pied { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; }
+.bulle-pied a { color: var(--bronze-clair); }
+@media (min-width: 900px) {
+  #bulle-notes { bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
+  .bulle-panneau { width: 380px; max-height: calc(100vh - 9rem); }
+  #bulle-texte { max-height: calc(100vh - 20rem); }
+}
