@@ -1457,20 +1457,20 @@ function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
   const titre = it.membre ? (it.nom || 'Membre') : it.nom && norm(it.nom) !== norm(typeNom) ? `${typeNom} : ${it.nom}` : typeNom;
   const recharge = /arbalete-(legere|poing)/.test(it.armeType || '') ? 'action de mouvement' : it.armeType === 'arbalete-lourde' ? 'action complexe' : '';
   if (tou.length > 1) (sortie.outrance = sortie.outrance || []).push({ nom: titreArme(it, ref, dist), liste: tou, deg });
-  const noteDeg = carDeg !== 'for' ? ` <small>(${carDeg === 'aucune' ? 'sans caractéristique' : 'avec ' + ({ sag: 'Sagesse', dex: 'Dextérité', con: 'Constitution', int: 'Intelligence', cha: 'Charisme' })[carDeg]})</small>` : '';
+  const noteDeg = carDeg !== 'for' ? ` <small title="Caractéristique ajoutée aux dégâts">(${carDeg === 'aucune' ? 'sans carac.' : ({ sag: 'Sag', dex: 'Dex', con: 'Con', int: 'Int', cha: 'Cha' })[carDeg]})</small>` : '';
   return `<div class="arme ${it.membre ? 'membre' : ''}">
     ${recharge ? `<p class="action-type">recharger : ${recharge}</p>` : ''}
-    <div class="arme-tete"><b>${esc(titre)}</b><span class="tag-mode">${it.membre ? 'Corps à corps · comme à mains nues' : `${dist ? 'Distance' : R.PRISES[prise] || 'Corps à corps'}${ref?.moine ? ' · moine' : ''}`}</span></div>
+    <div class="arme-tete"><b title="${esc(titre)}">${esc(it.nom || (ref ? ref.nom : 'Arme'))}</b><span class="tag-mode">${it.membre ? 'mains nues' : [it.nom && ref ? ref.nom : '', dist ? 'distance' : (R.PRISES[prise] || '').toLowerCase(), ref?.moine ? 'moine' : ''].filter(Boolean).join(' · ')}</span></div>
     <dl class="arme-stats">
       <dt>Pour toucher</dt><dd><span class="gros">${R.signe(tou[0])}</span>${tou.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(tou)})</small>` : ''}</dd>
-      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${noteDeg}${it.critique || ref?.crit || it.membre ? ` <small>critique ${esc(it.critique || ref?.crit || '20/×2')}</small>` : ''}</dd>
+      <dt>Dégâts</dt><dd><span class="gros">${esc(deg)}</span>${noteDeg}${it.critique || ref?.crit || it.membre ? ` <small class="crit" title="Critique">${esc(it.critique || ref?.crit || '20/×2')}</small>` : ''}</dd>
       ${it.portee || (dist && ref?.portee) ? `<dt>Portée</dt><dd>${esc(it.portee || ref.portee)}</dd>` : ''}
     </dl>
     ${liees.length ? `<details class="arme-plus"><summary>${liees.length} règle${liees.length > 1 ? 's' : ''} liée${liees.length > 1 ? 's' : ''}</summary>${liees.join('')}</details>` : ''}
-    ${mun.map(({ it: m, i }) => `<div class="munition">
-      <span><b>${esc(m.nom || 'Munition')}</b> <small>× ${esc(m.qte || 0)}</small>${m.effet ? `<br><small>${esc(m.effet)}</small>` : ''}</span>
-      <button class="btn ghost" data-action="objet-use" data-idx="${i}" ${num(m.qte) > 0 ? '' : 'disabled'}>Tirer</button>
-    </div>`).join('')}
+    ${mun.length ? `<div class="munitions-compactes">${mun.map(({ it: m, i }) => `<div class="mun-ligne" ${m.effet ? `title="${esc(m.effet)}"` : ''}>
+      <span class="mun-nom">${esc(m.nom || 'Munition')}${m.effet ? ' <span class="mun-effet" aria-hidden="true">✦</span>' : ''}</span><span class="mun-qte">×${esc(m.qte || 0)}</span>
+      <button class="btn petit" data-action="objet-use" data-idx="${i}" ${num(m.qte) > 0 ? '' : 'disabled'} aria-label="Tirer : ${esc(m.nom || 'munition')}">Tirer</button>
+    </div>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -1513,11 +1513,11 @@ function ficheCombat(p, e) {
         <div class="arme-tete"><b>Combat à mains nues</b><span class="tag-mode">Corps à corps</span></div>
         <dl class="arme-stats">
           <dt>Pour toucher</dt><dd><span class="gros">${R.signe(mn.toucher[0])}</span>${mn.toucher.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(mn.toucher)})</small>` : ''}</dd>
-          <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span> <small>critique 20/×2</small></dd>
+          <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span> <small class="crit" title="Critique">20/×2</small></dd>
         </dl>
         ${e.dons.has('arme-predilection') && peutModifier(p) ? `<details class="arme-plus"><summary>Réglages</summary><label class="check petit-check"><input type="checkbox" data-bind="predMainsNues" data-rerender ${p.predMainsNues ? 'checked' : ''}> Mon Arme de prédilection porte sur le combat à mains nues (s'applique aussi aux membres du corps)</label></details>` : ''}
 
-        ${res.some(r => r.id === 'coup-etourdissant') ? (r => `<p class="liee"><b>Coup étourdissant</b> : uniquement à mains nues. Il t'en reste ${Math.max(0, r.max - num((p.compteurs || {})[r.id]))} sur ${r.max} (compteur plus bas).</p>`)(res.find(r => r.id === 'coup-etourdissant')) : ''}
+
       </div>` : '';
         if (htmlMN) cartes.push({ id: 'mn', html: htmlMN });
         for (const it of armes) cartes.push({ id: it.id, html: carteArme(it) });
