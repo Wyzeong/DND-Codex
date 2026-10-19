@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '86';
+const VERSION_APPLI = '87';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -1654,6 +1654,7 @@ function ficheCombat(p, e) {
     })()}
 
     <h4>Lancer un sort</h4>
+    ${blocSortsPrepares(p, e)}
     ${sorts.length ? `<div class="sorts-combat">${sorts.map(({ x, i, s }) => {
       const infini = !!x.illimite, max = infini ? 0 : num(x.max), reste = Math.max(0, max - num(x.utilises));
       const ef = etatFocal(p, x);
@@ -3696,6 +3697,90 @@ function etatFocal(p, x) {
 }
 const nomFocal = (p, x) => focalisateurs(p).find(y => y.id === x.focal)?.nom || 'focalisateur disparu';
 
+/* ===== Prière matinale : les lanceurs divins préparés choisissent leurs sorts du jour ===== */
+const CODE_SORTS = { pretre: 'Prê', druide: 'Dru', paladin: 'Pal', rodeur: 'Rôd' };
+const SOINS_VO = ['Cure Minor Wounds', 'Cure Light Wounds', 'Cure Moderate Wounds', 'Cure Serious Wounds', 'Cure Critical Wounds', 'Cure Light Wounds, Mass', 'Cure Moderate Wounds, Mass', 'Cure Serious Wounds, Mass', 'Cure Critical Wounds, Mass', 'Cure Critical Wounds, Mass'];
+const sortParVO = vo => (db.sorts || []).find(s => norm(s.nomVO) === norm(vo));
+function sortsPreparables(classe, niv) {
+  const code = CODE_SORTS[classe];
+  return (db.sorts || []).filter(s => (s.niveaux || []).some(x => String(x.classe).split('/').includes(code) && num(x.niveau) === niv))
+    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+}
+/* Les classes à préparer et leurs emplacements (le Poing sacré et les autres classes de prestige comptent via lanceurBonus) */
+function lanceursPrepares(p, e) {
+  const l = [];
+  for (const [id, k] of Object.entries(e.classes)) {
+    const lc = R.CLASSES[id]?.lanceur;
+    if (!lc || !CODE_SORTS[id] || !/préparé/.test(lc.type || '')) continue;
+    const spd = sortsParJour(id, k, e);
+    if (!spd) continue;
+    const niveaux = spd.parJour.map(x => ({ niv: x.niv, n: parseInt(x.txt, 10) || 0, domaine: lc.domaine && x.niv > 0 && (e.domaines || []).length ? 1 : 0 })).filter(x => x.n || x.domaine);
+    l.push({ classe: id, nom: R.CLASSES[id].nom, nl: Math.min(20, k + (e.lanceurBonus?.[id] || 0)), niveaux });
+  }
+  return l;
+}
+const priereDe = (p, classe) => ((p.prieres = p.prieres || {})[classe] = p.prieres[classe] || { jour: 0, choix: {}, domaine: {}, focal: '', utilises: { jour: 0, cles: [] } });
+const jourActuel = () => num(db.jour || 1);
+const prierePrete = pr => num(pr.jour) >= jourActuel();
+const utilisesDuJour = pr => (num(pr.utilises?.jour) === jourActuel() ? pr.utilises.cles : []);
+function sortsDomaine(e, niv) {
+  return (e.domaines || []).map(d => { const dm = R.DOMAINES[d]; const vo = dm?.sorts?.[niv - 1]; const s = vo && sortParVO(vo); return { dom: dm?.nom, s, vo }; }).filter(x => x.vo);
+}
+function cartePriere(p, e) {
+  const lanceurs = lanceursPrepares(p, e);
+  if (!lanceurs.length) return '';
+  const mod = peutModifier(p);
+  const focs = focalisateurs(p);
+  return lanceurs.map(L => {
+    const pr = priereDe(p, L.classe);
+    const pret = prierePrete(pr);
+    return `<section class="card priere ${pret ? '' : 'a-faire'}"><h3>☀ Prière matinale · ${esc(L.nom)} <small>niveau de lanceur ${L.nl}</small></h3>
+      ${pret ? `<p class="hint">Sorts du jour ${esc(jourActuel())} préparés. Tu peux encore les changer avant de partir.</p>` : `<p class="priere-alerte">Un nouveau jour se lève : choisis tes sorts, ou garde ceux d'hier, puis valide ta prière.</p>`}
+      <label class="f"><span>Focalisateur des sorts préparés</span><select data-priere="${L.classe}|focal" ${mod ? '' : 'disabled'}><option value="">— Choisir —</option>${focs.map(f => `<option value="${f.id}" ${pr.focal === f.id ? 'selected' : ''}>${esc(f.nom)}${f.present ? '' : ' (absent)'}</option>`).join('')}</select></label>
+      ${L.niveaux.map(N => {
+        const opts = sortsPreparables(L.classe, N.niv);
+        const choix = pr.choix[N.niv] || [];
+        const sel = (i, cur) => `<select data-priere="${L.classe}|choix|${N.niv}|${i}" ${mod ? '' : 'disabled'}><option value="">— Emplacement libre —</option>${opts.map(s => `<option value="${s.id}" ${cur === s.id ? 'selected' : ''}>${esc(s.nom)}</option>`).join('')}</select>`;
+        const doms = N.domaine ? sortsDomaine(e, N.niv) : [];
+        return `<div class="priere-niveau"><b>Niveau ${N.niv}</b> <small>${N.n} sort${N.n > 1 ? 's' : ''}${N.domaine ? ' + 1 de domaine' : ''}</small>
+          <div class="priere-slots">${Array.from({ length: N.n }, (_, i) => sel(i, choix[i])).join('')}
+          ${N.domaine ? `<select class="slot-domaine" data-priere="${L.classe}|domaine|${N.niv}" ${mod ? '' : 'disabled'}><option value="">— Sort de domaine —</option>${doms.map(d => `<option value="${d.s ? d.s.id : 'vo:' + esc(d.vo)}" ${pr.domaine[N.niv] === (d.s ? d.s.id : 'vo:' + d.vo) ? 'selected' : ''}>${esc(d.s ? d.s.nom : d.vo)} (${esc(d.dom)})</option>`).join('')}</select>` : ''}</div></div>`;
+      }).join('')}
+      ${mod ? `<div class="btns"><button class="btn" data-action="priere-valider" data-c="${L.classe}">${pret ? 'Enregistrer les changements' : 'Valider ma prière'}</button></div>` : ''}
+      <p class="hint aide">Les emplacements dépendent de ton niveau de lanceur (les niveaux de Poing sacré ou d'autres classes de prestige qui font progresser les sorts divins comptent) et de ta Sagesse. Chaque niveau à partir du 1 a un emplacement de plus pour un sort de l'un de tes domaines. Le bouton Jour suivant du MJ rend tous les emplacements, et la prière du lendemain reprend tes choix de la veille.</p>
+    </section>`;
+  }).join('');
+}
+/* En combat : les sorts préparés à lancer */
+function blocSortsPrepares(p, e) {
+  const lanceurs = lanceursPrepares(p, e);
+  if (!lanceurs.length) return '';
+  return lanceurs.map(L => {
+    const pr = priereDe(p, L.classe);
+    const util = utilisesDuJour(pr);
+    const focOk = pr.focal && focalisateurs(p).find(f => f.id === pr.focal)?.present;
+    const lignes = [];
+    for (const N of L.niveaux) {
+      (pr.choix[N.niv] || []).forEach((id, i) => { if (id) lignes.push({ cle: `${N.niv}:${i}`, niv: N.niv, s: findSort(id), dom: false }); });
+      const d = pr.domaine[N.niv];
+      if (d) lignes.push({ cle: `d${N.niv}`, niv: N.niv, s: d.startsWith('vo:') ? { nom: d.slice(3) } : findSort(d), dom: true });
+    }
+    if (!lignes.length) return `<p class="hint">${esc(L.nom)} : aucun sort préparé. Fais ta prière matinale dans l'onglet Sorts.</p>`;
+    const soin = n => sortParVO(SOINS_VO[n])?.nom || 'Soins';
+    return `<div class="prepares"><p class="prepares-titre"><b>Sorts préparés · ${esc(L.nom)}</b>${prierePrete(pr) ? '' : ' <span class="tag-cat">prière du jour à faire</span>'}${focOk ? '' : ' <span class="tag-cat danger">sans focalisateur : sorts inutilisables</span>'}</p>
+      <div class="sorts-combat">${lignes.map(x => {
+        const fait = util.includes(x.cle);
+        return `<div class="sort-c compact ${x.s?.ecole ? ecoleClass(x.s.ecole) : ''} ${fait ? 'utilise' : ''} ${focOk ? '' : 'bloque'}">
+          <div class="sort-c-tete"><b>${esc(x.s?.nom || 'Sort inconnu')}</b><small>niv. ${x.niv}${x.dom ? ' · domaine' : ''}</small></div>
+          ${x.s?.description ? `<details class="effet"><summary>${esc(x.s.ecole || '')}${x.s.portee ? ', ' + esc(String(x.s.portee).split(' (')[0]) : ''}</summary><p>${esc(x.s.description)}</p></details>` : ''}
+          <div class="btns">${fait ? '<span class="hint">lancé</span>' : `<button class="btn petit" data-action="prep-lancer" data-c="${L.classe}" data-k="${x.cle}" ${focOk ? '' : 'disabled'}>Lancer</button>`}
+            ${!fait && !x.dom && L.classe === 'pretre' && !/^Cure/i.test(x.s?.nomVO || '') ? `<button class="lien" data-action="prep-soin" data-c="${L.classe}" data-k="${x.cle}" data-soin="${esc(soin(x.niv))}" ${focOk ? '' : 'disabled'}>→ ${esc(soin(x.niv))}</button>` : ''}
+            ${fait ? `<button class="lien" data-action="prep-annuler" data-c="${L.classe}" data-k="${x.cle}">Annuler</button>` : ''}</div>
+        </div>`;
+      }).join('')}</div></div>`;
+  }).join('');
+}
+
 /* ---------- Sorts du personnage ---------- */
 function ongletSorts(p) {
   const items = (p.sorts || []).map((e, i) => ({ e, i, s: findSort(e.id) }))
@@ -3723,7 +3808,8 @@ function ongletSorts(p) {
       : '<p><b>Aucun focalisateur.</b> Pour lancer des sorts, il faut une baguette (case Baguette de la fiche) ou un objet magique marqué « Focalisateur » dans l\'inventaire.</p>'}
     <p class="hint aide">Sans son focalisateur (baguette perdue, objet rangé ou retiré de l'inventaire), un sort ne peut plus être lancé.</p>
   </div>` : '';
-  return `
+  const prieres = cartePriere(p, etat(p));
+  return prieres + `
   <section class="card"><h3>Sorts du personnage</h3>
     ${blocFocal}
     <div class="linked">${linked || '<p class="empty">Aucun sort lié. Ajoute-les depuis le grimoire ci-dessous.</p>'}</div>
@@ -4684,7 +4770,7 @@ function resultatsEncyclo() {
     }
     return `<section class="card"><h3>${l}</h3><div class="fiches">${liste.map(carteFiche).join('')}</div></section>`;
   }).join('');
-  return chips + (groupes || `<section class="card intro"><p class="empty">L'encyclopédie est vide.${peutEcrireFiches() ? ' Crée une première fiche, ou importe un fichier d\'encyclopédie depuis l\'onglet Partage.' : ''}</p></section>`);
+  return chips + (repliable(groupes) || `<section class="card intro"><p class="empty">L'encyclopédie est vide.${peutEcrireFiches() ? ' Crée une première fiche, ou importe un fichier d\'encyclopédie depuis l\'onglet Partage.' : ''}</p></section>`);
 }
 
 function pageFiche(id) {
@@ -5786,6 +5872,14 @@ document.addEventListener('input', ev => {
     state.pickQ = t.value;
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
     return;
+  }
+  if (t.dataset && t.dataset.priere && state.ctx && db.personnages.includes(state.ctx)) {
+    const [classe, champ, niv, i] = t.dataset.priere.split('|');
+    const pr = priereDe(state.ctx, classe);
+    if (champ === 'focal') pr.focal = t.value;
+    else if (champ === 'domaine') pr.domaine[niv] = t.value;
+    else { const l = pr.choix[niv] = pr.choix[niv] || []; l[Number(i)] = t.value; }
+    save(); return;
   }
   if (t.dataset && t.dataset.doncommun && state.donCommun) { state.donCommun[t.dataset.doncommun] = t.value; return; }
   if (t.id === 'co-perso') { state.coPerso = t.value; state.coOuvert = true; render(); return; }
@@ -7311,6 +7405,22 @@ document.addEventListener('click', ev => {
       const info = tourDe(p); if (!info) break;
       info.t.fini = a === 'tour-fin'; saveNow(); render();
       if (a === 'tour-fin') toast('Tour terminé, en attente du MJ');
+      break;
+    }
+    case 'priere-valider': {
+      const pr = priereDe(p, b.dataset.c);
+      pr.jour = jourActuel(); if (num(pr.utilises?.jour) !== jourActuel()) pr.utilises = { jour: jourActuel(), cles: [] };
+      save(); render(); toast('Prière faite : tes sorts du jour sont prêts');
+      break;
+    }
+    case 'prep-lancer':
+    case 'prep-soin':
+    case 'prep-annuler': {
+      const pr = priereDe(p, b.dataset.c);
+      if (num(pr.utilises?.jour) !== jourActuel()) pr.utilises = { jour: jourActuel(), cles: [] };
+      if (a === 'prep-annuler') pr.utilises.cles = pr.utilises.cles.filter(k => k !== b.dataset.k);
+      else { pr.utilises.cles.push(b.dataset.k); if (a === 'prep-soin') toast(`Converti en ${b.dataset.soin}`); }
+      save(); render();
       break;
     }
     case 'replis-tout': {
