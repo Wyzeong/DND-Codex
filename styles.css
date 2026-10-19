@@ -1608,3 +1608,28 @@ h3 { position: relative; }
 .choix-don > span { color: var(--bronze-clair); }
 .liee.petit { font-size: .78rem; color: var(--muted); margin: .2rem 0 0; }
 .am-preset { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+/* En-tête : titre, version et boutons d'administration */
+.brand-texte { display: flex; flex-direction: column; line-height: 1.1; }
+#version-appli { font: 400 .62rem/1 var(--font); color: var(--muted); letter-spacing: .04em; margin-top: .12rem; }
+.nav-tete { display: flex; gap: .3rem; margin-left: auto; }
+.nav-tete a { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line-bronze); color: var(--bronze-clair); }
+.nav-tete a[hidden] { display: none; }
+.nav-tete a svg { width: 18px; height: 18px; }
+.nav-tete a.active { background: var(--bronze); color: var(--nuit); }
+.nav-tete + .mon-perso, .nav-tete ~ .mon-perso { margin-left: .4rem; }
+.badge-mj { margin-left: .4rem; }
+/* Combat au tour par tour */
+.tour-bloc { border: 1px solid var(--line-bronze); border-radius: var(--radius-s); background: var(--inset); padding: .5rem .65rem; margin-bottom: .6rem; font-size: .88rem; }
+.tour-bloc.a-moi { border-color: var(--bronze); box-shadow: 0 0 0 1px rgba(183, 147, 90, .35); background: linear-gradient(180deg, rgba(183, 147, 90, .12), transparent 70%), var(--inset); }
+.tour-tete { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin-bottom: .35rem; }
+.tour-tete b { font-family: var(--font-titre); font-size: 1.05rem; color: var(--bronze-clair); }
+.tour-tete span { color: var(--muted); font-size: .8rem; }
+.jetons { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .45rem; }
+.jeton { padding: .15rem .55rem; border-radius: 99px; font-size: .76rem; font-weight: 600; border: 1px solid; }
+.jeton.dispo { border-color: var(--emeraude); color: #8FD3C0; }
+.jeton.pris { border-color: var(--line); color: var(--muted); text-decoration: line-through; }
+.tour-groupe { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin: .25rem 0; }
+.tour-groupe > span { flex: 0 0 5.6rem; font-size: .74rem; color: var(--bronze); text-transform: uppercase; letter-spacing: .05em; }
+.tour-groupe .chip.off { opacity: .4; }
+.tour-journal { margin: .4rem 0 .2rem; padding-left: 1.2rem; font-size: .84rem; color: var(--ivoire); }
+@media (max-width: 520px) { .tour-groupe > span { flex-basis: 100%; } }

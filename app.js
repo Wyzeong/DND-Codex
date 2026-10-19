@@ -6,7 +6,9 @@
    ============================================================ */
 
 const STORE_KEY = 'codex-dd35-v1';
-const APP_VERSION = 1;
+const APP_VERSION = 1; // format des données (ne pas changer)
+/* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
+const VERSION_APPLI = '85';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -1470,6 +1472,48 @@ function compteur(p, r) {
 }
 
 const titreArme = (it, ref, dist) => { const t = ref ? ref.nom : (dist ? 'Arme à distance' : 'Arme'); return it.membre ? (it.nom || 'Membre') : it.nom && norm(it.nom) !== norm(t) ? `${t} : ${it.nom}` : t; };
+/* ===== Combat au tour par tour : les actions de mon tour, décomptées ===== */
+function tourDe(p) {
+  const cp = combatPublic();
+  if (!cp || !(cp.noms || []).some(n => norm(n) === norm(p.nom))) return null;
+  const cle = `${cp.id}:${cp.round}:${cp.tourN ?? cp.tour}`;
+  db.tours = db.tours || {};
+  let t = db.tours[p.id];
+  if (!t || t.cle !== cle) t = db.tours[p.id] = { cle, simple: 1, mouvement: 1, rapide: 1, pas: 1, bouge: false, journal: [], hist: [], fini: false };
+  const monTour = cp.tourId ? cp.tourId === p.id : norm(cp.tour) === norm(p.nom);
+  return { cp, t, monTour };
+}
+function blocTour(p, e, st, mn, armes, res) {
+  const info = tourDe(p);
+  if (!info) return '';
+  const { cp, t, monTour } = info;
+  const noms = cp.noms || [];
+  if (!monTour) {
+    const i = noms.findIndex(n => norm(n) === norm(cp.tour)), j = noms.findIndex(n => norm(n) === norm(p.nom));
+    const dans = i >= 0 && j >= 0 ? (j - i + noms.length) % noms.length : null;
+    return `<section class="tour-bloc attente"><b>${esc(cp.nom || 'Combat')}</b> · round ${esc(cp.round)} · au tour de <b>${esc(cp.tour || '?')}</b>${dans ? ` · tu joues dans ${dans} tour${dans > 1 ? 's' : ''}` : ''}</section>`;
+  }
+  const typeRes = r => /libre|annonce|avant l'attaque/i.test(r.action || '') ? 'libre' : /complexe/i.test(r.action || '') ? 'complexe' : /rapide|immédiate/i.test(r.action || '') ? 'rapide' : /simple|standard/i.test(r.action || '') ? 'simple' : /mouvement/i.test(r.action || '') ? 'mouvement' : '';
+  const restant = r => (r.max || 0) - num((p.compteurs || {})[r.id]);
+  const peut = k => t.fini ? false : k === 'libre' ? true : k === 'simple' ? t.simple > 0 : k === 'rapide' ? t.rapide > 0
+    : k === 'mouvement' ? (t.mouvement > 0 || t.simple > 0) : k === 'complexe' ? (t.simple > 0 && t.mouvement > 0 && !t.bouge) : k === 'pas' ? (t.pas > 0 && !t.bouge) : false;
+  const bouton = (k, l, extra = '', epuise = false) => { const ok = peut(k) && !epuise; return `<button class="chip ${ok ? '' : 'off'}" data-action="tour-act" data-k="${k}" data-l="${esc(l)}" ${extra} ${ok ? '' : 'disabled'}>${esc(l)}</button>`; };
+  const resBoutons = k => res.filter(r => typeRes(r) === k).map(r => bouton(k, `${r.nom}${r.max ? ` (${Math.max(0, restant(r))}/${r.max})` : ''}`, `data-res="${r.id}"`, r.max && restant(r) <= 0)).join('');
+  const jauge = (n, l) => `<span class="jeton ${n > 0 ? 'dispo' : 'pris'}">${l}</span>`;
+  return `<section class="tour-bloc a-moi">
+    <div class="tour-tete"><b>⚔ C'est ton tour</b><span>${esc(cp.nom || 'Combat')} · round ${esc(cp.round)}</span></div>
+    <div class="jetons">${jauge(t.simple, 'Simple')}${jauge(t.mouvement, 'Mouvement')}${jauge(t.rapide, 'Rapide')}${jauge(t.pas && !t.bouge ? 1 : 0, 'Pas 1,5 m')}</div>
+    ${t.fini ? '<p class="hint">Tour terminé : le MJ va passer au suivant.</p>' : `
+    <div class="tour-groupe"><span>Déplacement</span>${bouton('mouvement', `Se déplacer (${st.vitesse} m)`)}${bouton('pas', 'Pas de 1,5 m')}${bouton('mouvement', 'Se relever')}${bouton('mouvement', 'Dégainer, ranger')}${resBoutons('mouvement')}</div>
+    <div class="tour-groupe"><span>Libres</span>${resBoutons('libre')}${bouton('libre', 'Parler')}${bouton('libre', 'Lâcher un objet')}${bouton('libre', 'Autre action libre')}</div>
+    ${resBoutons('rapide') ? `<div class="tour-groupe"><span>Rapides</span>${resBoutons('rapide')}</div>` : ''}
+    <div class="tour-groupe"><span>Simples</span>${mn ? bouton('simple', 'Attaque à mains nues') : ''}${armes.map(it => bouton('simple', 'Attaque : ' + (it.nom || R.ARME[it.armeType]?.nom || 'arme'))).join('')}${resBoutons('simple')}${bouton('simple', 'Lancer un sort')}${bouton('simple', 'Utiliser un objet, boire une potion')}${bouton('simple', 'Défense totale')}${bouton('simple', 'Aider un allié')}${bouton('simple', 'Autre action simple')}</div>
+    <div class="tour-groupe"><span>Complexes</span>${mn?.deluge ? bouton('complexe', 'Déluge de coups') : ''}${st.att.length > 1 ? bouton('complexe', 'Attaque à outrance') : ''}${bouton('complexe', 'Charge')}${bouton('complexe', 'Retraite')}${resBoutons('complexe')}${bouton('complexe', 'Autre action complexe')}</div>`}
+    ${t.journal.length ? `<ol class="tour-journal">${t.journal.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
+    <div class="btns">${t.hist.length && !t.fini ? '<button class="btn ghost petit" data-action="tour-annuler">Annuler la dernière</button>' : ''}
+      ${t.fini ? '<button class="btn ghost petit" data-action="tour-reprendre">Reprendre mon tour</button>' : '<button class="btn petit" data-action="tour-fin">Terminer mon tour</button>'}</div>
+  </section>`;
+}
 /* Une arme dans « En combat » : jets calculés et capacités qui s'y appliquent */
 function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
   const ref = R.ARME[it.armeType] || null;
@@ -1563,6 +1607,7 @@ function ficheCombat(p, e) {
 
     </div>
 
+    ${blocTour(p, e, st, mn, armes, res)}
     ${blocEffets(p)}
     ${resPar('libre').length ? `<h4 class="type-action">Actions libres</h4><div class="ressources">${resPar('libre').map(r => compteur(p, r)).join('')}</div>` : ''}
     <h4 class="type-action">Actions simples <small>une attaque</small></h4>
@@ -2962,6 +3007,8 @@ function publierCombat() {
   const etat = c && c.phase === 'combat' ? {
     id: c.id, nom: c.nom, round: c.round,
     tour: (actifs.length ? actifs[c.tour % actifs.length] : null)?.nom || '',
+    tourId: (actifs.length ? actifs[c.tour % actifs.length] : null)?.persoId || '',
+    tourN: c.tour,
     noms: actifs.filter(x => !x.mort).map(x => x.nom),
     effets: actifs.filter(x => x.persoId).flatMap(x => (x.effets || []).map(ef => ({ cible: x.nom, nom: ef.nom, debut: ef.debut, rounds: ef.rounds, type: ef.type }))),
   } : {};
@@ -5458,6 +5505,7 @@ function pageSortEdit(id) {
 }
 
 function pageDonnees() {
+  if (!estAdmin()) return '<section class="card intro"><p class="empty">Réservé à l\'administrateur et au MJ.</p></section>';
   const taille = (new Blob([JSON.stringify(db)]).size / 1024).toFixed(0);
   return `
   <div class="pagehead"><div><h1>Partage et sauvegarde</h1>
@@ -5706,8 +5754,12 @@ function render(garderScroll = true) {
   let badge = document.getElementById('badge-mj');
   if (!badge && chip) { chip.insertAdjacentHTML('beforebegin', '<a id="badge-mj" class="badge-mj" href="#/mj" title="Le mode MJ est actif sur cet appareil">MJ</a>'); badge = document.getElementById('badge-mj'); }
   if (badge) badge.hidden = !estMJ() || !enLigne();
-  const navLog = document.querySelector('[data-nav="log"]');
-  if (navLog) navLog.hidden = !voitJournal();
+  const admin = estAdmin();
+  const btPartage = document.getElementById('tete-partage'), btLog = document.getElementById('tete-log');
+  if (btPartage) btPartage.hidden = !admin;
+  if (btLog) btLog.hidden = !voitJournal();
+  const vers = document.getElementById('version-appli');
+  if (vers && !vers.textContent) vers.textContent = 'version ' + VERSION_APPLI;
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav || (a.dataset.nav === 'sorts' && nav === 'aptitudes')));
   if (garderScroll) window.scrollTo(0, y);
 }
@@ -7229,6 +7281,38 @@ document.addEventListener('click', ev => {
       state.donCommun = null; sauverClasse(d); render();
       break;
     }
+    case 'tour-act': {
+      const info = tourDe(p); if (!info || !info.monTour) break;
+      const t = info.t, k = b.dataset.k;
+      t.hist.push(JSON.stringify({ simple: t.simple, mouvement: t.mouvement, rapide: t.rapide, pas: t.pas, bouge: t.bouge, compteurs: p.compteurs || {} }));
+      let note = '';
+      if (k === 'simple') t.simple--;
+      else if (k === 'rapide') t.rapide--;
+      else if (k === 'complexe') { t.simple = 0; t.mouvement = 0; t.pas = 0; }
+      else if (k === 'pas') { t.pas = 0; }
+      else if (k === 'mouvement') {
+        if (t.mouvement > 0) t.mouvement--; else { t.simple--; note = ' (à la place de l\'action simple)'; }
+        if (/déplacer/i.test(b.dataset.l)) { t.bouge = true; t.pas = 0; }
+      }
+      if (b.dataset.res) { p.compteurs = { ...(p.compteurs || {}), [b.dataset.res]: num((p.compteurs || {})[b.dataset.res]) + 1 }; save(); }
+      t.journal.push(b.dataset.l.replace(/ \(\d+\/\d+\)$/, '') + note);
+      saveNow(); render();
+      break;
+    }
+    case 'tour-annuler': {
+      const info = tourDe(p); if (!info) break;
+      const t = info.t, h = t.hist.pop(); if (!h) break;
+      const o = JSON.parse(h); Object.assign(t, { simple: o.simple, mouvement: o.mouvement, rapide: o.rapide, pas: o.pas, bouge: o.bouge });
+      p.compteurs = o.compteurs; t.journal.pop(); save(); render();
+      break;
+    }
+    case 'tour-fin':
+    case 'tour-reprendre': {
+      const info = tourDe(p); if (!info) break;
+      info.t.fini = a === 'tour-fin'; saveNow(); render();
+      if (a === 'tour-fin') toast('Tour terminé, en attente du MJ');
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -7488,14 +7572,14 @@ window.addEventListener('online', actuRetour);
 document.addEventListener('focusout', () => setTimeout(() => {
   if (state.renduDiffere && !enSaisie() && !state.editRecap && !state.editFiche && !state.editObjet && !state.editBaguette && !state.mjEdit) { state.renduDiffere = false; render(); }
 }, 400));
-/* Toutes les 15 s dans l'espace MJ, 30 s sur une fiche, 60 s ailleurs */
+/* Pendant un combat, toutes les 7,5 s sur une fiche ; sinon 15 s dans l'espace MJ, 30 s sur une fiche, 60 s ailleurs */
 let tic = 0;
 setInterval(() => {
   if (document.visibilityState !== 'visible') return;
   tic++;
   const page = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'persos';
-  if (page === 'mj' || (page === 'perso' && (combatPublic() || tic % 2 === 0)) || tic % 4 === 0) actualiser();
-}, 15000);
+  if ((page === 'perso' && combatPublic()) || (page === 'mj' && tic % 2 === 0) || (page === 'perso' && tic % 4 === 0) || tic % 8 === 0) actualiser();
+}, 7500);
 
 /* ---------- Démarrage ---------- */
 (async function start() {
