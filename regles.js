@@ -23,8 +23,23 @@ R.SEXES = ['Masculin', 'Féminin', 'Autre'];
 R.LANGUES = ['Commun', 'Nain', 'Elfe', 'Gnome', 'Halfelin', 'Orque', 'Gobelin', 'Géant', 'Gnoll', 'Draconien', 'Sylvestre', 'Céleste', 'Infernal', 'Abyssal', 'Aquatique', 'Aérien', 'Igné', 'Terreux', 'Commun des profondeurs', 'Druidique'];
 
 R.TAILLES = {
-  P: { nom: 'Petite', ca: 1, lutte: -4 },
-  M: { nom: 'Moyenne', ca: 0, lutte: 0 },
+  TP: { nom: 'Très petite', court: 'TP', en: 'XS', ca: 2, lutte: -8, discretion: 8, allonge: 0 },
+  P: { nom: 'Petite', court: 'P', en: 'S', ca: 1, lutte: -4, discretion: 4, allonge: 1.5 },
+  M: { nom: 'Moyenne', court: 'M', en: 'M', ca: 0, lutte: 0, discretion: 0, allonge: 1.5 },
+  G: { nom: 'Grande', court: 'G', en: 'L', ca: -1, lutte: 4, discretion: -4, allonge: 3 },
+  TG: { nom: 'Très grande', court: 'TG', en: 'XL', ca: -2, lutte: 8, discretion: -8, allonge: 4.5 },
+};
+R.ORDRE_TAILLES = ['TP', 'P', 'M', 'G', 'TG'];
+R.decalerTaille = (t, d) => R.ORDRE_TAILLES[Math.max(0, Math.min(R.ORDRE_TAILLES.length - 1, R.ORDRE_TAILLES.indexOf(t || 'M') + Math.round(d || 0)))];
+/* Dés de dégâts d'une arme selon sa taille (Guide du Maître) */
+R.DES_PLUS = { '1d2': '1d3', '1d3': '1d4', '1d4': '1d6', '1d6': '1d8', '1d8': '2d6', '1d10': '2d8', '1d12': '3d6', '2d4': '2d6', '2d6': '3d6', '2d8': '3d8', '2d10': '4d8', '3d6': '4d6', '3d8': '4d8' };
+R.DES_MOINS = { '1d3': '1d2', '1d4': '1d3', '1d6': '1d4', '1d8': '1d6', '1d10': '1d8', '1d12': '1d10', '2d4': '1d6', '2d6': '1d10', '2d8': '2d6', '2d10': '2d8', '3d6': '2d6', '3d8': '2d8', '4d6': '3d6', '4d8': '3d8' };
+R.deTaille = (de, d) => {
+  let r = String(de || '');
+  for (let i = 0; i < Math.abs(d || 0); i++) {
+    r = r.replace(/\b(\d+d\d+)\b/, m => (d > 0 ? R.DES_PLUS : R.DES_MOINS)[m] || m);
+  }
+  return r;
 };
 
 /* ---------- Races ---------- */
@@ -680,7 +695,7 @@ R.DONS = [
   D('extension-zone', 'Extension de zone', 'Widen Spell', 'M', null, 'Double la zone du sort. Emplacement de 3 niveaux de plus.'),
 ];
 R.DON = Object.fromEntries(R.DONS.map(d => [d.id, d]));
-R.TYPES_DONS = { G: 'Général', C: 'Combat', M: 'Métamagie', O: 'Création d\'objets' };
+R.TYPES_DONS = { G: 'Général', C: 'Combat', M: 'Métamagie', O: 'Création d\'objets', D: 'Divin', R: 'Régional', S: 'Spécial' };
 R.NIVEAUX_DONS = [1, 3, 6, 9, 12, 15, 18];
 
 /* ---------- Armes (SRD 3.5) ----------

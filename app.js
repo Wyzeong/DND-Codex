@@ -221,6 +221,7 @@ const JS_CONTRE = [['poison', 'le poison'], ['sorts', 'les sorts'], ['enchanteme
 
 const CIBLES_BONUS = [
   ['Caractéristiques', R.CARACS.map(c => [c.k, c.n])],
+  ['Taille', [['taille', 'Catégorie de taille (+1 : plus grand, −1 : plus petit)']]],
   ['Défense', [['caArmure', 'CA (armure, bouclier, naturelle)'], ['caParade', 'CA (parade, divers : aussi au contact)']]],
   ['Jets de sauvegarde', [['js', 'Tous les jets de sauvegarde'], ['vig', 'Vigueur'], ['ref', 'Réflexes'], ['vol', 'Volonté']]],
   ['Combat', [['attaque', 'Jets d\'attaque'], ['degats', 'Dégâts'], ['init', 'Initiative'], ['vitesse', 'Vitesse (m)']]],
@@ -262,7 +263,12 @@ function bonusObjets(p) {
     if (et.actif === false) continue;
     for (const b of et.bonus || []) ajouter(b, et.nom || 'État');
   }
-  for (const am of p.ameliorations || []) ajouter(am, 'Amélioration temporaire' + (am.note ? ` (${am.note})` : ''));
+  for (const am of p.ameliorations || []) {
+    const src = (am.permanent ? 'Bonus permanent' : 'Amélioration temporaire') + (am.note ? ` (${am.note})` : '');
+    if (am.preset === 'agrandissement') { ajouter({ cible: 'taille', val: 1 }, 'Agrandissement'); ajouter({ cible: 'for', val: 2 }, 'Agrandissement'); ajouter({ cible: 'dex', val: -2 }, 'Agrandissement'); }
+    else if (am.preset === 'rapetissement') { ajouter({ cible: 'taille', val: -1 }, 'Rapetissement'); ajouter({ cible: 'for', val: -2 }, 'Rapetissement'); ajouter({ cible: 'dex', val: 2 }, 'Rapetissement'); }
+    else ajouter(am, src);
+  }
   return { tot, detail, cond, maxDex, acp, echec };
 }
 
@@ -345,7 +351,19 @@ function appliquerAugment(p, l) {
 /* ===== Classes de prestige saisies depuis un livre : communes à toute la campagne ===== */
 const classesCommunes = () => (db.classesPerso = db.classesPerso || []);
 function enregistrerClassesCommunes() {
-  for (const d of classesCommunes()) R.CLASSES['pp-' + d.id] = R.classePerso(d);
+  for (const d of classesCommunes()) {
+    if (d.genre === 'don') enregistrerDonCommun(d);
+    else R.CLASSES['pp-' + d.id] = R.classePerso(d);
+  }
+}
+/* Dons saisis depuis un supplément (Codex divin, Guide du joueur de Faerûn…), communs à la campagne */
+const donsCommuns = () => classesCommunes().filter(d => d.genre === 'don');
+function enregistrerDonCommun(d) {
+  const id = 'cd-' + d.id;
+  const don = { id, nom: d.nom || 'Don sans nom', vo: d.vo || '', type: R.TYPES_DONS[d.type] ? d.type : 'G', p: {}, texte: d.texte || '', preTexte: d.prerequis || '', livre: d.livre || '', commun: true };
+  R.DON[id] = don;
+  const i = R.DONS.findIndex(x => x.id === id);
+  if (i >= 0) R.DONS[i] = don; else R.DONS.push(don);
 }
 function enregistrerPrestigesPerso(p) {
   enregistrerClassesCommunes();
@@ -446,6 +464,9 @@ function etat(p, n, prevus = false, sauf = null) {
   const e = { niveau: lv.length, classes: {}, etapes: [], bba: 0, js: { vig: 0, ref: 0, vol: 0 }, dons: new Set(), donsListe: [], race, taille: race ? race.taille : 'M' };
   e.car = {};
   e.objets = bonusObjets(p);
+  e.tailleBase = e.taille;
+  e.taille = R.decalerTaille(e.taille, e.objets.tot.taille || 0);
+  e.ecartTaille = R.ORDRE_TAILLES.indexOf(e.taille) - R.ORDRE_TAILLES.indexOf(e.tailleBase);
   for (const c of R.CARACS) {
     const base = p.caracs?.[c.k]?.val === '' || p.caracs?.[c.k]?.val == null ? null : num(p.caracs[c.k].val);
     e.car[c.k] = base == null ? null : base + (e.objets.tot[c.k] || 0);
@@ -523,6 +544,7 @@ function prerequisPrestige(cl, e, p) {
 }
 
 function prerequis(don, e, p) {
+  if (don.commun) return { ok: true, txt: (don.preTexte || 'voir le livre') + ' (à vérifier, saisi depuis un livre)', manque: [] };
   const q = don.p, manque = [], txt = [];
   for (const [k, v] of Object.entries(q.car || {})) {
     const c = R.CARACS.find(x => x.k === k);
@@ -577,7 +599,7 @@ function bonusComp(id, e) {
   let b = e.race?.comp?.[id] || 0;
   for (const [d, l] of Object.entries(BONUS_DONS_COMP)) if (e.dons.has(d) && l.includes(id)) b += 2;
   if (e.classes.druide && (id === 'conn-nature' || id === 'survie')) b += 2;
-  if (id === 'discretion' && e.taille === 'P') b += 4;
+  if (id === 'discretion') b += R.TAILLES[e.taille]?.discretion || 0;
   return b;
 }
 const compDeClasse = e => new Set([...Object.keys(e.classes).flatMap(id => R.CLASSES[id].comp), ...(e.domaines || []).flatMap(d => R.DOMAINES[d]?.comp || [])]);
@@ -868,6 +890,7 @@ function ongletFicheBrut(p, e) {
   <section class="card"><h3>Défense et statistiques</h3>
     <div class="stats">
       ${stat('Classe d\'armure', s.ca)}${stat('Contact', s.contact)}${stat('Pris au dépourvu', s.depourvu, s.esquiveInst ? 'Esquive instinctive' : '')}
+      ${stat('Taille', `${R.TAILLES[e.taille]?.court || 'M'} (${R.TAILLES[e.taille]?.en || 'M'})`, e.ecartTaille ? `${R.TAILLES[e.taille].nom}, normalement ${R.TAILLES[e.tailleBase].nom.toLowerCase()} · allonge ${R.TAILLES[e.taille].allonge} m` : `${R.TAILLES[e.taille]?.nom || 'Moyenne'} · allonge ${R.TAILLES[e.taille]?.allonge ?? 1.5} m`)}
       ${stat('Initiative', R.signe(s.init))}${stat('Vitesse', s.vitesse + ' m')}
       ${stat('Vigueur', R.signe(s.js.vig))}${stat('Réflexes', R.signe(s.js.ref))}${stat('Volonté', R.signe(s.js.vol))}
       ${stat('BBA', R.attTxt(s.att))}${stat('Corps à corps', R.signe(s.cac))}${stat('Distance', R.signe(s.dist))}${stat('Lutte', R.signe(s.lutte))}
@@ -975,17 +998,18 @@ function ficheAmeliorations(p) {
   const l = p.ameliorations || [];
   if (!l.length && !mod) return '';
   const opts = cur => CIBLES_BONUS.map(([g, li]) => `<optgroup label="${g}">${li.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
-  const lecture = am => `<p class="am-lecture"><span class="${num(am.val) < 0 ? 'malus-etat' : 'bonus-objet'}">${R.signe(num(am.val))} ${esc(NOM_CIBLE[am.cible] || am.cible)}</span>
+  const lecture = am => am.preset ? `<p class="am-lecture"><span class="bonus-objet">${am.preset === 'agrandissement' ? 'Agrandissement : taille +1, For +2, Dex −2' : 'Rapetissement : taille −1, For −2, Dex +2'}</span>${am.parMJ ? '<span class="tag-cat tag-mj">accordé par le MJ</span>' : ''}${am.note ? ` <small>${esc(am.note)}</small>` : ''}</p>` : `<p class="am-lecture"><span class="${num(am.val) < 0 ? 'malus-etat' : 'bonus-objet'}">${R.signe(num(am.val))} ${esc(NOM_CIBLE[am.cible] || am.cible)}</span>
     <span class="tag-cat">${am.permanent ? 'Permanent' : 'Temporaire'}</span>${am.parMJ ? '<span class="tag-cat tag-mj">accordé par le MJ</span>' : ''}${am.note ? ` <small>${esc(am.note)}</small>` : ''}</p>`;
   return `<section class="card ameliorations"><h3>Bonus et malus</h3>
-    ${l.length ? `<div class="am-liste">${l.map((am, i) => mod && (mj || !am.parMJ) ? `<div class="am-ligne ${num(am.val) < 0 ? 'malus' : ''}">
+    ${l.length ? `<div class="am-liste">${l.map((am, i) => am.preset ? (mod && (mj || !am.parMJ) ? `<div class="am-preset">${lecture(am)}<button class="icon" data-action="am-suppr" data-idx="${i}" aria-label="Retirer">✕</button></div>` : lecture(am)) : mod && (mj || !am.parMJ) ? `<div class="am-ligne ${num(am.val) < 0 ? 'malus' : ''}">
         <input type="text" inputmode="numeric" class="s" data-bind="ameliorations.${i}.val" data-recalc value="${esc(am.val)}" placeholder="+2 / −2" aria-label="Valeur (négative pour un malus)">
         <select data-bind="ameliorations.${i}.cible" data-rerender aria-label="Ce qui est modifié"><option value="">— Choisir —</option>${opts(am.cible)}</select>
         <select data-bind="ameliorations.${i}.permanent" data-rerender aria-label="Durée"><option value="" ${am.permanent ? '' : 'selected'}>Temporaire</option><option value="1" ${am.permanent ? 'selected' : ''}>Permanent</option></select>
         <input type="text" data-bind="ameliorations.${i}.note" value="${esc(am.note)}" placeholder="Origine (sort, malédiction, récompense…)" aria-label="Origine">
         <button class="icon" data-action="am-suppr" data-idx="${i}" aria-label="Retirer">✕</button>
       </div>` : lecture(am)).join('')}</div>` : '<p class="hint">Aucun. Ajoute ici un bonus ou un malus (« +4 CA », « −2 Force »…) : il est compté partout sur la fiche tant qu\'il est là.</p>'}
-    ${mod ? `<div class="btns"><button class="btn ghost petit" data-action="am-ajout">+ Bonus</button><button class="btn ghost petit" data-action="am-ajout" data-malus="1">+ Malus</button></div>
+    ${mod ? `<div class="btns"><button class="btn ghost petit" data-action="am-ajout">+ Bonus</button><button class="btn ghost petit" data-action="am-ajout" data-malus="1">+ Malus</button>
+      <button class="btn ghost petit" data-action="am-preset" data-preset="agrandissement">+ Agrandissement</button><button class="btn ghost petit" data-action="am-preset" data-preset="rapetissement">+ Rapetissement</button></div>
       <p class="hint">Une valeur négative est un malus.${estMJ() && enLigne() ? ' Ceux que tu ajoutes sont « accordés par le MJ » : le joueur les voit mais ne peut ni les modifier ni les retirer.' : ''}</p>` : ''}
   </section>`;
 }
@@ -1356,10 +1380,11 @@ const CATS_OBJET = { '': 'Objet', arme: 'Arme', armure: 'Armure', bouclier: 'Bou
 function infosMainsNues(p, e, st) {
   const moine = e.moineCumul.mn || 0, mDel = e.classes.moine ? e.moineCumul.deluge : 0;
   if (!moine && !e.dons.has('science-mains-nues')) return null;
-  const petit = e.taille === 'P';
+  const petit = e.taille === 'P' || e.taille === 'TP', grand = e.taille === 'G' || e.taille === 'TG';
   const de = moine ? R.palier(moine, petit
     ? [[1, '1d4'], [4, '1d6'], [8, '1d8'], [12, '1d10'], [16, '2d6'], [20, '2d8']]
-    : [[1, '1d6'], [4, '1d8'], [8, '1d10'], [12, '2d6'], [16, '2d8'], [20, '2d10']]) : (petit ? '1d2' : '1d3');
+    : grand ? [[1, '1d8'], [4, '2d6'], [8, '2d8'], [12, '3d6'], [16, '3d8'], [20, '4d8']]
+    : [[1, '1d6'], [4, '1d8'], [8, '1d10'], [12, '2d6'], [16, '2d8'], [20, '2d10']]) : (petit ? '1d2' : grand ? '1d4' : '1d3');
   const fo = e.mods.for;
   const bonD = fo + (e.objets.tot.degats || 0) + (aChoix(e, 'specialisation-martiale', 'mains-nues') ? 2 : 0) + (aChoix(e, 'specialisation-superieure', 'mains-nues') ? 2 : 0);
   const degats = `${de}${bonD ? R.signe(bonD) : ''}`;
@@ -1467,7 +1492,7 @@ function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
   const fo = carDeg === 'aucune' ? 0 : e.mods[carDeg] ?? e.mods.for;
   const bonusFo = carDeg !== 'for' ? fo : dist && !ref?.lancer ? Math.min(0, fo) : (prise === 'deux' || prise === 'double') && fo > 0 ? Math.floor(fo * 1.5) : fo;
   const bonusDeg = bonusFo + spe + (e.objets.tot.degats || 0);
-  const de = it.degats || ref?.deg || '?';
+  const de = R.deTaille(it.degats || ref?.deg || '?', e.ecartTaille || 0);
   /* « 1d6+1 » saisi sur l'objet + bonus calculés = « 1d6+7 », et non « 1d6+1+6 » */
   const mDe = String(de).replace(/\s+/g, '').match(/^(\d+d\d+)([+-]\d+)?$/i);
   const deg = mDe ? `${mDe[1]}${(num(mDe[2]) + bonusDeg) ? R.signe(num(mDe[2]) + bonusDeg) : ''}` : `${de}${bonusDeg ? R.signe(bonusDeg) : ''}`;
@@ -3750,7 +3775,7 @@ function carteClassesPrestige(p) {
   };
   return `<section class="card"><h3>Classes de prestige</h3>
     <p class="hint aide"><b>Communes à toute la campagne</b> : une classe saisie ici apparaît dans le menu « Classe » de tous les personnages. Les classes de prestige du Guide du Maître sont déjà dans le menu « Classe » de chaque niveau, avec leurs prérequis vérifiés : défenseur nain, danseur de l'ombre, duelliste, théurge mystique, chevalier occulte, archer-mage. Une classe d'un autre livre (Poing sacré du Codex divin, par exemple) se saisit ici à partir du livre ; elle apparaît ensuite dans le même menu.</p>
-    ${defs.map((d, i) => mod && state.editPrestige === d.id ? formulaire(d, i) : `<div class="pnj">
+    ${defs.map((d, i) => d.genre === 'don' ? '' : mod && state.editPrestige === d.id ? formulaire(d, i) : `<div class="pnj">
       <div class="pnj-tete"><b>${esc(d.nom || 'Sans nom')}</b>${mod ? `<button class="lien" data-action="pp-edit" data-id="${d.id}">Modifier</button>` : ''}</div>
       <p class="pnj-stats">d${esc(d.dv || 8)} · BBA ${esc(d.bba || 'moyen')} · ${esc(d.max || 10)} niveaux${(() => { const c = d.cumul || (d.cumulMoine ? { mn: 1, ca: 1, deluge: 1, vitesse: 1 } : {}); const l = [['mn', 'mains nues'], ['ca', 'CA'], ['deluge', 'déluge'], ['vitesse', 'vitesse']].filter(([k2]) => c[k2]).map(([, t]) => t); return l.length ? ' · cumule avec le moine : ' + l.join(', ') : ''; })()}${(e.classes['pp-' + d.id]) ? ` · niveau ${e.classes['pp-' + d.id]} pour ce personnage` : ''}${(() => { const n = db.personnages.filter(x => (x.progression || []).some(l => l.classe === 'pp-' + d.id)).map(x => x.nom); return n.length ? ` · utilisée par ${esc(n.join(', '))}` : ''; })()}</p>
     </div>`).join('')}
@@ -5259,6 +5284,7 @@ const MANOEUVRES = [
   ['Se relever', 'Action de mouvement', "Se relever quand on est à terre provoque une attaque d'opportunité."],
 ];
 function prerequisDonTexte(d) {
+  if (d.commun) return d.preTexte || '';
   const p = d.p || {}, l = [];
   const noms = { for: 'For', dex: 'Dex', con: 'Con', int: 'Int', sag: 'Sag', cha: 'Cha' };
   for (const [k, v] of Object.entries(p.car || {})) l.push(`${noms[k]} ${v}`);
@@ -5270,6 +5296,28 @@ function prerequisDonTexte(d) {
   if (p.renvoi) l.push('pouvoir renvoyer ou intimider les morts-vivants');
   return l.join(', ');
 }
+/* Ajouter ou modifier un don tiré d'un supplément */
+function carteDonsCommuns() {
+  if (!peutModifierClasses()) return '';
+  const d = state.donCommun;
+  if (!d) return `<div class="btns"><button class="btn ghost petit" data-action="don-commun-ajout">+ Ajouter un don d'un supplément</button></div>
+    <p class="hint aide">Pour les dons qui ne sont pas dans les règles de base (Codex divin, Guide du joueur de Faerûn, Complete Warrior…). Recopie le nom, les prérequis et l'effet depuis ton livre : le don est alors commun à toute la campagne, chacun peut le choisir dans sa Progression.</p>`;
+  const f = (k, l, ph = '') => `<label class="f"><span>${l}</span><input type="text" data-doncommun="${k}" value="${esc(d[k] || '')}" placeholder="${esc(ph)}"></label>`;
+  return `<section class="card en-edition"><h3>${d.nouveau ? 'Nouveau don' : 'Modifier le don'}</h3>
+    <div class="grid">
+      ${f('nom', 'Nom', 'Ex. : Métamagie divine')}${f('vo', 'Nom anglais', 'Ex. : Divine Metamagic')}
+      ${f('livre', 'Livre', 'Ex. : Codex divin')}
+      <label class="f"><span>Type</span><select data-doncommun="type">${Object.entries(R.TYPES_DONS).map(([k, l]) => `<option value="${k}" ${(d.type || 'G') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="f span2"><span>Prérequis</span><input type="text" data-doncommun="prerequis" value="${esc(d.prerequis || '')}" placeholder="Ex. : pouvoir renvoyer les morts-vivants, un don de métamagie"></label>
+      <label class="f span2"><span>Effet</span><textarea data-doncommun="texte" rows="3" placeholder="Recopie l'effet depuis le livre">${esc(d.texte || '')}</textarea></label>
+    </div>
+    <div class="btns">
+      <button class="btn" data-action="don-commun-ok">Enregistrer</button>
+      <button class="btn ghost" data-action="don-commun-annuler">Annuler</button>
+      ${d.nouveau ? '' : '<button class="btn ghost danger" data-action="don-commun-suppr">Supprimer</button>'}
+    </div>
+  </section>`;
+}
 function ongletsGrimoire(actif) {
   return `<nav class="tabs grimoire-onglets">
     <a href="#/sorts" class="${actif === 'sorts' ? 'active' : ''}">Sorts</a>
@@ -5277,6 +5325,7 @@ function ongletsGrimoire(actif) {
   </nav>`;
 }
 function pageAptitudes() {
+  enregistrerClassesCommunes();
   const o = state.aptOnglet || 'dons';
   const sous = [['dons', 'Dons'], ['classes', 'Aptitudes de classe'], ['manoeuvres', 'Manœuvres de combat']];
   let corps = '';
@@ -5288,11 +5337,13 @@ function pageAptitudes() {
         <select id="apt-type" aria-label="Type de don"><option value="">Tous les types</option>${Object.entries(R.TYPES_DONS).map(([k, l]) => `<option value="${k}" ${state.aptType === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
       </div>
       <p class="hint">${liste.length} don${liste.length > 1 ? 's' : ''}. Les dons de combat peuvent être pris comme dons supplémentaires de guerrier.</p>
+      ${carteDonsCommuns()}
       <div class="cartes-aptitudes">${liste.map(d => `<article class="carte-aptitude">
         <header><b>${esc(d.nom)}</b><span class="tag-cat">${R.TYPES_DONS[d.type]}</span></header>
-        ${d.vo ? `<small class="vo">${esc(d.vo)}</small>` : ''}
+        ${d.vo || d.livre ? `<small class="vo">${esc([d.vo, d.livre].filter(Boolean).join(' · '))}</small>` : ''}
         ${prerequisDonTexte(d) ? `<p class="prerequis"><span>Prérequis :</span> ${esc(prerequisDonTexte(d))}</p>` : ''}
         <p>${esc(d.texte)}</p>
+        ${d.commun && peutModifierClasses() ? `<button class="lien" data-action="don-commun-modif" data-id="${esc(d.id.slice(3))}">Modifier</button>` : ''}
       </article>`).join('')}</div>`;
   } else if (o === 'classes') {
     const ids = Object.keys(R.CLASSES).filter(id => !R.CLASSES[id].perso || classesCommunes().some(d => 'pp-' + d.id === id));
@@ -5684,6 +5735,7 @@ document.addEventListener('input', ev => {
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
     return;
   }
+  if (t.dataset && t.dataset.doncommun && state.donCommun) { state.donCommun[t.dataset.doncommun] = t.value; return; }
   if (t.id === 'co-perso') { state.coPerso = t.value; state.coOuvert = true; render(); return; }
   if (t.id === 'histo-cle') { state.histoCle = t.value; state.histo = null; render(); return; }
   if (['gen-modele', 'gen-niveau', 'gen-race', 'gen-nom', 'gen-nb'].includes(t.id)) {
@@ -5895,7 +5947,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -7108,6 +7160,12 @@ document.addEventListener('click', ev => {
       save(); render();
       break;
     }
+    case 'am-preset': {
+      const am = { id: uid(), preset: b.dataset.preset, note: b.dataset.preset === 'agrandissement' ? 'sort Agrandissement' : 'sort Rapetissement' };
+      if (estMJ() && enLigne()) { am.parMJ = true; p.mjChamps = { ...(p.mjChamps || {}), ameliorations: Date.now() }; p.mjMaj = Date.now(); }
+      p.ameliorations = [...(p.ameliorations || []), am]; save(); render();
+      break;
+    }
     case 'am-suppr': {
       const am = p.ameliorations[idx];
       if (am?.parMJ && enLigne() && !estMJ()) { toast('Seul le MJ peut retirer ce bonus ou malus.'); break; }
@@ -7143,6 +7201,34 @@ document.addEventListener('click', ev => {
     case 'bulle-remettre':
       db.bulleNotes = true; saveNow(); render();
       break;
+    case 'don-commun-ajout':
+      state.donCommun = { id: uid(), genre: 'don', nom: '', vo: '', livre: '', type: 'G', prerequis: '', texte: '', nouveau: true }; render();
+      break;
+    case 'don-commun-modif': {
+      const d = donsCommuns().find(x => x.id === b.dataset.id);
+      if (d) { state.donCommun = { ...d }; state.aptOnglet = 'dons'; render(); }
+      break;
+    }
+    case 'don-commun-annuler':
+      state.donCommun = null; render();
+      break;
+    case 'don-commun-ok': {
+      const d = state.donCommun;
+      if (!d || !String(d.nom || '').trim()) { toast('Il faut au moins un nom.'); break; }
+      const { nouveau, ...propre } = d;
+      const i = classesCommunes().findIndex(x => x.id === d.id);
+      if (i >= 0) classesCommunes()[i] = propre; else classesCommunes().push(propre);
+      state.donCommun = null; sauverClasse(propre); render(); toast(`« ${propre.nom} » ajouté aux dons de la campagne`);
+      break;
+    }
+    case 'don-commun-suppr': {
+      const d = state.donCommun;
+      if (!d || !confirm(`Supprimer le don « ${d.nom} » pour toute la campagne ?`)) break;
+      db.classesPerso = classesCommunes().filter(x => x.id !== d.id);
+      delete R.DON['cd-' + d.id]; const k = R.DONS.findIndex(x => x.id === 'cd-' + d.id); if (k >= 0) R.DONS.splice(k, 1);
+      state.donCommun = null; sauverClasse(d); render();
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });

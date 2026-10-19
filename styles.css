@@ -1607,3 +1607,4 @@ h3 { position: relative; }
 .choix-don.a-choisir select { border-color: var(--bronze); }
 .choix-don > span { color: var(--bronze-clair); }
 .liee.petit { font-size: .78rem; color: var(--muted); margin: .2rem 0 0; }
+.am-preset { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
