@@ -1588,7 +1588,8 @@ h3 { position: relative; }
   #bulle-texte { max-height: calc(100vh - 20rem); }
 }
 /* Cartes d'arme : hauteur selon le contenu, noms courts, munitions compactes */
-.armes { align-items: start; }
+.armes { align-items: stretch; }
+.armes > .arme, .armes > .ressource { height: 100%; }
 .arme .arme-tete { display: flex; flex-direction: column; gap: 0; padding-right: 3.2rem; }
 .arme .arme-tete b { font-size: .95rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .arme .arme-tete .tag-mode { font-size: .72rem; color: var(--muted); text-transform: none; margin: 0; }
