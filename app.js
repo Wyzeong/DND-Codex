@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '91';
+const VERSION_APPLI = '92';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -885,8 +885,7 @@ function ongletFicheBrut(p, e) {
     <p class="hint aide">Saisis les valeurs de base (ajustements raciaux compris, sans les objets). Les bonus des objets équipés s'ajoutent <span class="bonus-objet">en couleur</span>, et les modificateurs se calculent seuls.</p>
   </section>
 
-  ${(p.etats || []).some(x => x.actif !== false) ? ficheEtats(p) : ''}
-  ${ficheAmeliorations(p)}
+  ${aDesEffets(p) ? ficheEffets(p) : ''}
   ${carteFamilier(p, e)}
   ${(() => { const q = fichesToutes().filter(f => porteeQuete(f) === 'personnelle' && f.extra?.persoId === p.id); return q.length ? `<section class="card"><h3>Quêtes personnelles</h3><div class="fiches">${q.map(carteFiche).join('')}</div></section>` : ''; })()}
   ${ficheCombat(p, e)}
@@ -916,7 +915,7 @@ function ongletFicheBrut(p, e) {
   </section>
 
   ${ficheCompetences(p, e)}
-  ${(p.etats || []).some(x => x.actif !== false) ? '' : ficheEtats(p)}
+  ${aDesEffets(p) ? '' : ficheEffets(p)}
   ${ficheDons(p, e)}
   ${ficheCapacitesLisible(p, e, valsClasses)}
 
@@ -1075,12 +1074,61 @@ function ficheAmeliorations(p) {
       <p class="hint">Une valeur négative est un malus.${estMJ() && enLigne() ? ' Ceux que tu ajoutes sont « accordés par le MJ » : le joueur les voit mais ne peut ni les modifier ni les retirer.' : ''}</p>` : ''}
   </section>`;
 }
-function ficheEtats(p) {
+/* Une seule carte pour tout ce qui modifie le personnage : états et blessures, bonus et malus, sorts de taille */
+const cibleCourte = c => String(NOM_CIBLE[c] || c || '?').replace(/\s*\(.*\)\s*$/, '');
+const aDesEffets = p => (p.etats || []).some(x => x.actif !== false) || (p.ameliorations || []).length > 0;
+function ficheEffets(p) {
+  const mod = peutModifier(p);
+  const mj = estMJ() || !enLigne();
+  const { actifs, gueris } = cartesEtats(p);
+  const opts = cur => CIBLES_BONUS.map(([g, li]) => `<optgroup label="${g}">${li.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  const am = (p.ameliorations || []).map((a, i) => {
+    const verrou = a.parMJ && enLigne() && !estMJ();
+    const titre = a.preset ? (a.preset === 'agrandissement' ? 'Agrandissement' : 'Rapetissement') : `${R.signe(num(a.val))} ${cibleCourte(a.cible)}`;
+    const detail = a.preset ? (a.preset === 'agrandissement' ? 'taille +1, For +2, Dex −2' : 'taille −1, For −2, Dex +2') : '';
+    if (mod && !verrou && state.editAm === a.id && !a.preset) {
+      return `<div class="effet-ligne en-edition">
+        <div class="effet-edit">
+          <input type="text" inputmode="numeric" class="s" data-bind="ameliorations.${i}.val" data-recalc value="${esc(a.val)}" placeholder="+2 / −2" aria-label="Valeur (négative pour un malus)">
+          <select data-bind="ameliorations.${i}.cible" data-rerender aria-label="Ce qui est modifié"><option value="">— Ce qui est modifié —</option>${opts(a.cible)}</select>
+          <select data-bind="ameliorations.${i}.permanent" data-rerender aria-label="Durée"><option value="" ${a.permanent ? '' : 'selected'}>Temporaire</option><option value="1" ${a.permanent ? 'selected' : ''}>Permanent</option></select>
+          <input type="text" data-bind="ameliorations.${i}.note" value="${esc(a.note || '')}" placeholder="Origine (sort, malédiction, récompense…)" aria-label="Origine">
+        </div>
+        <div class="btns"><button class="btn petit" data-action="am-fin">Terminé</button><button class="btn ghost danger petit" data-action="am-suppr" data-idx="${i}">Retirer</button></div>
+      </div>`;
+    }
+    return `<div class="effet-ligne ${a.preset ? 'preset' : num(a.val) < 0 ? 'malus' : 'bonus'}">
+      <div class="effet-corps">
+        <div class="effet-titre"><b class="${a.preset ? '' : num(a.val) < 0 ? 'txt-malus' : 'txt-bonus'}">${esc(titre)}</b>
+          <span class="tag-cat">${a.permanent ? 'Permanent' : 'Temporaire'}</span>${a.parMJ ? '<span class="tag-cat tag-mj">par le MJ</span>' : ''}</div>
+        ${detail || a.note ? `<small class="hint">${esc([detail, a.note].filter(Boolean).join(' · '))}</small>` : ''}
+      </div>
+      ${mod && !verrou ? `<div class="effet-actions">${a.preset ? '' : `<button class="icon" data-action="am-edit" data-id="${a.id}" aria-label="Modifier" title="Modifier">✎</button>`}<button class="icon" data-action="am-suppr" data-idx="${i}" aria-label="Retirer" title="Retirer">✕</button></div>` : ''}
+    </div>`;
+  });
+  const vide = !actifs.length && !am.length;
+  return `<section class="card effets-fiche"><h3>États, bonus et malus</h3>
+    ${vide ? '<p class="empty">Rien en cours. Tout va bien… pour l\'instant.</p>' : `<div class="effets-liste">${actifs.join('')}${am.join('')}</div>`}
+    ${gueris.length ? `<details class="effet-anciens"><summary>Anciens états (${gueris.length})</summary><div class="effets-liste">${gueris.join('')}</div></details>` : ''}
+    ${mod ? `<div class="row effet-ajout">
+      <select id="effet-choix" aria-label="Ajouter">
+        <optgroup label="Bonus et malus"><option value="bonus">Bonus (+)</option><option value="malus">Malus (−)</option></optgroup>
+        <optgroup label="Sorts de taille"><option value="agrandissement">Agrandissement</option><option value="rapetissement">Rapetissement</option></optgroup>
+        <optgroup label="États des règles">${Object.entries(ETATS_PREDEFINIS).map(([k, v]) => `<option value="etat:${k}">${esc(v.nom)}</option>`).join('')}</optgroup>
+        <optgroup label="Autre"><option value="etat:perso">Blessure ou état personnalisé…</option></optgroup>
+      </select>
+      <button class="btn ghost" data-action="effet-add">+ Ajouter</button>
+    </div>` : ''}
+    <p class="hint aide">Tout ce qui modifie le personnage, au même endroit. Les <b>états</b> (blessures, conditions) peuvent porter des effets chiffrés et une description ; les <b>bonus et malus</b> sont des valeurs simples (une valeur négative est un malus). Tout est compté sur la fiche. ✎ modifie, ✓ termine un état (ou le marque guéri s'il est permanent), ✕ retire. Ce que le MJ accorde ne peut être retiré que par lui.${mj ? '' : ''}</p>
+  </section>`;
+}
+function cartesEtats(p) {
   const mod = peutModifier(p);
   const etats = p.etats || [];
   const opts = cur => CIBLES_BONUS.map(([g, l]) => `<optgroup label="${g}">${l.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
   const cartes = etats.map((et, i) => {
-    if (mod && state.editEtat === et.id) {
+    const garde = html => ({ html, gueri: et.actif === false && state.editEtat !== et.id });
+    if (mod && state.editEtat === et.id) return garde((() => {
       return `<div class="etat en-edition">
         <div class="grid">
           ${fi(et, 'nom', 'Nom', { span: true }).replace('data-bind="nom"', `data-bind="etats.${i}.nom"`)}
@@ -1100,32 +1148,24 @@ function ficheEtats(p) {
         <div class="btns"><button class="lien" data-action="etat-add-bonus" data-idx="${i}">+ Effet chiffré (ex. −4 attaque)</button></div>
         <div class="btns"><button class="btn" data-action="etat-fin">Terminé</button><button class="btn danger" data-action="etat-suppr" data-idx="${i}">Supprimer</button></div>
       </div>`;
-    }
+    })());
     const effets = (et.bonus || []).filter(b => b.cible && num(b.val));
-    return `<div class="etat ${gravite(et)} ${et.actif === false ? 'gueri' : ''}">
-      <div class="etat-tete"><b>${esc(et.nom || 'État')}</b>
-        <span class="etat-duree">${et.duree === 'permanent' ? 'Permanent' : 'Temporaire'}</span>
-        ${et.actif === false ? '<span class="etat-duree">guéri</span>' : ''}
-        ${mod ? `<button class="lien" data-action="etat-edit" data-id="${et.id}">Modifier</button>` : ''}</div>
-      ${et.description ? `<p>${esc(et.description)}</p>` : ''}
-      ${effets.length ? `<p class="objet-bonus">${effets.map(b => `<span class="malus-etat">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`).join('')}</p>` : ''}
-      ${et.depuis ? `<p class="hint">Depuis : ${esc(et.depuis)}</p>` : ''}
-      ${mod ? `<div class="btns">${et.actif === false
-        ? `<button class="btn ghost" data-action="etat-actif" data-idx="${i}">Réactiver</button><button class="btn danger" data-action="etat-suppr" data-idx="${i}">Supprimer</button>`
-        : `<button class="btn ghost" data-action="etat-actif" data-idx="${i}">${et.duree === 'permanent' ? 'Marquer comme guéri' : 'Terminé, retirer'}</button>`}</div>` : ''}
-    </div>`;
-  }).join('');
-  return `<section class="card"><h3>États et blessures</h3>
-    ${cartes ? `<div class="etats">${cartes}</div>` : '<p class="empty">Aucun état en cours. Tout va bien… pour l\'instant.</p>'}
-    ${mod ? `<div class="row etat-ajout">
-      <select id="etat-choix" aria-label="État à ajouter">
-        <option value="perso">Blessure ou état personnalisé…</option>
-        <optgroup label="États des règles">${Object.entries(ETATS_PREDEFINIS).map(([k, v]) => `<option value="${k}">${esc(v.nom)}</option>`).join('')}</optgroup>
-      </select>
-      <button class="btn ghost" data-action="etat-add">Ajouter</button>
-    </div>
-    <p class="hint aide">Les états actifs apparaissent en haut de la fiche, sur l'accueil et dans l'espace MJ. Leurs effets chiffrés s'appliquent aux statistiques.</p>` : ''}
-  </section>`;
+    return garde(`<div class="effet-ligne etat-l ${gravite(et)} ${et.actif === false ? 'gueri' : ''}">
+      <div class="effet-corps">
+        <div class="effet-titre"><b>${esc(et.nom || 'État')}</b><span class="tag-cat">${et.duree === 'permanent' ? 'Permanent' : 'Temporaire'}</span>${et.actif === false ? '<span class="tag-cat">guéri</span>' : ''}</div>
+        ${effets.length ? `<div class="effet-chips">${effets.map(b => `<span class="${num(b.val) < 0 ? 'malus-etat' : 'bonus-objet'}">${R.signe(num(b.val))} ${esc(cibleCourte(b.cible))}</span>`).join('')}</div>` : ''}
+        ${et.description ? `<details class="effet-desc"><summary>${esc(String(et.description).slice(0, 70))}${String(et.description).length > 70 ? '…' : ''}</summary><p>${esc(et.description)}</p></details>` : ''}
+        ${et.depuis ? `<small class="hint">Depuis : ${esc(et.depuis)}</small>` : ''}
+      </div>
+      ${mod ? `<div class="effet-actions">
+        <button class="icon" data-action="etat-edit" data-id="${et.id}" aria-label="Modifier" title="Modifier">✎</button>
+        ${et.actif === false
+          ? `<button class="icon" data-action="etat-actif" data-idx="${i}" aria-label="Réactiver" title="Réactiver">↺</button><button class="icon" data-action="etat-suppr" data-idx="${i}" aria-label="Supprimer" title="Supprimer">✕</button>`
+          : `<button class="icon" data-action="etat-actif" data-idx="${i}" aria-label="${et.duree === 'permanent' ? 'Marquer comme guéri' : 'Terminé, retirer'}" title="${et.duree === 'permanent' ? 'Marquer comme guéri' : 'Terminé, retirer'}">✓</button>`}
+      </div>` : ''}
+    </div>`);
+  });
+  return { actifs: cartes.filter(c => !c.gueri).map(c => c.html), gueris: cartes.filter(c => c.gueri).map(c => c.html) };
 }
 
 /* Toutes les résistances et protections : race, classe, objets, états, saisie manuelle */
@@ -5452,7 +5492,7 @@ function encartDroits(p) {
 
 function pageNouveauPerso() {
   return `
-  <p><a href="#/persos">← Personnages</a></p>
+  <p><a href="#/persos">← Compagnie</a></p>
   <h1>Nouveau personnage</h1>
   <section class="card" style="margin-top:1rem">
     <p>Tout le monde pourra voir ta fiche, mais toi seul pourras la modifier grâce à ton code personnel. Il protège aussi tes notes de session. Garde-le bien : il sert à retrouver ton personnage sur un autre appareil.</p>
@@ -6729,6 +6769,34 @@ document.addEventListener('click', ev => {
     }
     case 'actualiser':
       actualiser(true);
+      break;
+    case 'effet-add': {
+      const v = $('#effet-choix').value;
+      if (v === 'bonus' || v === 'malus') {
+        const a = { id: uid(), cible: 'caParade', val: v === 'malus' ? '-1' : '1', note: '', permanent: '' };
+        if (estMJ() && enLigne()) { a.parMJ = true; p.mjChamps = { ...(p.mjChamps || {}), ameliorations: Date.now() }; p.mjMaj = Date.now(); }
+        p.ameliorations = [...(p.ameliorations || []), a]; state.editAm = a.id; save(); render();
+      } else if (v === 'agrandissement' || v === 'rapetissement') {
+        const a = { id: uid(), preset: v, note: v === 'agrandissement' ? 'sort Agrandissement' : 'sort Rapetissement' };
+        if (estMJ() && enLigne()) { a.parMJ = true; p.mjChamps = { ...(p.mjChamps || {}), ameliorations: Date.now() }; p.mjMaj = Date.now(); }
+        p.ameliorations = [...(p.ameliorations || []), a]; save(); render();
+      } else if (v.startsWith('etat:')) {
+        const k = v.slice(5), pre = ETATS_PREDEFINIS[k];
+        const et = pre
+          ? { id: uid(), nom: pre.nom, description: pre.texte, duree: '', depuis: '', bonus: pre.bonus.map(x => ({ ...x })), actif: true }
+          : { id: uid(), nom: '', description: '', duree: 'permanent', depuis: '', bonus: [], actif: true };
+        p.etats = [...(p.etats || []), et];
+        if (!pre) state.editEtat = et.id;
+        save(); render();
+        if (!pre) setTimeout(() => $(`[data-bind="etats.${p.etats.length - 1}.nom"]`)?.focus(), 60);
+      }
+      break;
+    }
+    case 'am-edit':
+      state.editAm = b.dataset.id; render();
+      break;
+    case 'am-fin':
+      state.editAm = null; render();
       break;
     case 'etat-add': {
       const k = $('#etat-choix').value;

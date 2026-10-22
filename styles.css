@@ -1681,3 +1681,28 @@ h3 { position: relative; }
 .familier-infos .sub { margin: .2rem 0; color: var(--muted); }
 .fam-ligne { display: grid; grid-template-columns: 4.2rem minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: .35rem; align-items: center; }
 @media (max-width: 520px) { .fam-ligne { grid-template-columns: 4.2rem minmax(0, 1fr) auto; } .fam-ligne input[data-bind$=".quand"] { grid-column: 1 / -1; grid-row: 2; } }
+/* États, bonus et malus : lignes compactes */
+.effets-liste { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .5rem; }
+.effet-ligne { display: flex; align-items: flex-start; gap: .4rem; padding: .35rem .55rem; border: 1px solid var(--line); border-left: 3px solid var(--line-bronze); border-radius: var(--radius-s); background: var(--inset); }
+.effet-ligne.bonus { border-left-color: var(--emeraude); }
+.effet-ligne.malus { border-left-color: var(--rouge-clair); }
+.effet-ligne.preset { border-left-color: #8E7BD6; }
+.effet-ligne.etat-l.temporaire { border-left-color: var(--bronze); }
+.effet-ligne.etat-l.permanent { border-left-color: var(--rouge-clair); }
+.effet-ligne.etat-l.gueri { opacity: .65; }
+.effet-ligne.en-edition { flex-direction: column; align-items: stretch; border-left-color: var(--bronze); }
+.effet-corps { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .15rem; }
+.effet-titre { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+.effet-titre b { font-size: .92rem; }
+.txt-bonus { color: #8FD3C0; }
+.txt-malus { color: var(--rouge-clair); }
+.effet-chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+.effet-desc summary { cursor: pointer; font-size: .82rem; color: var(--muted); }
+.effet-desc p { margin: .2rem 0 0; font-size: .85rem; }
+.effet-actions { display: flex; gap: .15rem; flex: none; }
+.effet-actions .icon { padding: .15rem .4rem; }
+.effet-edit { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr) 7.5rem; gap: .35rem; }
+.effet-edit input[data-bind$=".note"] { grid-column: 1 / -1; }
+@media (max-width: 520px) { .effet-edit { grid-template-columns: 4.6rem minmax(0, 1fr); } .effet-edit select[data-bind$=".permanent"] { grid-column: 1 / -1; } }
+.effet-ajout select { flex: 1; min-width: 0; }
+.effet-anciens summary { cursor: pointer; font-size: .85rem; color: var(--muted); margin-bottom: .3rem; }
