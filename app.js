@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '92';
+const VERSION_APPLI = '93';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -7942,7 +7942,22 @@ setInterval(() => {
     render();
   }
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service worker :', e));
+    /* Mise à jour sans attendre le cache du navigateur : on revérifie à chaque ouverture et à chaque retour sur l'appli */
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      const verifier = () => reg.update().catch(() => {});
+      verifier();
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') verifier(); });
+      setInterval(verifier, 5 * 60 * 1000);
+    }).catch(e => console.warn('Service worker :', e));
+    /* Une nouvelle version vient de prendre la main : on recharge, sauf pendant une saisie */
+    let dejaRecharge = false;
+    const recharger = () => { if (dejaRecharge) return; dejaRecharge = true; location.reload(); };
+    if (navigator.serviceWorker.controller) navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!enSaisie() && !state.editRecap && !state.editFiche && !state.mjEdit && !state.bulleOuverte) { recharger(); return; }
+      if (document.getElementById('bandeau-maj')) return;
+      document.body.insertAdjacentHTML('beforeend', '<div id="bandeau-maj" class="bandeau-maj">Nouvelle version prête <button class="btn petit" id="bandeau-maj-ok">Recharger</button></div>');
+      document.getElementById('bandeau-maj-ok').addEventListener('click', recharger);
+    });
   }
   navigator.storage?.persist?.().catch(() => {});
 })();
