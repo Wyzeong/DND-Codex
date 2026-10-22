@@ -1649,3 +1649,19 @@ h3 { position: relative; }
 .sort-c-tete small { color: var(--muted); white-space: nowrap; }
 .sort-c.utilise { opacity: .5; }
 .tag-cat.danger { border-color: var(--rouge-clair); color: var(--rouge-clair); }
+
+/* En-tête sur téléphone : titre sur une ligne, boutons qui ne se chevauchent plus */
+.topbar { gap: .4rem; }
+.topbar .brand { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: .45rem; }
+.topbar .brand svg { flex: none; }
+.brand-texte { min-width: 0; }
+.brand-texte > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-tete { margin-left: 0; flex: none; }
+.mon-perso { flex: none; }
+@media (max-width: 600px) {
+  .brand-texte > span { font-size: .9rem; letter-spacing: .02em; }
+  .mon-perso { padding: .15rem; margin-left: .2rem; }
+  .mon-perso .nom { display: none; }
+  .nav-tete a { width: 30px; height: 30px; }
+  .nav-tete a svg { width: 16px; height: 16px; }
+}
