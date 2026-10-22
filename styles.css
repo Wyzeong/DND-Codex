@@ -1665,3 +1665,5 @@ h3 { position: relative; }
   .nav-tete a { width: 30px; height: 30px; }
   .nav-tete a svg { width: 16px; height: 16px; }
 }
+.badge-attente { display: inline-block; align-self: flex-start; font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; color: #F2D9A6; border: 1px dashed var(--bronze); border-radius: 99px; padding: .1rem .55rem; margin-bottom: .25rem; }
+.badge-attente.grand { font-size: .8rem; padding: .2rem .8rem; }

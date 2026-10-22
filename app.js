@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '88';
+const VERSION_APPLI = '89';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -1654,7 +1654,6 @@ function ficheCombat(p, e) {
     })()}
 
     <h4>Lancer un sort</h4>
-    ${blocSortsPrepares(p, e)}
     ${sorts.length ? `<div class="sorts-combat">${sorts.map(({ x, i, s }) => {
       const infini = !!x.illimite, max = infini ? 0 : num(x.max), reste = Math.max(0, max - num(x.utilises));
       const ef = etatFocal(p, x);
@@ -2171,7 +2170,7 @@ function pageMJReelle() {
 }
 
 /* ===== Données de préparation du MJ (privées) ===== */
-const MJ_DEFAUT = () => ({ xp: { valeur: 0 }, pnj: [], combats: [], combat: null, objets: [], notes: '' });
+const MJ_DEFAUT = () => ({ xp: { valeur: 0 }, pnj: [], combats: [], combat: null, objets: [], notes: '', quetesAttente: [] });
 const mjd = () => (db.mjData = { ...MJ_DEFAUT(), ...(db.mjData || {}) });
 const mjAttente = new Set();
 let mjTimer;
@@ -2846,7 +2845,8 @@ function etapeJeu(s, e, i) {
     const f = findFiche(e.queteId);
     const statutVise = { lancement: 'En cours', progression: 'En cours', fin: 'Terminée' }[e.queteAction || 'lancement'];
     propre = `<p class="quete-etape"><span class="tag-cat quete-${e.queteAction || 'lancement'}">${ACTIONS_QUETE[e.queteAction || 'lancement']}</span> ${f ? `<a href="#/fiche/${f.id}">${esc(f.nom)}</a> ${badgeStatut(f)}` : 'Quête supprimée'}</p>
-      ${f && f.statut !== statutVise ? `<button class="btn ghost petit" data-action="mj-quete-statut" data-id="${f.id}" data-statut="${statutVise}">Passer la quête à « ${statutVise} »</button>` : ''}` + propre;
+      ${f && estEnAttente(f) ? `<p class="badge-attente">⏳ En attente · invisible des joueurs</p><button class="btn" data-action="quete-reveler" data-id="${f.id}">Révéler la quête</button>`
+        : f && f.statut !== statutVise ? `<button class="btn ghost petit" data-action="mj-quete-statut" data-id="${f.id}" data-statut="${statutVise}">Passer la quête à « ${statutVise} »</button>` : ''}` + propre;
   }
   return `<article class="etape type-${e.type} ${e.fait ? 'faite' : ''}">
     <div class="etape-tete">
@@ -3808,8 +3808,7 @@ function ongletSorts(p) {
       : '<p><b>Aucun focalisateur.</b> Pour lancer des sorts, il faut une baguette (case Baguette de la fiche) ou un objet magique marqué « Focalisateur » dans l\'inventaire.</p>'}
     <p class="hint aide">Sans son focalisateur (baguette perdue, objet rangé ou retiré de l'inventaire), un sort ne peut plus être lancé.</p>
   </div>` : '';
-  const prieres = cartePriere(p, etat(p));
-  return prieres + `
+  return `
   <section class="card"><h3>Sorts du personnage</h3>
     ${blocFocal}
     <div class="linked">${linked || '<p class="empty">Aucun sort lié. Ajoute-les depuis le grimoire ci-dessous.</p>'}</div>
@@ -4610,14 +4609,45 @@ const STATUTS_FICHE = {
 };
 const champsFiche = f => JSON.stringify([...['nom', 'type', 'role', 'lieu', 'statut', 'alias', 'description'].map(k => String(f[k] ?? '')), JSON.stringify(f.extra || {})]);
 const fichesPubliees = () => db.fichesPubliees || [];
+/* Quêtes « en attente » : préparées par le MJ, rangées dans ses données, invisibles des joueurs tant qu'elles ne sont pas révélées */
+const quetesAttente = () => {
+  if (!((estMJ() || !enLigne()) && db.mjData)) return [];
+  const m = mjd();
+  if (!Array.isArray(m.quetesAttente)) m.quetesAttente = [];
+  return m.quetesAttente;
+};
+/* Remplace la liste des quêtes en attente (mjd() renvoie une copie : on calcule la liste avant de l'affecter) */
+function majQuetesAttente(l) { const m = mjd(); m.quetesAttente = l; }
+const estEnAttente = f => !!f && quetesAttente().some(x => x.id === f.id);
+function revelerQuete(id) {
+  const l = quetesAttente(), f = l.find(x => x.id === id);
+  if (!f) return null;
+  majQuetesAttente(l.filter(x => x.id !== id));
+  f.statut = 'En cours'; f.maj = Date.now();
+  db.fiches = [...(db.fiches || []).filter(x => x.id !== id), f];
+  db.fichesSupprimees = (db.fichesSupprimees || []).filter(x => x !== id);
+  saveMJ('quetesAttente'); saveNow();
+  return f;
+}
+function mettreEnAttente(id) {
+  const f = ficheLocale(id);
+  if (!f || f.type !== 'quete') return;
+  db.fiches = (db.fiches || []).filter(x => x.id !== id);
+  if (fichesPubliees().some(x => x.id === id)) db.fichesSupprimees = [...new Set([...(db.fichesSupprimees || []), id])];
+  f.statut = 'En attente';
+  majQuetesAttente([...quetesAttente().filter(x => x.id !== id), f]);
+  saveMJ('quetesAttente'); saveNow();
+}
 function fichesToutes() {
   const sup = new Set(db.fichesSupprimees || []);
   const m = new Map(fichesPubliees().map(f => [f.id, f]));
   for (const f of db.fiches || []) m.set(f.id, f);
+  for (const f of quetesAttente()) { m.set(f.id, f); sup.delete(f.id); }
   return [...m.values()].filter(f => !sup.has(f.id)).sort((a, b) => String(a.nom).localeCompare(String(b.nom), 'fr'));
 }
 const findFiche = id => fichesToutes().find(f => f.id === id);
 function statutPublication(f) {
+  if (estEnAttente(f)) return 'publie'; /* jamais envoyée tant qu'elle est en attente */
   const pub = fichesPubliees().find(x => x.id === f.id);
   const loc = (db.fiches || []).find(x => x.id === f.id);
   if (!pub) return 'brouillon';
@@ -4650,6 +4680,8 @@ async function chargerFiches() {
   }
 }
 function ficheLocale(id) {
+  const att = quetesAttente().find(x => x.id === id);
+  if (att) return att;
   db.fiches = db.fiches || [];
   let f = db.fiches.find(x => x.id === id);
   if (!f) {
@@ -4715,7 +4747,7 @@ function carteFiche(f) {
   const st = statutPublication(f);
   const princ = estQuetePrincipale(f), perso = porteeQuete(f) === 'personnelle';
   return `<a class="fiche-carte type-${f.type} ${princ ? 'quete-principale' : ''} ${perso ? 'quete-perso' : ''}" href="#/fiche/${f.id}">
-    ${princ ? '<span class="badge-principale">★ Quête principale</span>' : ''}${perso ? `<span class="badge-perso">Quête personnelle${nomPersoQuete(f) ? ' · ' + esc(nomPersoQuete(f)) : ''}</span>` : ''}
+    ${estEnAttente(f) ? '<span class="badge-attente">⏳ En attente</span>' : ''}${princ ? '<span class="badge-principale">★ Quête principale</span>' : ''}${perso ? `<span class="badge-perso">Quête personnelle${nomPersoQuete(f) ? ' · ' + esc(nomPersoQuete(f)) : ''}</span>` : ''}
     <span class="fiche-carte-tete"><b>${esc(f.nom)}</b>${badgeStatut(f)}</span>
     ${f.role && !princ || f.lieu ? `<small>${esc([princ ? '' : f.role, f.lieu].filter(Boolean).join(', '))}</small>` : ''}
     ${st !== 'publie' && peutEcrireFiches() ? `<span class="statut statut-${st}">${STATUTS_RECAP[st]}</span>` : ''}
@@ -4787,6 +4819,7 @@ function pageFiche(id) {
     <p class="recit-num">${esc(TYPE_FICHE_UN[f.type] || 'Fiche')}</p>
     <h1>${esc(f.nom)}</h1>
     ${estQuetePrincipale(f) ? '<p class="badge-principale grand">★ Quête principale</p>' : porteeQuete(f) === 'personnelle' ? `<p class="badge-perso grand">Quête personnelle${nomPersoQuete(f) ? ` de ${persoDeQuete(f) ? `<a href="#/perso/${persoDeQuete(f).id}/fiche">${esc(nomPersoQuete(f))}</a>` : esc(nomPersoQuete(f))}` : ''}</p>${f.role && !/personnelle/i.test(f.role) ? `<p class="sub">${esc(f.role)}</p>` : ''}` : f.role ? `<p class="sub">${esc(f.role)}</p>` : ''}
+    ${estEnAttente(f) ? `<p class="badge-attente grand">⏳ En attente · invisible des joueurs</p>` : ''}
     <div class="fiche-meta">
       ${f.lieu ? `<span>Lieu : ${lienFiche(f.lieu)}</span>` : ''}${badgeStatut(f)}
       ${f.alias ? `<span>Aussi appelé : ${esc(f.alias)}</span>` : ''}
@@ -4794,6 +4827,7 @@ function pageFiche(id) {
     <div class="ornement" aria-hidden="true"><span></span></div>
     <div class="recit-texte">${formaterRecit(f.description) || '<p class="empty">Pas encore de description.</p>'}</div>
     ${perso ? `<p><a class="btn ghost" href="#/perso/${perso.id}/fiche">Voir la fiche de personnage</a></p>` : ''}
+    ${f.type === 'quete' && estMJ() ? `<div class="btns">${estEnAttente(f) ? `<button class="btn" data-action="quete-reveler" data-id="${f.id}">Révéler la quête</button>` : `<button class="btn ghost petit" data-action="quete-attente" data-id="${f.id}">Mettre en attente (cacher aux joueurs)</button>`}</div>` : ''}
   </article>
   <section class="card"><h3>Apparaît dans</h3>
     ${app.length ? `<ul class="passages">${app.map(({ r, extraits, total }) => `<li><a href="#/recap/${r.id}">Session ${esc(r.numero)}${r.titre ? ' : ' + esc(r.titre) : ''}</a>${total > 1 ? ` <small>${total} passages</small>` : ''}
@@ -4819,6 +4853,7 @@ function formFiche(f0) {
       ${fi(f, 'nom', 'Nom', { span: true })}
       ${sel(f, 'type', 'Type', Object.entries(TYPE_FICHE_UN))}
       ${statuts.length ? sel(f, 'statut', 'Statut', statuts) : fi(f, 'statut', 'Statut')}
+      ${f.type === 'quete' && estMJ() ? `<p class="ligne-entiere">${estEnAttente(f) ? '<span class="badge-attente">⏳ En attente · invisible des joueurs</span> <button class="lien" data-action="quete-reveler" data-id="' + f.id + '">Révéler maintenant</button>' : '<button class="lien" data-action="quete-attente" data-id="' + f.id + '">⏳ Mettre en attente (cacher aux joueurs)</button>'}</p>` : ''}
       ${f.type === 'quete' ? `<label class="f"><span>Type de quête</span><select data-bind="extra.portee" data-rerender>${[['principale', '★ Quête principale'], ['secondaire', 'Quête secondaire'], ['personnelle', 'Quête personnelle']].map(([v, l]) => `<option value="${v}" ${porteeQuete(f) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         ${porteeQuete(f) === 'personnelle' ? `<label class="f"><span>Quête de</span><select data-bind="extra.persoId" data-rerender><option value="">— Choisir un personnage —</option>${db.personnages.filter(x => estMembre(x) && (!enLigne() || x.publie || x.pnjMJ)).map(x => `<option value="${x.id}" ${f.extra?.persoId === x.id ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select></label>` : ''}` : ''}
       ${fi(f, 'role', 'Rôle ou résumé en quelques mots', { span: true, ph: 'Ex. : Aubergiste de Wellon' })}
@@ -6015,6 +6050,7 @@ document.addEventListener('input', ev => {
   if (db.personnages.includes(state.ctx) && !peutModifier(state.ctx)) return;
   if (state.ctx === state.editRecapObj && !estAdmin()) return;
   if (state.ctx === state.editFicheObj && !peutEcrireFiches()) return;
+  if (state.ctx === state.editFicheObj && estEnAttente(state.ctx)) { setTimeout(() => saveMJ('quetesAttente'), 0); }
   if (state.ctx === state.editFicheObj && path === 'extra.persoId') state.ctx.extra = { ...(state.ctx.extra || {}), persoNom: findPerso(t.value)?.nom || '' };
   /* Valider un niveau est réservé au MJ (le joueur le prépare seulement) */
   if (/^progression\.\d+\.atteint$/.test(path) && enLigne() && !estMJ() && db.personnages.includes(state.ctx)) { t.checked = !t.checked; toast('C\'est le MJ qui valide le passage de niveau.'); return; }
@@ -6093,7 +6129,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -6432,6 +6468,7 @@ document.addEventListener('click', ev => {
       state.editFiche = b.dataset.id; ficheLocale(b.dataset.id); render();
       break;
     case 'fiche-fin':
+      if (estEnAttente(state.editFicheObj)) { saveMJ('quetesAttente'); state.editFiche = null; saveNow(); render(); toast('Quête en attente : invisible des joueurs'); break; }
       state.editFiche = null; saveNow(); render();
       toast(aPublier() ? 'Enregistré sur cet appareil. Pense à publier.' : 'Enregistré');
       break;
@@ -6443,6 +6480,7 @@ document.addEventListener('click', ev => {
     case 'del-fiche': {
       if (!peutEcrireFiches() || !confirm('Supprimer cette fiche ? Elle disparaîtra pour tout le monde à la prochaine publication.')) break;
       const id = b.dataset.id;
+      if (quetesAttente().some(x => x.id === id)) { majQuetesAttente(quetesAttente().filter(x => x.id !== id)); saveMJ('quetesAttente'); }
       db.fiches = (db.fiches || []).filter(x => x.id !== id);
       if (fichesPubliees().some(x => x.id === id)) db.fichesSupprimees = [...new Set([...(db.fichesSupprimees || []), id])];
       state.editFiche = null; saveNow(); go('#/encyclo');
@@ -7162,12 +7200,12 @@ document.addEventListener('click', ev => {
     case 'mj-quete-nouvelle': {
       const nom = prompt('Nom de la nouvelle quête :', '');
       if (!nom) break;
-      const f = { id: uid(), nom, type: 'quete', role: 'Quête', lieu: '', statut: 'En cours', alias: '', description: '', maj: Date.now() };
-      db.fiches = [...(db.fiches || []), f];
-      const ss = sessionMJ(b.dataset.s); ss.etapes[Number(b.dataset.i)].queteId = f.id;
-      saveMJ(cleSession(ss.id)); saveNow(); render();
-      publierFiche(f).then(render).catch(e2 => toast('Quête enregistrée sur cet appareil (publication : ' + e2.message + ')'));
-      toast(`Quête « ${nom} » créée`);
+      const ss = sessionMJ(b.dataset.s), et = ss.etapes[Number(b.dataset.i)];
+      const f = { id: uid(), nom, type: 'quete', role: 'Quête secondaire', lieu: '', statut: 'En attente', alias: '', description: et.texte || '', maj: Date.now() };
+      majQuetesAttente([...quetesAttente(), f]);
+      et.queteId = f.id;
+      saveMJ('quetesAttente'); saveMJ(cleSession(ss.id)); saveNow(); render();
+      toast(`Quête « ${nom} » créée en attente : les joueurs ne la voient pas encore`);
       break;
     }
     case 'mj-quete-statut': {
@@ -7421,6 +7459,22 @@ document.addEventListener('click', ev => {
       if (a === 'prep-annuler') pr.utilises.cles = pr.utilises.cles.filter(k => k !== b.dataset.k);
       else { pr.utilises.cles.push(b.dataset.k); if (a === 'prep-soin') toast(`Converti en ${b.dataset.soin}`); }
       save(); render();
+      break;
+    }
+    case 'quete-reveler': {
+      if (!estMJ() && enLigne()) break;
+      const f = revelerQuete(b.dataset.id);
+      if (!f) break;
+      render();
+      publierFiche(f).then(() => { toast(`« ${f.nom} » est révélée aux joueurs`); render(); }).catch(e2 => alert('Révélée sur cet appareil, mais publication impossible : ' + e2.message));
+      break;
+    }
+    case 'quete-attente': {
+      if (!estMJ() && enLigne()) break;
+      if (!confirm('Mettre cette quête en attente ? Elle disparaîtra de l\'encyclopédie des joueurs jusqu\'à ce que tu la révèles.')) break;
+      mettreEnAttente(b.dataset.id); render();
+      if (enLigne()) publierTout();
+      toast('Quête en attente : invisible des joueurs');
       break;
     }
     case 'replis-tout': {
