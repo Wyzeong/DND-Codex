@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '89';
+const VERSION_APPLI = '91';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -224,6 +224,7 @@ const JS_CONTRE = [['poison', 'le poison'], ['sorts', 'les sorts'], ['enchanteme
 const CIBLES_BONUS = [
   ['Caractéristiques', R.CARACS.map(c => [c.k, c.n])],
   ['Taille', [['taille', 'Catégorie de taille (+1 : plus grand, −1 : plus petit)']]],
+  ['Points de vie', [['pvMax', 'Points de vie maximum']]],
   ['Défense', [['caArmure', 'CA (armure, bouclier, naturelle)'], ['caParade', 'CA (parade, divers : aussi au contact)']]],
   ['Jets de sauvegarde', [['js', 'Tous les jets de sauvegarde'], ['vig', 'Vigueur'], ['ref', 'Réflexes'], ['vol', 'Volonté']]],
   ['Combat', [['attaque', 'Jets d\'attaque'], ['degats', 'Dégâts'], ['init', 'Initiative'], ['vitesse', 'Vitesse (m)']]],
@@ -265,6 +266,7 @@ function bonusObjets(p) {
     if (et.actif === false) continue;
     for (const b of et.bonus || []) ajouter(b, et.nom || 'État');
   }
+  if (p.familier) for (const b of p.familier.bonus || []) ajouter({ ...b, cond: b.cond || !!String(b.quand || '').trim() }, `Familier${p.familier.nom ? ' : ' + p.familier.nom : ''}`);
   for (const am of p.ameliorations || []) {
     const src = (am.permanent ? 'Bonus permanent' : 'Amélioration temporaire') + (am.note ? ` (${am.note})` : '');
     if (am.preset === 'agrandissement') { ajouter({ cible: 'taille', val: 1 }, 'Agrandissement'); ajouter({ cible: 'for', val: 2 }, 'Agrandissement'); ajouter({ cible: 'dex', val: -2 }, 'Agrandissement'); }
@@ -742,7 +744,6 @@ function pagePersos() {
       <div class="banniere-in"><span class="plus" aria-hidden="true">+</span><h2>Nouveau</h2><p>Créer un personnage</p><span class="losange" aria-hidden="true"></span></div>
     </button>`;
   return `
-    ${carteConteur(false)}
     <div class="compagnie-tete">
       <h2 class="titre-section">La compagnie</h2>
       <div class="compagnie-outils">
@@ -794,7 +795,7 @@ function pagePersoSuite(p, tab) {
 function recap(p, e) {
   if (!e.niveau && !e.race) return '';
   const s = stats(p, e);
-  const pv = num(p.pvMax) ? `${pvActuels(p)}/${num(p.pvMax)}` : '—';
+  const pv = pvMaxEff(p) ? `${pvActuels(p)}/${pvMaxEff(p)}` : '—';
   return `<div class="recap"><span>PV<b>${esc(pv)}</b></span><span>CA<b>${s.ca}</b></span><span>Initiative<b>${R.signe(s.init)}</b></span><span>Vitesse<b>${s.vitesse} m</b></span><span>BBA<b>${R.attTxt(s.att)}</b></span></div>`;
 }
 
@@ -886,6 +887,7 @@ function ongletFicheBrut(p, e) {
 
   ${(p.etats || []).some(x => x.actif !== false) ? ficheEtats(p) : ''}
   ${ficheAmeliorations(p)}
+  ${carteFamilier(p, e)}
   ${(() => { const q = fichesToutes().filter(f => porteeQuete(f) === 'personnelle' && f.extra?.persoId === p.id); return q.length ? `<section class="card"><h3>Quêtes personnelles</h3><div class="fiches">${q.map(carteFiche).join('')}</div></section>` : ''; })()}
   ${ficheCombat(p, e)}
 
@@ -992,6 +994,64 @@ function puceEtats(p, max = 6) {
   if (!l.length) return '';
   return `<div class="etats-puces">${l.slice(0, max).map(x => `<span class="etat-puce ${gravite(x)}" title="${esc(x.description || '')}">${esc(x.nom)}</span>`).join('')}${l.length > max ? `<span class="etat-puce">+${l.length - max}</span>` : ''}</div>`;
 }
+/* ===== Familier (magicien, ensorceleur) ===== */
+/* Les familiers des règles et le bonus qu'ils donnent à leur maître (SRD) */
+const FAMILIERS = [
+  { id: 'chauve-souris', nom: 'Chauve-souris', bonus: [{ cible: 'comp:perception', val: 3 }], txt: '+3 en Perception auditive' },
+  { id: 'chat', nom: 'Chat', bonus: [{ cible: 'comp:deplacement-silencieux', val: 3 }], txt: '+3 en Déplacement silencieux' },
+  { id: 'corbeau', nom: 'Corbeau', bonus: [{ cible: 'comp:estimation', val: 3 }], txt: '+3 en Estimation, et il parle une langue (au choix du maître)' },
+  { id: 'crapaud', nom: 'Crapaud', bonus: [{ cible: 'pvMax', val: 3 }], txt: '+3 points de vie maximum' },
+  { id: 'belette', nom: 'Belette', bonus: [{ cible: 'ref', val: 2 }], txt: '+2 aux jets de Réflexes' },
+  { id: 'faucon', nom: 'Faucon', bonus: [{ cible: 'comp:detection', val: 3, cond: true, quand: 'en pleine lumière' }], txt: '+3 en Détection en pleine lumière' },
+  { id: 'hibou', nom: 'Hibou ou chouette', bonus: [{ cible: 'comp:detection', val: 3, cond: true, quand: 'dans l\'ombre ou la pénombre' }], txt: '+3 en Détection dans l\'ombre' },
+  { id: 'lezard', nom: 'Lézard', bonus: [{ cible: 'comp:escalade', val: 3 }], txt: '+3 en Escalade' },
+  { id: 'rat', nom: 'Rat', bonus: [{ cible: 'vig', val: 2 }], txt: '+2 aux jets de Vigueur' },
+  { id: 'serpent', nom: 'Serpent (vipère minuscule)', bonus: [{ cible: 'comp:bluff', val: 3 }], txt: '+3 en Bluff' },
+];
+const aDesFamiliers = e => !!(e.classes.magicien || e.classes.ensorceleur);
+function carteFamilier(p, e) {
+  if (!aDesFamiliers(e) && !p.familier) return '';
+  const mod = peutModifier(p);
+  const f = p.familier;
+  if (!f) {
+    return `<section class="card familier"><h3>Familier</h3>
+      <p>Tu n'as pas encore de familier.</p>
+      <details class="effet"><summary>La recette pour l'invoquer</summary>
+        <p><b>Le rituel</b> : 24 heures d'incantation ininterrompue, et des ingrédients magiques d'une valeur de <b>100 po</b>, consumés pendant le rituel.</p>
+        <p><b>Le choix</b> : l'animal se choisit au moment du rituel. Chacun donne un <b>bonus permanent</b> à son maître tant qu'il vit et reste à moins de 1,5 km.</p>
+        <p><b>S'il meurt</b>, le maître doit réussir un jet de Vigueur DD 15 ou perdre 200 PX par niveau de lanceur ; il ne peut en invoquer un nouveau qu'au bout d'un an et un jour.</p>
+      </details>
+      ${mod ? `<p class="lbl">Choisir l'animal</p><div class="familiers-choix">${FAMILIERS.map(x => `<button class="choix-familier" data-action="familier-invoquer" data-type="${x.id}"><b>${esc(x.nom)}</b><small>${esc(x.txt)}</small></button>`).join('')}</div>` : ''}
+    </section>`;
+  }
+  const type = FAMILIERS.find(x => x.id === f.type);
+  const nivMage = (e.classes.magicien || 0) + (e.classes.ensorceleur || 0);
+  const opts = cur => CIBLES_BONUS.map(([g, li]) => `<optgroup label="${g}">${li.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  const pvMaitre = pvMaxEff(p);
+  return `<section class="card familier"><h3>Familier</h3>
+    <div class="familier-tete">
+      <div class="familier-image">${f.image ? `<button class="illustration" data-action="img-zoom" data-src="${f.image}" aria-label="Agrandir"><img src="${f.image}" alt=""></button>` : `<span class="familier-vide">${esc((type?.nom || '?')[0])}</span>`}
+        ${mod ? `<button class="lien" data-action="img-choisir" data-type="familier">${f.image ? 'Changer' : 'Ajouter une image'}</button>${f.image ? '<button class="lien" data-action="familier-image-retirer">Retirer</button>' : ''}` : ''}</div>
+      <div class="familier-infos">
+        ${mod ? `<label class="f"><span>Nom</span><input type="text" data-bind="familier.nom" value="${esc(f.nom || '')}" placeholder="Son nom"></label>` : `<h4>${esc(f.nom || 'Sans nom')}</h4>`}
+        <p class="sub">${esc(type?.nom || f.type || 'Familier')}${nivMage ? ` · maître de niveau ${nivMage}` : ''}</p>
+        <p class="hint">PV : la moitié des tiens${pvMaitre ? ` (${Math.floor(pvMaitre / 2)})` : ''}. Tant qu'il est à portée de main, tu gagnes le don <b>Vigilance</b> (+2 en Détection et en Perception auditive).</p>
+      </div>
+    </div>
+    <p class="lbl">Bonus pour toi</p>
+    <div class="am-liste">${(f.bonus || []).map((b, i) => mod ? `<div class="fam-ligne">
+        <input type="text" inputmode="numeric" class="s" data-bind="familier.bonus.${i}.val" data-recalc value="${esc(b.val)}" aria-label="Valeur">
+        <select data-bind="familier.bonus.${i}.cible" data-rerender aria-label="Ce qui est modifié"><option value="">— Choisir —</option>${opts(b.cible)}</select>
+        <input type="text" data-bind="familier.bonus.${i}.quand" value="${esc(b.quand || '')}" placeholder="Toujours (ou : seulement quand…)" aria-label="Condition">
+        <button class="icon" data-action="familier-bonus-suppr" data-idx="${i}" aria-label="Retirer">✕</button>
+      </div>` : `<p><span class="${b.quand ? 'bonus-cond' : 'bonus-objet'}">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>${b.quand ? ` <small>${esc(b.quand)}</small>` : ''}</p>`).join('') || '<p class="empty">Aucun bonus.</p>'}</div>
+    ${mod ? `<div class="btns"><button class="btn ghost petit" data-action="familier-bonus-ajout">+ Bonus</button><button class="btn ghost petit" data-action="familier-vigilance">${(f.bonus || []).some(b => b.vigilance) ? '− Vigilance (hors de portée)' : '+ Vigilance (à portée de main)'}</button></div>` : ''}
+    <label class="f"><span>Notes</span><textarea data-bind="familier.notes" rows="2" placeholder="Caractère, tours appris, où il se cache en combat…" ${mod ? '' : 'readonly'}>${esc(f.notes || '')}</textarea></label>
+    ${mod ? `<div class="btns"><button class="btn ghost danger petit" data-action="familier-renvoyer">Le familier est mort ou renvoyé</button></div>` : ''}
+    <p class="hint aide">Les bonus du familier comptent sur ta fiche comme ceux d'un objet. Une condition (« dans l'ombre ») le range dans les bonus conditionnels, affichés en violet et non comptés dans les totaux. Le bouton Vigilance ajoute ou retire le don quand ton familier est à portée de main.</p>
+  </section>`;
+}
+
 /* Bonus et malus : +4 CA, −2 For… temporaires ou permanents, comptés dans toute la fiche.
    Ceux accordés par le MJ ne peuvent être modifiés ou retirés que par lui. */
 function ficheAmeliorations(p) {
@@ -1823,7 +1883,7 @@ function pageMJ() {
   }).join('');
   const ini = state.mjInit || (state.mjInit = [
     ...DEMO_MJ.initiative.map(c => ({ ...c })),
-    ...persos.map(x => { const e = etat(x); return { nom: x.nom, init: 10 + stats(x, e).init, pv: num(x.pvMax), pvMax: num(x.pvMax), ennemi: false }; }),
+    ...persos.map(x => { const e = etat(x); return { nom: x.nom, init: 10 + stats(x, e).init, pv: pvMaxEff(x), pvMax: pvMaxEff(x), ennemi: false }; }),
   ].sort((a, b) => b.init - a.init));
   const tour = state.mjTour || 0;
   return `<div class="pagehead"><div><h1>Espace MJ</h1><p class="sub">Tableau de bord du maître du jeu</p></div>
@@ -1923,13 +1983,15 @@ function carteBaguette(p) {
 /* ===== Vitalité : PV actuels, dés de vie, rations ===== */
 /* « 2d8 » ou « 1d8+2d10 » → nombre de dés */
 const nbDesVie = txt => (String(txt || '').match(/(\d+)\s*d\s*\d+/gi) || []).reduce((t, m) => t + parseInt(m, 10), 0);
-const pvActuels = p => (p.pvActuels === '' || p.pvActuels == null) ? num(p.pvMax) : num(p.pvActuels);
+const pvActuels = p => (p.pvActuels === '' || p.pvActuels == null) ? pvMaxEff(p) : num(p.pvActuels);
 const rationDefaut = p => (p.equipement || []).find(it => it.id === p.rationDefaut && it.cat === 'ration')
   || (p.equipement || []).find(it => it.cat === 'ration');
 const nbRations = p => (p.equipement || []).filter(it => it.cat === 'ration').reduce((t, it) => t + num(it.qte), 0);
 
+/* PV max saisis + bonus (crapaud familier, objets…) */
+function pvMaxEff(p) { if (!p) return 0; const base = num(p.pvMax); if (!base) return 0; try { return base + (bonusObjets(p).tot.pvMax || 0); } catch (e) { return base; } }
 function barrePV(p) {
-  const max = num(p.pvMax), act = pvActuels(p);
+  const max = pvMaxEff(p), act = pvActuels(p);
   const pct = max ? Math.max(0, Math.min(100, Math.round(act / max * 100))) : 0;
   const etat = act <= 0 ? 'ko' : pct <= 25 ? 'critique' : pct <= 50 ? 'blesse' : 'ok';
   return { max, act, pct, etat };
@@ -2607,7 +2669,7 @@ function lancerCombat(prep) {
   const joueurs = db.personnages.filter(x => !x._public && (!x.pnjMJ || true) && (!enLigne() || x.publie));
   const combattants = [];
   for (const x of joueurs) {
-    combattants.push({ id: uid(), nom: x.nom, type: estMembre(x) ? 'pj' : 'mj', persoId: x.id, init: '', bonusInit: stats(x, etat(x)).init, pv: pvActuels(x), pvMax: num(x.pvMax), ca: stats(x, etat(x)).ca, actif: estMembre(x) });
+    combattants.push({ id: uid(), nom: x.nom, type: estMembre(x) ? 'pj' : 'mj', persoId: x.id, init: '', bonusInit: stats(x, etat(x)).init, pv: pvActuels(x), pvMax: pvMaxEff(x), ca: stats(x, etat(x)).ca, actif: estMembre(x) });
   }
   for (const y of (prep.participants || [])) {
     const t = m.pnj.find(x => x.id === y.pnjId);
@@ -5141,7 +5203,7 @@ async function lignesChangees(table, cache, champs, present = () => true) {
 function resumeLog(p) {
   const e = etat(p);
   return {
-    nom: p.nom || '', pv: pvActuels(p), pvMax: num(p.pvMax), niveau: e.niveau, classes: classesTxt(e),
+    nom: p.nom || '', pv: pvActuels(p), pvMax: pvMaxEff(p), niveau: e.niveau, classes: classesTxt(e),
     caracs: Object.fromEntries(R.CARACS.map(c => [c.k, (p.caracs || {})[c.k]?.val ?? ''])),
     argent: piecesTxt(p.argent),
     objets: Object.fromEntries((p.equipement || []).map(it => [it.id, `${it.nom || 'Objet'}|${num(it.qte) || 1}|${it.equipe === false ? 0 : 1}`])),
@@ -5802,6 +5864,22 @@ document.addEventListener('click', ev => {
     state.bulleCurseur = (avant + ajout).length; state.bulleType = null; state.bulleQ = ''; state.bulleRedessiner = true; majBulle();
   }
 });
+/* Toucher « version … » sous le titre : accès discret au code administrateur */
+document.addEventListener('click', ev => {
+  if (!ev.target.closest || !ev.target.closest('#version-appli')) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (!enLigne()) { toast('Mode hors ligne : tout est déjà accessible sur cet appareil'); return; }
+  if (db.codeCampagne) {
+    if (confirm('Le code administrateur est enregistré sur cet appareil.\n\nOK : le retirer de cet appareil\nAnnuler : le garder')) { db.codeCampagne = ''; saveNow(); render(); toast('Code administrateur retiré de cet appareil'); }
+    return;
+  }
+  const code = (prompt('Code administrateur :') || '').trim();
+  if (!code) return;
+  rpc('verifier_code', { p_code: code }).then(ok => {
+    if (ok) { db.codeCampagne = code; saveNow(); render(); toast('Code administrateur accepté'); }
+    else toast('Code incorrect');
+  }).catch(e => alert('Vérification impossible : ' + e.message));
+}, true);
 function ranger_aides(racine = document) {
   for (const el of [...racine.querySelectorAll('.aide')]) {
     const carte = el.closest('details.card, section.card, .card');
@@ -5880,7 +5958,7 @@ function render(garderScroll = true) {
   if (btPartage) btPartage.hidden = !admin;
   if (btLog) btLog.hidden = !voitJournal();
   const vers = document.getElementById('version-appli');
-  if (vers && !vers.textContent) vers.textContent = 'version ' + VERSION_APPLI;
+  if (vers && !vers.textContent) { vers.textContent = 'version ' + VERSION_APPLI; vers.title = 'Administration'; }
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === nav || (a.dataset.nav === 'sorts' && nav === 'aptitudes')));
   if (garderScroll) window.scrollTo(0, y);
 }
@@ -6688,7 +6766,7 @@ document.addEventListener('click', ev => {
       p.etats[idx].bonus.splice(Number(b.dataset.j), 1); save(); render();
       break;
     case 'pv-delta': {
-      const m = num(p.pvMax);
+      const m = pvMaxEff(p);
       p.pvActuels = String(Math.max(-10, Math.min(m || 9999, pvActuels(p) + Number(b.dataset.d))));
       save(); render();
       break;
@@ -6703,7 +6781,7 @@ document.addEventListener('click', ev => {
       const v = prompt('Résultat du dé de vie (bonus de Constitution compris) :', '');
       if (v === null || v.trim() === '' || isNaN(Number(v))) break;
       p.dvUtilises = num(p.dvUtilises) + 1;
-      p.pvActuels = String(Math.min(num(p.pvMax) || 9999, pvActuels(p) + Math.max(0, Number(v))));
+      p.pvActuels = String(Math.min(pvMaxEff(p) || 9999, pvActuels(p) + Math.max(0, Number(v))));
       save(); render(); toast(`+${Math.max(0, Number(v))} PV`);
       break;
     }
@@ -6713,7 +6791,7 @@ document.addEventListener('click', ev => {
     case 'mj-pvj': {
       const x = findPerso(b.dataset.id);
       if (!x) break;
-      const m = num(x.pvMax);
+      const m = pvMaxEff(x);
       const nv = Math.max(-10, Math.min(m || 9999, pvActuels(x) + Number(b.dataset.d)));
       const fini = () => { x.pvActuels = String(nv); x.mjMaj = Date.now(); saveNow(); render(); };
       if (enLigne() && !x.pnjMJ) rpc('mj_pv', { p_code: db.codeMJ, p_id: x.id, p_pv: nv }).then(fini).catch(e => alert('Impossible : ' + e.message));
@@ -7477,6 +7555,33 @@ document.addEventListener('click', ev => {
       toast('Quête en attente : invisible des joueurs');
       break;
     }
+    case 'familier-invoquer': {
+      const t = FAMILIERS.find(x => x.id === b.dataset.type); if (!t) break;
+      if (!confirm(`Invoquer un ${t.nom.toLowerCase()} ? Le rituel dure 24 heures et consomme 100 po d'ingrédients (à retirer de ta bourse avec le MJ).`)) break;
+      p.familier = { type: t.id, nom: '', image: '', notes: '', bonus: t.bonus.map(x => ({ ...x })) };
+      save(); render(); toast(`${t.nom} invoqué : pense à lui donner un nom`);
+      break;
+    }
+    case 'familier-bonus-ajout':
+      p.familier.bonus = [...(p.familier.bonus || []), { cible: 'comp:detection', val: '1', quand: '' }]; save(); render();
+      break;
+    case 'familier-bonus-suppr':
+      p.familier.bonus.splice(idx, 1); save(); render();
+      break;
+    case 'familier-vigilance': {
+      const l = p.familier.bonus || [];
+      if (l.some(x => x.vigilance)) p.familier.bonus = l.filter(x => !x.vigilance);
+      else p.familier.bonus = [...l, { cible: 'comp:detection', val: 2, quand: '', vigilance: true }, { cible: 'comp:perception', val: 2, quand: '', vigilance: true }];
+      save(); render();
+      break;
+    }
+    case 'familier-image-retirer':
+      p.familier.image = ''; save(); render();
+      break;
+    case 'familier-renvoyer':
+      if (!confirm('Retirer le familier de la fiche ? Ses bonus disparaissent.')) break;
+      p.familier = null; save(); render();
+      break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -7660,6 +7765,10 @@ $('#imginput').addEventListener('change', async ev => {
     return;
   }
   if (!p) return;
+  if (state.imgType === 'familier' && p.familier) {
+    p.familier.image = await reduireImage(file, 512, 'image/webp'); p.maj = Date.now(); saveNow(); persoModifie(p); render(); toast('Image du familier ajoutée');
+    return;
+  }
   if (state.imgType === 'objet') {
     const it = (p.equipement || []).find(x => x.id === state.imgObjet);
     if (it) { it.image = await reduireImage(file, 256, 'image/webp'); p.maj = Date.now(); saveNow(); persoModifie(p); render(); toast('Image ajoutée'); }
