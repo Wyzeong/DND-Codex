@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '98';
+const VERSION_APPLI = '100';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -3677,7 +3677,8 @@ function ficheCompetences(p, e) {
   return `<section class="card"><h3>Compétences</h3>
     <div class="cl-resume">
       <span>Points : <b>${depense}</b> / ${dispo}${e.race?.pcBonus ? ' (humain compris)' : ''}</span>
-      ${enLigne() && !p.pnjMJ && peutModifier(p) && rangsNonValides(p) ? `<span><button class="lien" data-action="comp-valider">🔒 Valider mes rangs</button></span>` : ''}
+      ${enLigne() && !p.pnjMJ && peutModifier(p) && !(db.reglages || {}).compLibres && rangsNonValides(p) ? `<span><button class="lien" data-action="comp-valider">🔒 Valider mes rangs</button></span>` : ''}
+      ${(db.reglages || {}).compLibres ? '<span class="tag-cat">rangs libres (réglage de la campagne)</span>' : ''}
       <span>Rang max CC = niveau + 3 = <b>${rangsMax}</b></span>
       <span>Rang max CaC = (niveau + 3) / 2 = <b>${String(rangsMax / 2).replace('.', ',')}</b></span>
     </div>
@@ -4408,6 +4409,7 @@ async function chargerInfos() {
     if (l && l[0] && l[0].bourse) db.bourseCommune = { bourse: l[0].bourse, porteur_id: l[0].porteur_id || '', journal: l[0].bourse_journal || [], objets: l[0].coffre_objets || [] };
     db.conteur = (l && l[0]) || null;
     if (l && l[0] && l[0].jour) db.jour = l[0].jour;
+    if (l && l[0]) db.reglages = l[0].reglages || {};
     saveNow();
   } catch (e) { console.warn('Infos de campagne indisponibles (base pas encore en v3 ?)', e); }
 }
@@ -5757,6 +5759,10 @@ function pageDonnees() {
   <div class="pagehead"><div><h1>Partage et sauvegarde</h1>
     <p class="sub">Les données restent sur cet appareil. Le partage se fait par fichier.</p></div></div>
 
+  <section class="card"><h3>Réglages de la campagne</h3>
+    <label class="check"><input type="checkbox" data-action="reglage" data-cle="compLibres" ${(db.reglages || {}).compLibres ? 'checked' : ''}> Rangs de compétence libres : les joueurs ajoutent et retirent leurs rangs sans limite de points ni verrou de validation</label>
+    <p class="hint aide">Par défaut, un joueur ne peut ajouter des rangs que dans la limite de ses points, et ne peut pas retirer des rangs validés : seul le MJ le peut. Coche cette case pour lever la restriction (pendant une création de personnage ou une correction, par exemple), puis décoche-la. Le réglage s'applique à toute la campagne.</p>
+  </section>
   <section class="card intro"><h3>Partager avec la troupe</h3>
     <div class="btns">
       <button class="btn" data-action="import">Importer un fichier</button>
@@ -5933,6 +5939,17 @@ function ajusterTexte(t, reduire = true) {
 function ajusterTextes(racine) { if (racine) racine.querySelectorAll('textarea').forEach(ajusterTexte); }
 document.addEventListener('input', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target, false); });
 document.addEventListener('focusout', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target); });
+/* Fin de saisie d'un rang trop bas pour un joueur : on remet le minimum validé */
+document.addEventListener('change', ev => {
+  const t = ev.target;
+  if (!t.dataset || t.dataset.rangMin == null || !state.ctx) return;
+  const min = num(t.dataset.rangMin);
+  delete t.dataset.rangMin;
+  if (num(t.value) < min || t.value.trim() === '') {
+    t.value = min; setP(state.ctx, t.dataset.bind, String(min)); save();
+    toast(`Ces rangs sont validés : seul le MJ peut les retirer (minimum ${min}).`);
+  }
+});
 document.addEventListener('toggle', ev => { if (ev.target.tagName === 'DETAILS' && ev.target.open) ajusterTextes(ev.target); }, true);
 window.addEventListener('resize', () => ajusterTextes($('#app')));
 /* ===== Bulle de notes : un bloc de texte par séance, accessible sur toutes les pages ===== */
@@ -6326,11 +6343,13 @@ document.addEventListener('input', ev => {
   if (state.ctx === state.editFicheObj && path === 'extra.persoId') state.ctx.extra = { ...(state.ctx.extra || {}), persoNom: findPerso(t.value)?.nom || '' };
   /* Valider un niveau est réservé au MJ (le joueur le prépare seulement) */
   const mRang = path.match(/^(comp\.[^.]+|compPerso\.\d+)\.rangs$/);
-  if (mRang && db.personnages.includes(state.ctx) && !state.ctx.pnjMJ && enLigne()) {
+  if (mRang && db.personnages.includes(state.ctx) && !state.ctx.pnjMJ && enLigne() && !(db.reglages || {}).compLibres) {
     const x = state.ctx, e2 = etat(x), cle = mRang[1];
     const avant = num(getP(x, path)), apres = num(t.value), min = num((x.compValidees || {})[cle]);
     if (!estMJ()) {
-      if (apres < min) { t.value = min; setP(x, path, String(min)); toast(`Ces rangs sont validés : seul le MJ peut les retirer (minimum ${min}).`); save(); return; }
+      /* Pendant la frappe (effacer « 5 » pour écrire « 6 »), la valeur passe un instant sous le minimum :
+         on attend la fin de la saisie pour la refuser, au lieu de la remettre aussitôt */
+      if (t.value.trim() === '' || apres < min) { t.dataset.rangMin = min; return; }
       setP(x, path, t.value);
       if (pointsDepenses(x, e2) > pointsComp(x, e2)) { setP(x, path, String(avant)); t.value = avant; toast('Plus assez de points de compétence pour ce rang.'); return; }
       setP(x, path, String(avant));
@@ -6416,7 +6435,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['reglage', 'quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -7843,6 +7862,16 @@ document.addEventListener('click', ev => {
       if (!confirm('Valider tes rangs de compétence ? Une fois validés, seul le MJ pourra les retirer.')) break;
       p.compValidees = rangsActuels(p); save(); render(); toast('Rangs validés');
       break;
+    case 'reglage': {
+      if (!estAdmin()) { b.checked = !b.checked; break; }
+      const cle = b.dataset.cle, val = !!b.checked;
+      db.reglages = { ...(db.reglages || {}), [cle]: val }; saveNow();
+      if (enLigne()) rpc('definir_reglage', { p_code: codeAdmin(), p_cle: cle, p_val: val })
+        .then(r => { db.reglages = r || db.reglages; saveNow(); toast(val ? 'Restriction levée pour toute la campagne' : 'Restriction rétablie'); render(); })
+        .catch(e => { alert('Réglage non enregistré (la base est-elle en v20 ?) : ' + e.message); db.reglages = { ...(db.reglages || {}), [cle]: !val }; render(); });
+      else render();
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
