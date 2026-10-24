@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '100';
+const VERSION_APPLI = '101';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -781,7 +781,7 @@ function pagePersoSuite(p, tab) {
   const e = etat(p);
   const tabs = [['combat', 'Combat'], ['fiche', 'Personnage'], ['inventaire', 'Inventaire'], ['sorts', 'Sorts'], ['progression', 'Progression']]
     .map(([k, l]) => `<a href="#/perso/${p.id}/${k}" class="${tab === k ? 'active' : ''}">${l}</a>`).join('');
-  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : tab === 'inventaire' ? ongletInventaire(p, e) : tab === 'combat' ? ongletFiche(p, e, 'combat') : ongletFiche(p, e, 'perso');
+  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : tab === 'inventaire' ? repliable(ongletInventaire(p, e)) : tab === 'combat' ? ongletFiche(p, e, 'combat') : ongletFiche(p, e, 'perso');
   const lecture = !peutModifier(p);
   const body = lecture ? `<fieldset class="lecture" disabled>${contenu}</fieldset>` : contenu;
   return `
