@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '93';
+const VERSION_APPLI = '95';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -266,6 +266,7 @@ function bonusObjets(p) {
     if (et.actif === false) continue;
     for (const b of et.bonus || []) ajouter(b, et.nom || 'État');
   }
+  { const f = formeActive(p); if (f) for (const b of f.bonus || []) ajouter({ ...b, cond: b.cond || !!String(b.quand || '').trim() }, `Forme : ${f.nom || 'active'}`); }
   if (p.familier) for (const b of p.familier.bonus || []) ajouter({ ...b, cond: b.cond || !!String(b.quand || '').trim() }, `Familier${p.familier.nom ? ' : ' + p.familier.nom : ''}`);
   for (const am of p.ameliorations || []) {
     const src = (am.permanent ? 'Bonus permanent' : 'Amélioration temporaire') + (am.note ? ` (${am.note})` : '');
@@ -287,6 +288,9 @@ function nouveauNiveau(n, classe = '') {
 
 /* Reprend les fiches créées avec la première version */
 function migrer(p) {
+  initialiserFormes(p);
+  if (!p.compValidees) p.compValidees = rangsActuels(p);
+  synchroSortsProgression(p);
   if (p.schema >= 2) return;
   const trouve = (liste, v) => liste.find(x => norm(x) === norm(v));
   const notes = [];
@@ -762,6 +766,13 @@ function pagePerso(id, tab) {
   if (p.pnjMJ && !peutModifier(p)) { state.ctx = null; return pagePersoPublic(p); }
   state.ctx = p;
   if (!p.pnjMJ && (!enLigne() || (db.cles || {})[p.id]) && db.monPerso !== p.id) { db.monPerso = p.id; saveNow(); }
+  if (peutModifier(p)) {
+    const avant = JSON.stringify([p.formes, p.compValidees, p.sorts]);
+    initialiserFormes(p);
+    if (!p.compValidees) p.compValidees = rangsActuels(p);
+    synchroSortsProgression(p);
+    if (JSON.stringify([p.formes, p.compValidees, p.sorts]) !== avant) { p.maj = Date.now(); saveNow(); persoModifie(p); }
+  }
   if (state.effetForm && state.effetForm.persoId === p.id) return formEffet() + pagePersoSuite(p, tab);
   return pagePersoSuite(p, tab);
 }
@@ -820,7 +831,7 @@ function repliable(html) {
     return `<details class="card repli${classes}" data-section="${id}"${ferme ? '' : ' open'}><summary><h3>${titre}</h3></summary>${corps}</details>`;
   });
 }
-const outilsReplis = () => `<div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
+const outilsReplis = () => `<div class="fiche-recherche"><input type="search" id="fiche-q" placeholder="Chercher sur la fiche : vigueur, discrétion, CA…" aria-label="Chercher sur la fiche" autocomplete="off"><div id="fiche-res" class="fiche-res" hidden></div></div><div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
 
 function ongletFiche(p, e) {
   return outilsReplis() + repliable(ongletFicheBrut(p, e));
@@ -1707,6 +1718,7 @@ function ficheCombat(p, e) {
 
     </div>
 
+    ${blocFormes(p)}
     ${blocTour(p, e, st, mn, armes, res)}
     ${blocEffets(p)}
     ${resPar('libre').length ? `<h4 class="type-action">Actions libres</h4><div class="ressources">${resPar('libre').map(r => compteur(p, r)).join('')}</div>` : ''}
@@ -2378,7 +2390,8 @@ function carteXP() {
 function validerNiveau(x) {
   const l = (x.progression || []).find(y => !y.atteint);
   if (!l || !l.classe) return false;
-  l.atteint = true; appliquerAugment(x, l);
+  l.atteint = true; appliquerAugment(x, l); synchroSortsProgression(x);
+  x.compValidees = rangsActuels(x);
   const i = x.progression.indexOf(l);
   x.mjChamps = { ...(x.mjChamps || {}), [`progression.${i}.atteint`]: Date.now(), ...(l.augmentApplique ? { [`caracs.${l.augmentApplique}.val`]: Date.now() } : {}) };
   x.mjMaj = Date.now(); x.maj = Date.now();
@@ -3655,6 +3668,7 @@ function ficheCompetences(p, e) {
   return `<section class="card"><h3>Compétences</h3>
     <div class="cl-resume">
       <span>Points : <b>${depense}</b> / ${dispo}${e.race?.pcBonus ? ' (humain compris)' : ''}</span>
+      ${enLigne() && !p.pnjMJ && peutModifier(p) && rangsNonValides(p) ? `<span><button class="lien" data-action="comp-valider">🔒 Valider mes rangs</button></span>` : ''}
       <span>Rang max CC = niveau + 3 = <b>${rangsMax}</b></span>
       <span>Rang max CaC = (niveau + 3) / 2 = <b>${String(rangsMax / 2).replace('.', ',')}</b></span>
     </div>
@@ -5798,13 +5812,118 @@ function restaurerDetails(racine, m) {
   }
 }
 /* Les zones de texte prennent la hauteur de leur contenu : plus besoin de les agrandir à la main */
-function ajusterTexte(t) {
+/* ===== Formes : un aspect au choix (bras d'Alin, posture…), dont les bonus ne comptent que lorsqu'il est actif ===== */
+function initialiserFormes(p) {
+  if (p.formesInit || p.formes || !/norik/i.test(p.nom || '')) return;
+  p.formesInit = true;
+  p.formes = [
+    { id: uid(), nom: 'Bras de Sawu', bonus: [] },
+    { id: uid(), nom: 'Bras Cristal sombre', bonus: [{ cible: 'caArmure', val: 1, quand: '' }] },
+    { id: uid(), nom: 'Bras brume', bonus: [] },
+  ];
+  p.formeActive = p.formes[0].id;
+  /* le +1 CA du bras ne vaut que sous forme Cristal sombre : on le retire de l'arme */
+  for (const it of p.equipement || []) if (it.membre && /sawu/i.test(it.nom || '')) it.bonus = (it.bonus || []).filter(b => !(b.cible === 'caArmure' && num(b.val) === 1));
+}
+const formeActive = p => (p.formes || []).find(f => f.id === p.formeActive) || null;
+function blocFormes(p) {
+  const mod = peutModifier(p);
+  const l = p.formes || [];
+  if (!l.length) return ''; /* seuls les personnages qui ont des formes (Norik et son bras d'Alin) voient ce bloc */
+  const act = formeActive(p);
+  const opts = cur => CIBLES_BONUS.map(([g, li]) => `<optgroup label="${g}">${li.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  const resume = f => (f.bonus || []).filter(b => b.cible && num(b.val)).map(b => `${R.signe(num(b.val))} ${cibleCourte(b.cible)}`).join(', ');
+  return `<section class="formes">
+    <div class="formes-boutons">${l.map(f => `<button class="forme-btn ${act && act.id === f.id ? 'on' : ''}" data-action="forme-choisir" data-id="${f.id}" ${mod ? '' : 'disabled'}><b>${esc(f.nom || 'Forme')}</b>${resume(f) ? `<small>${esc(resume(f))}</small>` : ''}</button>`).join('')}
+      ${mod ? `<button class="icon" data-action="forme-reglages" aria-label="Régler les formes" title="Régler les formes">⚙</button>` : ''}</div>
+    ${mod && state.formesEdit ? `<div class="formes-edit">${l.map((f, i) => `<div class="forme-edit">
+        <div class="row"><input type="text" data-bind="formes.${i}.nom" value="${esc(f.nom || '')}" placeholder="Nom de la forme" aria-label="Nom de la forme"><button class="icon" data-action="forme-suppr" data-idx="${i}" aria-label="Supprimer la forme">✕</button></div>
+        ${(f.bonus || []).map((b, j) => `<div class="fam-ligne">
+          <input type="text" inputmode="numeric" class="s" data-bind="formes.${i}.bonus.${j}.val" data-recalc value="${esc(b.val)}" aria-label="Valeur">
+          <select data-bind="formes.${i}.bonus.${j}.cible" data-rerender aria-label="Ce qui est modifié"><option value="">— Choisir —</option>${opts(b.cible)}</select>
+          <input type="text" data-bind="formes.${i}.bonus.${j}.quand" value="${esc(b.quand || '')}" placeholder="Toujours (ou : seulement quand…)" aria-label="Condition">
+          <button class="icon" data-action="forme-bonus-suppr" data-idx="${i}" data-j="${j}" aria-label="Retirer">✕</button></div>`).join('')}
+        <button class="lien" data-action="forme-bonus-ajout" data-idx="${i}">+ Bonus ou malus pour cette forme</button>
+      </div>`).join('')}
+      <div class="btns"><button class="btn ghost petit" data-action="forme-ajout">+ Forme</button><button class="btn petit" data-action="forme-reglages">Terminé</button></div></div>` : ''}
+    <p class="hint aide">Choisis l'aspect actif : seuls les bonus et malus de cette forme comptent sur la fiche (CA, sauvegardes, attaques…). La roue ⚙ permet de nommer les formes et de leur donner leurs bonus.</p>
+  </section>`;
+}
+
+/* ===== Recherche sur la fiche ===== */
+function chercherSurFiche(q) {
+  const z = document.getElementById('fiche-res');
+  if (!z) return;
+  const qq = norm(q || '').trim();
+  if (qq.length < 2) { z.innerHTML = ''; z.hidden = true; return; }
+  const sel = '#app .stat, #app .cl:not(.cl-tete), #app .arme, #app .ressource, #app .effet-ligne, #app .carte-don, #app .don, #app .sort-c, #app .car, #app .objet-vue, #app .passif, #app .forme-btn, #app .action-complexe';
+  const res = [];
+  document.querySelectorAll(sel).forEach(el => {
+    if (el.closest('#fiche-res')) return;
+    const txt = (el.innerText || '').replace(/\s+/g, ' ').trim();
+    if (!txt || !norm(txt).includes(qq)) return;
+    res.push({ el, txt });
+  });
+  window.__resFiche = res.map(r => r.el);
+  z.hidden = false;
+  z.innerHTML = res.length ? res.slice(0, 12).map((r, i) => `<button class="res-fiche" data-res-fiche="${i}">${esc(r.txt.slice(0, 110))}${r.txt.length > 110 ? '…' : ''}</button>`).join('') : '<p class="hint">Rien trouvé sur la fiche.</p>';
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-res-fiche]');
+  if (!b) return;
+  const el = (window.__resFiche || [])[Number(b.dataset.resFiche)];
+  if (!el) return;
+  let d = el.closest('details'); while (d) { d.open = true; d = d.parentElement && d.parentElement.closest('details'); }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('trouve'); setTimeout(() => el.classList.remove('trouve'), 2200);
+  const z = document.getElementById('fiche-res'); if (z) z.hidden = true;
+});
+
+/* ===== Rangs de compétence : un joueur ajoute dans la limite de ses points, mais ne retire pas ce qui est validé ===== */
+function pointsDepenses(p, e) {
+  const deClasse = compDeClasse(e);
+  let d = 0;
+  for (const c of R.COMPETENCES) {
+    const v = p.comp?.[c.id] || {};
+    const classe = v && typeof v.classe === 'boolean' ? v.classe : deClasse.has(c.id);
+    d += classe ? num(v.rangs) : num(v.rangs) * 2;
+  }
+  for (const v of p.compPerso || []) d += v.classe ? num(v.rangs) : num(v.rangs) * 2;
+  return d;
+}
+function rangsActuels(p) {
+  const o = {};
+  for (const [k, v] of Object.entries(p.comp || {})) if (num(v.rangs)) o['comp.' + k] = num(v.rangs);
+  (p.compPerso || []).forEach((v, i) => { if (num(v.rangs)) o['compPerso.' + i] = num(v.rangs); });
+  return o;
+}
+const rangsNonValides = p => Object.entries(rangsActuels(p)).some(([k, v]) => v > num((p.compValidees || {})[k]));
+/* Les sorts choisis dans la Progression ne sont appris qu'une fois le niveau atteint */
+function synchroSortsProgression(p) {
+  let change = false;
+  for (const l of p.progression || []) {
+    const note = `Appris au niveau ${l.niveau}`;
+    for (const x of l.sortsAppris || []) {
+      const present = (p.sorts || []).some(s => s.id === x.id);
+      if (l.atteint && !present) { p.sorts = [...(p.sorts || []), { id: x.id, statut: 'Connu', notes: note }]; change = true; }
+      if (!l.atteint && present) { const avant = (p.sorts || []).length; p.sorts = p.sorts.filter(s => !(s.id === x.id && s.notes === note)); if (p.sorts.length !== avant) change = true; }
+    }
+  }
+  return change;
+}
+
+function ajusterTexte(t, reduire = true) {
   if (!t || t.offsetParent === null) return;
-  t.style.height = 'auto';
-  t.style.height = (t.scrollHeight + 2) + 'px';
+  /* On garde la position de la page : réduire puis agrandir la zone faisait remonter l'écran tout en haut */
+  const y = window.scrollY;
+  if (reduire) { t.style.height = t.offsetHeight + 'px'; t.style.height = 'auto'; }
+  const h = t.scrollHeight + 2;
+  if (reduire || h > t.offsetHeight) t.style.height = h + 'px';
+  if (window.scrollY !== y) window.scrollTo(0, y);
 }
 function ajusterTextes(racine) { if (racine) racine.querySelectorAll('textarea').forEach(ajusterTexte); }
-document.addEventListener('input', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target); });
+document.addEventListener('input', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target, false); });
+document.addEventListener('focusout', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target); });
 document.addEventListener('toggle', ev => { if (ev.target.tagName === 'DETAILS' && ev.target.open) ajusterTextes(ev.target); }, true);
 window.addEventListener('resize', () => ajusterTextes($('#app')));
 /* ===== Bulle de notes : un bloc de texte par séance, accessible sur toutes les pages ===== */
@@ -6026,6 +6145,7 @@ document.addEventListener('input', ev => {
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
     return;
   }
+  if (t.id === 'fiche-q') { chercherSurFiche(t.value); return; }
   if (t.dataset && t.dataset.priere && state.ctx && db.personnages.includes(state.ctx)) {
     const [classe, champ, niv, i] = t.dataset.priere.split('|');
     const pr = priereDe(state.ctx, classe);
@@ -6171,10 +6291,25 @@ document.addEventListener('input', ev => {
   if (state.ctx === state.editFicheObj && estEnAttente(state.ctx)) { setTimeout(() => saveMJ('quetesAttente'), 0); }
   if (state.ctx === state.editFicheObj && path === 'extra.persoId') state.ctx.extra = { ...(state.ctx.extra || {}), persoNom: findPerso(t.value)?.nom || '' };
   /* Valider un niveau est réservé au MJ (le joueur le prépare seulement) */
+  const mRang = path.match(/^(comp\.[^.]+|compPerso\.\d+)\.rangs$/);
+  if (mRang && db.personnages.includes(state.ctx) && !state.ctx.pnjMJ && enLigne()) {
+    const x = state.ctx, e2 = etat(x), cle = mRang[1];
+    const avant = num(getP(x, path)), apres = num(t.value), min = num((x.compValidees || {})[cle]);
+    if (!estMJ()) {
+      if (apres < min) { t.value = min; setP(x, path, String(min)); toast(`Ces rangs sont validés : seul le MJ peut les retirer (minimum ${min}).`); save(); return; }
+      setP(x, path, t.value);
+      if (pointsDepenses(x, e2) > pointsComp(x, e2)) { setP(x, path, String(avant)); t.value = avant; toast('Plus assez de points de compétence pour ce rang.'); return; }
+      setP(x, path, String(avant));
+    } else if (apres < min) {
+      x.compValidees = { ...(x.compValidees || {}), [cle]: apres };
+      x.mjChamps = { ...(x.mjChamps || {}), compValidees: Date.now() };
+    }
+  }
   if (/^progression\.\d+\.atteint$/.test(path) && enLigne() && !estMJ() && db.personnages.includes(state.ctx)) { t.checked = !t.checked; toast('C\'est le MJ qui valide le passage de niveau.'); return; }
   const mAm = path.match(/^ameliorations\.(\d+)\./);
   if (mAm && enLigne() && !estMJ() && state.ctx.ameliorations?.[Number(mAm[1])]?.parMJ) return;
   setP(state.ctx, path, t.type === 'checkbox' ? t.checked : t.value);
+  if (/^progression\.\d+\.atteint$/.test(path) && db.personnages.includes(state.ctx)) synchroSortsProgression(state.ctx);
   if (state.ctx === state.draft) return; // le sort n'est enregistré qu'au clic sur le bouton
   if (estMJ() && enLigne() && db.personnages.includes(state.ctx) && !state.ctx.pnjMJ) {
     state.ctx.mjChamps = { ...(state.ctx.mjChamps || {}), [path.startsWith('ameliorations.') ? 'ameliorations' : path]: Date.now() };
@@ -7276,8 +7411,8 @@ document.addEventListener('click', ev => {
     case 'prog-sort-ajout': {
       const l = p.progression[Number(b.dataset.i)];
       l.sortsAppris = [...(l.sortsAppris || []), { id: b.dataset.id, bloc: b.dataset.bloc }];
-      if (!(p.sorts || []).some(x => x.id === b.dataset.id)) p.sorts = [...(p.sorts || []), { id: b.dataset.id, statut: 'Connu', notes: `Appris au niveau ${l.niveau}` }];
-      save(); render(); toast(`${findSort(b.dataset.id)?.nom || 'Sort'} appris`);
+      synchroSortsProgression(p);
+      save(); render(); toast(l.atteint ? `${findSort(b.dataset.id)?.nom || 'Sort'} appris` : `${findSort(b.dataset.id)?.nom || 'Sort'} prévu : il sera appris quand le MJ validera le niveau ${l.niveau}`);
       break;
     }
     case 'prog-sort-suppr': {
@@ -7649,6 +7784,30 @@ document.addEventListener('click', ev => {
     case 'familier-renvoyer':
       if (!confirm('Retirer le familier de la fiche ? Ses bonus disparaissent.')) break;
       p.familier = null; save(); render();
+      break;
+    case 'forme-choisir':
+      p.formeActive = b.dataset.id; save(); render(); toast(`Forme : ${formeActive(p)?.nom || ''}`);
+      break;
+    case 'forme-reglages':
+      state.formesEdit = !state.formesEdit; render();
+      break;
+    case 'forme-ajout':
+      p.formes = [...(p.formes || []), { id: uid(), nom: 'Nouvelle forme', bonus: [] }]; if (!p.formeActive) p.formeActive = p.formes[0].id; state.formesEdit = true; save(); render();
+      break;
+    case 'forme-suppr': {
+      const f = p.formes[idx]; if (!confirm(`Supprimer la forme « ${f.nom} » ?`)) break;
+      p.formes.splice(idx, 1); if (p.formeActive === f.id) p.formeActive = p.formes[0]?.id || ''; save(); render();
+      break;
+    }
+    case 'forme-bonus-ajout':
+      p.formes[idx].bonus = [...(p.formes[idx].bonus || []), { cible: 'caArmure', val: '1', quand: '' }]; save(); render();
+      break;
+    case 'forme-bonus-suppr':
+      p.formes[idx].bonus.splice(Number(b.dataset.j), 1); save(); render();
+      break;
+    case 'comp-valider':
+      if (!confirm('Valider tes rangs de compétence ? Une fois validés, seul le MJ pourra les retirer.')) break;
+      p.compValidees = rangsActuels(p); save(); render(); toast('Rangs validés');
       break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';

@@ -1707,3 +1707,22 @@ h3 { position: relative; }
 .effet-ajout select { flex: 1; min-width: 0; }
 .effet-anciens summary { cursor: pointer; font-size: .85rem; color: var(--muted); margin-bottom: .3rem; }
 .bandeau-maj { position: fixed; z-index: 90; left: 50%; transform: translateX(-50%); bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: .6rem; padding: .45rem .5rem .45rem .9rem; border: 1px solid var(--bronze); border-radius: 99px; background: var(--nuit-profonde); box-shadow: 0 8px 24px rgba(0, 0, 0, .5); font-size: .88rem; }
+/* Formes (aspect du bras…) */
+.formes { margin-bottom: .6rem; }
+.formes-boutons { display: flex; flex-wrap: wrap; gap: .35rem; align-items: stretch; }
+.forme-btn { display: flex; flex-direction: column; align-items: flex-start; gap: .05rem; padding: .35rem .7rem; border: 1px solid var(--line-bronze); border-radius: var(--radius-s); background: var(--inset); color: var(--ivoire); cursor: pointer; min-width: 8rem; }
+.forme-btn b { font-size: .9rem; }
+.forme-btn small { color: var(--muted); font-size: .74rem; }
+.forme-btn.on { border-color: #8E7BD6; background: linear-gradient(180deg, rgba(142, 123, 214, .25), rgba(142, 123, 214, .08)); box-shadow: 0 0 0 1px rgba(142, 123, 214, .5); }
+.forme-btn.on small { color: #CFC6F2; }
+.formes-edit { margin-top: .5rem; display: flex; flex-direction: column; gap: .5rem; }
+.forme-edit { border: 1px dashed var(--line-bronze); border-radius: var(--radius-s); padding: .45rem .55rem; display: flex; flex-direction: column; gap: .3rem; }
+.formes-vide { margin: 0 0 .4rem; font-size: .85rem; }
+/* Recherche sur la fiche */
+.fiche-recherche { position: relative; margin-bottom: .4rem; }
+.fiche-recherche input { width: 100%; }
+.fiche-res { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + .25rem); max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: .2rem; padding: .35rem; border: 1px solid var(--bronze); border-radius: var(--radius-s); background: var(--nuit-profonde); box-shadow: 0 12px 30px rgba(0, 0, 0, .55); }
+.fiche-res[hidden] { display: none; }
+.res-fiche { text-align: left; padding: .35rem .5rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); color: var(--ivoire); font-size: .84rem; cursor: pointer; }
+.res-fiche:hover { border-color: var(--bronze); }
+.trouve { outline: 2px solid var(--bronze); outline-offset: 2px; transition: outline-color .3s; }
