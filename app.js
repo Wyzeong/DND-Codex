@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '95';
+const VERSION_APPLI = '98';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -777,11 +777,11 @@ function pagePerso(id, tab) {
   return pagePersoSuite(p, tab);
 }
 function pagePersoSuite(p, tab) {
-  tab = tab || 'fiche';
+  tab = tab || 'combat';
   const e = etat(p);
-  const tabs = [['fiche', 'Fiche'], ['inventaire', 'Inventaire'], ['sorts', 'Sorts'], ['progression', 'Progression']]
+  const tabs = [['combat', 'Combat'], ['fiche', 'Personnage'], ['inventaire', 'Inventaire'], ['sorts', 'Sorts'], ['progression', 'Progression']]
     .map(([k, l]) => `<a href="#/perso/${p.id}/${k}" class="${tab === k ? 'active' : ''}">${l}</a>`).join('');
-  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : tab === 'inventaire' ? ongletInventaire(p, e) : ongletFiche(p, e);
+  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : tab === 'inventaire' ? ongletInventaire(p, e) : tab === 'combat' ? ongletFiche(p, e, 'combat') : ongletFiche(p, e, 'perso');
   const lecture = !peutModifier(p);
   const body = lecture ? `<fieldset class="lecture" disabled>${contenu}</fieldset>` : contenu;
   return `
@@ -789,7 +789,8 @@ function pagePersoSuite(p, tab) {
       <div class="titre-perso">
         <div class="avatar">${p.portrait ? `<img src="${p.portrait}" alt="Portrait">` : '<span class="vide"></span>'}${p.embleme ? `<img class="embleme-avatar" src="${p.embleme}" alt="Emblème">` : ''}</div>
         <div><h1 id="ptitle">${esc(p.nom || 'Sans nom')}</h1>
-        <p class="sub">${esc([raceNom(p), classesTxt(e) || 'aucun niveau atteint'].filter(Boolean).join(', '))}${p.joueur ? ', joué par ' + esc(p.joueur) : ''}</p></div>
+        <p class="sub">${esc([raceNom(p), classesTxt(e) || 'aucun niveau atteint'].filter(Boolean).join(', '))}${p.joueur ? ', joué par ' + esc(p.joueur) : ''}</p>
+        ${[p.alignement, p.divinite && p.divinite !== 'Aucune' ? (p.divinite === 'Autre' ? p.diviniteAutre : p.divinite) : ''].filter(Boolean).length ? `<p class="sub sub2">${esc([p.alignement, p.divinite && p.divinite !== 'Aucune' ? (p.divinite === 'Autre' ? p.diviniteAutre : p.divinite) : ''].filter(Boolean).join(' · '))}</p>` : ''}</div>
       </div>
       <div class="btns">
         <button class="btn ghost" data-action="export-perso">Exporter la fiche</button>
@@ -798,7 +799,6 @@ function pagePersoSuite(p, tab) {
     </div>
     ${encartDroits(p)}
     ${recap(p, e)}
-    ${puceEtats(p)}
     <nav class="tabs" aria-label="Sections du personnage">${tabs}</nav>
     ${body}`;
 }
@@ -807,7 +807,10 @@ function recap(p, e) {
   if (!e.niveau && !e.race) return '';
   const s = stats(p, e);
   const pv = pvMaxEff(p) ? `${pvActuels(p)}/${pvMaxEff(p)}` : '—';
-  return `<div class="recap"><span>PV<b>${esc(pv)}</b></span><span>CA<b>${s.ca}</b></span><span>Initiative<b>${R.signe(s.init)}</b></span><span>Vitesse<b>${s.vitesse} m</b></span><span>BBA<b>${R.attTxt(s.att)}</b></span></div>`;
+  const b = barrePV(p);
+  const etats = (p.etats || []).filter(x => x.actif !== false);
+  const forme = formeActive(p);
+  return `<div class="recap recap-collant"><span class="pv-${b.etat}">PV<b>${esc(pv)}</b></span><span>CA<b>${s.ca}</b></span><span>Init.<b>${R.signe(s.init)}</b></span><span>Vitesse<b>${s.vitesse} m</b></span><span>BBA<b>${R.attTxt(s.att)}</b></span>${forme ? `<span class="recap-forme">${esc(forme.nom)}</span>` : ''}${etats.length ? `<span class="recap-etats" title="${esc(etats.map(x => x.nom).join(', '))}">${esc(etats.slice(0, 2).map(x => x.nom).join(' · '))}${etats.length > 2 ? ` +${etats.length - 2}` : ''}</span>` : ''}</div>`;
 }
 
 function blocImages(p) {
@@ -824,19 +827,53 @@ function blocImages(p) {
 }
 
 /* Transforme les sections titrées de la fiche en blocs repliables (état mémorisé sur l'appareil) */
-function repliable(html) {
+function repliable(html, fermesParDefaut = []) {
   return html.replace(/<section class="card([^"]*)"><h3>(.*?)<\/h3>([\s\S]*?)<\/section>/g, (m, classes, titre, corps) => {
     const id = slug(titre.replace(/<[^>]+>/g, ''));
-    const ferme = (db.replis || {})[id];
+    const replis = db.replis || {};
+    const ferme = id in replis ? replis[id] : ['notes', 'quetes-personnelles', 'familier', ...fermesParDefaut].includes(id);
     return `<details class="card repli${classes}" data-section="${id}"${ferme ? '' : ' open'}><summary><h3>${titre}</h3></summary>${corps}</details>`;
   });
 }
 const outilsReplis = () => `<div class="fiche-recherche"><input type="search" id="fiche-q" placeholder="Chercher sur la fiche : vigueur, discrétion, CA…" aria-label="Chercher sur la fiche" autocomplete="off"><div id="fiche-res" class="fiche-res" hidden></div></div><div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
 
-function ongletFiche(p, e) {
-  return outilsReplis() + repliable(ongletFicheBrut(p, e));
+function ongletFiche(p, e, partie = 'perso') {
+  return outilsReplis() + repliable(ongletFicheBrut(p, e, partie), p.nom && p.race ? ['identite'] : []);
 }
-function ongletFicheBrut(p, e) {
+/* Dons et capacités de classe : une seule section (le contenu des deux anciennes, sans leur cadre) */
+function sansCadre(html) { return String(html || '').replace(/^\s*<section[^>]*>\s*<h3>[\s\S]*?<\/h3>/, '').replace(/<\/section>\s*$/, ''); }
+function ficheDonsEtCapacites(p, e, valsClasses) {
+  const dons = sansCadre(ficheDons(p, e)), cap = sansCadre(ficheCapacitesLisible(p, e, valsClasses));
+  if (!dons.trim() && !cap.trim()) return '';
+  return `<section class="card"><h3>Dons et capacités</h3>${dons.trim() ? `<h4 class="sous-titre">Dons</h4>${dons}` : ''}${cap.trim() ? `<h4 class="sous-titre">Capacités de classe et de race</h4>${cap}` : ''}</section>`;
+}
+function defenseStats(p, e, s, stat) {
+  return `
+  <section class="card"><h3>Défense et statistiques</h3>
+    <div class="stats">
+      ${stat('Classe d\'armure', s.ca)}${stat('Contact', s.contact)}${stat('Pris au dépourvu', s.depourvu, s.esquiveInst ? 'Esquive instinctive' : '')}
+      ${stat('Taille', `${R.TAILLES[e.taille]?.court || 'M'} (${R.TAILLES[e.taille]?.en || 'M'})`, e.ecartTaille ? `${R.TAILLES[e.taille].nom}, normalement ${R.TAILLES[e.tailleBase].nom.toLowerCase()} · allonge ${R.TAILLES[e.taille].allonge} m` : `${R.TAILLES[e.taille]?.nom || 'Moyenne'} · allonge ${R.TAILLES[e.taille]?.allonge ?? 1.5} m`)}
+      ${stat('Initiative', R.signe(s.init))}${stat('Vitesse', s.vitesse + ' m')}
+      ${stat('Vigueur', R.signe(s.js.vig))}${stat('Réflexes', R.signe(s.js.ref))}${stat('Volonté', R.signe(s.js.vol))}
+      ${stat('BBA', R.attTxt(s.att))}${stat('Corps à corps', R.signe(s.cac))}${stat('Distance', R.signe(s.dist))}${stat('Lutte', R.signe(s.lutte))}
+
+    </div>
+
+    ${blocProtections(p, e, s)}
+    ${e.objets.maxDex != null && e.mods.dex > e.objets.maxDex ? `<p class="hint">Ton armure limite ta Dextérité à ${R.signe(e.objets.maxDex)} pour la CA.</p>` : ''}
+    ${e.objets.acp ? `<p class="hint">Malus d'armure ${e.objets.acp} appliqué aux compétences marquées ◘.</p>` : ''}
+    ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets et états inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
+    ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
+    <div class="grid" style="margin-top:.8rem">
+
+    </div>
+    ${Object.keys(e.objets.cond).length ? `<h4>Bonus conditionnels <small class="hint">(non comptés dans les totaux)</small></h4>
+      <ul class="liste-cond">${Object.entries(e.objets.cond).flatMap(([k, l]) => l.map(x => `<li><span class="bonus-cond">${R.signe(x.val)} ${esc(NOM_CIBLE[k] || k)}</span> ${esc(x.quand)} <small>(${esc(x.source)})</small></li>`)).join('')}</ul>` : ''}
+    ${Object.entries(p.ajust || {}).some(([, v]) => v !== '' && v != null && v !== 0 && v !== '0') ? `<p class="hint ancien-ajust">D'anciens ajustements manuels sont encore comptés (${esc(Object.entries(p.ajust).filter(([, v]) => v !== '' && v != null && v !== '0' && v !== 0).map(([k, v]) => `${k} ${v}`).join(', '))}). Ces bonus se gèrent désormais avec les objets et les états. <button class="lien" data-action="ajust-effacer">Les effacer</button></p>` : ''}
+    ${p.attaques ? `<p class="hint ancien-ajust">Ancienne note d'attaques : ${esc(p.attaques)} <button class="lien" data-action="attaques-effacer">Effacer</button></p>` : ''}
+  </section>`;
+}
+function ongletFicheBrut(p, e, partie = 'perso') {
   if (p.languesAutres && peutModifier(p)) {
     p.langues = [...new Set([...(p.langues || []), ...p.languesAutres.split(/[,;]+/).map(x => x.trim()).filter(Boolean)])];
     p.languesAutres = ''; save();
@@ -853,9 +890,14 @@ function ongletFicheBrut(p, e) {
   const aj = (path, label) => `<label class="aj"><span>${label}</span><input type="text" inputmode="numeric" data-bind="ajust.${path}" data-recalc value="${esc(getP(p, 'ajust.' + path))}" placeholder="0"></label>`;
   const valsClasses = Object.entries(e.classes).map(([id, k]) => ({ id, k, vals: valeursClasse(id, k, e) })).filter(x => x.vals.length);
   const deluge = valsClasses.find(x => x.id === 'moine')?.vals.find(v => v[0] === 'Déluge de coups');
+  const enCombat = partie === 'combat';
+  if (enCombat) return `
+  ${carteVitalite(p)}
+  ${ficheEffets(p)}
+  ${ficheCombat(p, e)}
+  ${defenseStats(p, e, s, stat)}`;
   return `
   ${p.pnjMJ && peutModifier(p) ? carteVisibilite(p) : ''}
-  ${carteVitalite(p)}
   <div class="fiche-haut">
   <section class="card carte-identite"><h3>Identité</h3>
     <div class="identite">
@@ -878,7 +920,6 @@ function ongletFicheBrut(p, e) {
     ${blocLangues(p)}
     ${ta(p, 'apparence', 'Apparence et historique')}
   </section>
-  <div class="col-reliques">${carteBaguette(p)}${carteFocalisateur(p)}</div>
   </div>
 
   <section class="card"><h3>Caractéristiques</h3>
@@ -896,43 +937,11 @@ function ongletFicheBrut(p, e) {
     <p class="hint aide">Saisis les valeurs de base (ajustements raciaux compris, sans les objets). Les bonus des objets équipés s'ajoutent <span class="bonus-objet">en couleur</span>, et les modificateurs se calculent seuls.</p>
   </section>
 
-  ${aDesEffets(p) ? ficheEffets(p) : ''}
+  ${ficheCompetences(p, e)}
+  ${ficheDonsEtCapacites(p, e, valsClasses)}
   ${carteFamilier(p, e)}
   ${(() => { const q = fichesToutes().filter(f => porteeQuete(f) === 'personnelle' && f.extra?.persoId === p.id); return q.length ? `<section class="card"><h3>Quêtes personnelles</h3><div class="fiches">${q.map(carteFiche).join('')}</div></section>` : ''; })()}
-  ${ficheCombat(p, e)}
 
-  <section class="card"><h3>Défense et statistiques</h3>
-    <div class="stats">
-      ${stat('Classe d\'armure', s.ca)}${stat('Contact', s.contact)}${stat('Pris au dépourvu', s.depourvu, s.esquiveInst ? 'Esquive instinctive' : '')}
-      ${stat('Taille', `${R.TAILLES[e.taille]?.court || 'M'} (${R.TAILLES[e.taille]?.en || 'M'})`, e.ecartTaille ? `${R.TAILLES[e.taille].nom}, normalement ${R.TAILLES[e.tailleBase].nom.toLowerCase()} · allonge ${R.TAILLES[e.taille].allonge} m` : `${R.TAILLES[e.taille]?.nom || 'Moyenne'} · allonge ${R.TAILLES[e.taille]?.allonge ?? 1.5} m`)}
-      ${stat('Initiative', R.signe(s.init))}${stat('Vitesse', s.vitesse + ' m')}
-      ${stat('Vigueur', R.signe(s.js.vig))}${stat('Réflexes', R.signe(s.js.ref))}${stat('Volonté', R.signe(s.js.vol))}
-      ${stat('BBA', R.attTxt(s.att))}${stat('Corps à corps', R.signe(s.cac))}${stat('Distance', R.signe(s.dist))}${stat('Lutte', R.signe(s.lutte))}
-
-    </div>
-
-    ${blocProtections(p, e, s)}
-    ${e.objets.maxDex != null && e.mods.dex > e.objets.maxDex ? `<p class="hint">Ton armure limite ta Dextérité à ${R.signe(e.objets.maxDex)} pour la CA.</p>` : ''}
-    ${e.objets.acp ? `<p class="hint">Malus d'armure ${e.objets.acp} appliqué aux compétences marquées ◘.</p>` : ''}
-    ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets et états inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
-    ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
-    <div class="grid" style="margin-top:.8rem">
-      <p class="hint" style="grid-column:1/-1">Points de vie et dés de vie : voir la section Vitalité en haut de la fiche.</p>
-    </div>
-    ${Object.keys(e.objets.cond).length ? `<h4>Bonus conditionnels <small class="hint">(non comptés dans les totaux)</small></h4>
-      <ul class="liste-cond">${Object.entries(e.objets.cond).flatMap(([k, l]) => l.map(x => `<li><span class="bonus-cond">${R.signe(x.val)} ${esc(NOM_CIBLE[k] || k)}</span> ${esc(x.quand)} <small>(${esc(x.source)})</small></li>`)).join('')}</ul>` : ''}
-    ${Object.entries(p.ajust || {}).some(([, v]) => v !== '' && v != null && v !== 0 && v !== '0') ? `<p class="hint ancien-ajust">D'anciens ajustements manuels sont encore comptés (${esc(Object.entries(p.ajust).filter(([, v]) => v !== '' && v != null && v !== '0' && v !== 0).map(([k, v]) => `${k} ${v}`).join(', '))}). Ces bonus se gèrent désormais avec les objets et les états. <button class="lien" data-action="ajust-effacer">Les effacer</button></p>` : ''}
-    ${p.attaques ? `<p class="hint ancien-ajust">Ancienne note d'attaques : ${esc(p.attaques)} <button class="lien" data-action="attaques-effacer">Effacer</button></p>` : ''}
-  </section>
-
-  ${ficheCompetences(p, e)}
-  ${aDesEffets(p) ? '' : ficheEffets(p)}
-  ${ficheDons(p, e)}
-  ${ficheCapacitesLisible(p, e, valsClasses)}
-
-  <section class="card"><h3>Équipement</h3>
-    ${resumeEquipement(p)}
-  </section>
 
   <section class="card"><h3>Notes</h3>
     ${ta(p, 'notes', 'Notes libres', { rows: 5 })}
@@ -1330,7 +1339,7 @@ function ongletInventaire(p, e) {
       <div class="chips">${[['', 'Tout'], ...GROUPES_INV.map(([t, c]) => [c[0] || 'objet', t.replace(/ \(.*\)$/, '')])].filter(([k]) => !k || items.some(it => (it.cat || 'objet') === k || (k === 'armure' && it.cat === 'bouclier'))).map(([k, l]) => `<button class="chip ${(state.invCat || '') === k ? 'on' : ''}" data-action="inv-cat" data-c="${k}">${esc(l)}</button>`).join('')}</div>
     </div>
     <div id="inv-groupes">${groupesInvHTML(p, items, mod)}</div>`;
-  return carteBourse(p) + `<section class="card"><h3>Inventaire et équipement</h3>
+  return carteBourse(p) + `<div class="col-reliques">${carteBaguette(p)}${carteFocalisateur(p)}</div>` + `<section class="card"><h3>Inventaire et équipement</h3>
     <div class="inv-resume">
       <span>Objets<b>${items.length}</b></span>
       ${poids ? `<span>Poids total<b>${poidsTxt(poids)}</b></span>` : ''}
@@ -1602,7 +1611,7 @@ function blocTour(p, e, st, mn, armes, res) {
   if (!monTour) {
     const i = noms.findIndex(n => norm(n) === norm(cp.tour)), j = noms.findIndex(n => norm(n) === norm(p.nom));
     const dans = i >= 0 && j >= 0 ? (j - i + noms.length) % noms.length : null;
-    return `<section class="tour-bloc attente"><b>${esc(cp.nom || 'Combat')}</b> · round ${esc(cp.round)} · au tour de <b>${esc(cp.tour || '?')}</b>${dans ? ` · tu joues dans ${dans} tour${dans > 1 ? 's' : ''}` : ''}</section>`;
+    return `<div class="tour-bloc attente"><b>${esc(cp.nom || 'Combat')}</b> · round ${esc(cp.round)} · au tour de <b>${esc(cp.tour || '?')}</b>${dans ? ` · tu joues dans ${dans} tour${dans > 1 ? 's' : ''}` : ''}</div>`;
   }
   const typeRes = r => /libre|annonce|avant l'attaque/i.test(r.action || '') ? 'libre' : /complexe/i.test(r.action || '') ? 'complexe' : /rapide|immédiate/i.test(r.action || '') ? 'rapide' : /simple|standard/i.test(r.action || '') ? 'simple' : /mouvement/i.test(r.action || '') ? 'mouvement' : '';
   const restant = r => (r.max || 0) - num((p.compteurs || {})[r.id]);
@@ -1611,7 +1620,7 @@ function blocTour(p, e, st, mn, armes, res) {
   const bouton = (k, l, extra = '', epuise = false) => { const ok = peut(k) && !epuise; return `<button class="chip ${ok ? '' : 'off'}" data-action="tour-act" data-k="${k}" data-l="${esc(l)}" ${extra} ${ok ? '' : 'disabled'}>${esc(l)}</button>`; };
   const resBoutons = k => res.filter(r => typeRes(r) === k).map(r => bouton(k, `${r.nom}${r.max ? ` (${Math.max(0, restant(r))}/${r.max})` : ''}`, `data-res="${r.id}"`, r.max && restant(r) <= 0)).join('');
   const jauge = (n, l) => `<span class="jeton ${n > 0 ? 'dispo' : 'pris'}">${l}</span>`;
-  return `<section class="tour-bloc a-moi">
+  return `<div class="tour-bloc a-moi">
     <div class="tour-tete"><b>⚔ C'est ton tour</b><span>${esc(cp.nom || 'Combat')} · round ${esc(cp.round)}</span></div>
     <div class="jetons">${jauge(t.simple, 'Simple')}${jauge(t.mouvement, 'Mouvement')}${jauge(t.rapide, 'Rapide')}${jauge(t.pas && !t.bouge ? 1 : 0, 'Pas 1,5 m')}</div>
     ${t.fini ? '<p class="hint">Tour terminé : le MJ va passer au suivant.</p>' : `
@@ -1623,7 +1632,7 @@ function blocTour(p, e, st, mn, armes, res) {
     ${t.journal.length ? `<ol class="tour-journal">${t.journal.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
     <div class="btns">${t.hist.length && !t.fini ? '<button class="btn ghost petit" data-action="tour-annuler">Annuler la dernière</button>' : ''}
       ${t.fini ? '<button class="btn ghost petit" data-action="tour-reprendre">Reprendre mon tour</button>' : '<button class="btn petit" data-action="tour-fin">Terminer mon tour</button>'}</div>
-  </section>`;
+  </div>`;
 }
 /* Une arme dans « En combat » : jets calculés et capacités qui s'y appliquent */
 function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
@@ -5833,7 +5842,7 @@ function blocFormes(p) {
   const act = formeActive(p);
   const opts = cur => CIBLES_BONUS.map(([g, li]) => `<optgroup label="${g}">${li.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
   const resume = f => (f.bonus || []).filter(b => b.cible && num(b.val)).map(b => `${R.signe(num(b.val))} ${cibleCourte(b.cible)}`).join(', ');
-  return `<section class="formes">
+  return `<div class="formes">
     <div class="formes-boutons">${l.map(f => `<button class="forme-btn ${act && act.id === f.id ? 'on' : ''}" data-action="forme-choisir" data-id="${f.id}" ${mod ? '' : 'disabled'}><b>${esc(f.nom || 'Forme')}</b>${resume(f) ? `<small>${esc(resume(f))}</small>` : ''}</button>`).join('')}
       ${mod ? `<button class="icon" data-action="forme-reglages" aria-label="Régler les formes" title="Régler les formes">⚙</button>` : ''}</div>
     ${mod && state.formesEdit ? `<div class="formes-edit">${l.map((f, i) => `<div class="forme-edit">
@@ -5847,7 +5856,7 @@ function blocFormes(p) {
       </div>`).join('')}
       <div class="btns"><button class="btn ghost petit" data-action="forme-ajout">+ Forme</button><button class="btn petit" data-action="forme-reglages">Terminé</button></div></div>` : ''}
     <p class="hint aide">Choisis l'aspect actif : seuls les bonus et malus de cette forme comptent sur la fiche (CA, sauvegardes, attaques…). La roue ⚙ permet de nommer les formes et de leur donner leurs bonus.</p>
-  </section>`;
+  </div>`;
 }
 
 /* ===== Recherche sur la fiche ===== */
@@ -6039,6 +6048,30 @@ document.addEventListener('click', ev => {
     else toast('Code incorrect');
   }).catch(e => alert('Vérification impossible : ' + e.message));
 }, true);
+/* Sections en mode lecture tant qu'on ne touche pas ✎ Modifier */
+const SECTIONS_LECTURE = ['identite', 'caracteristiques', 'competences', 'dons-et-capacites', 'familier', 'notes'];
+function appliquerLecture(racine) {
+  if (!racine || !state.ctx || !db.personnages.includes(state.ctx) || !peutModifier(state.ctx)) return;
+  const edition = new Set(state.sectionsEdition || []);
+  racine.querySelectorAll('details[data-section]').forEach(d => {
+    const id = d.dataset.section;
+    if (!SECTIONS_LECTURE.includes(id)) return;
+    const h3 = d.querySelector(':scope > summary h3');
+    if (h3 && !h3.querySelector('.edit-toggle')) h3.insertAdjacentHTML('beforeend', `<button type="button" class="edit-toggle" data-edit-section="${id}">${edition.has(id) ? '✓ Terminé' : '✎ Modifier'}</button>`);
+    const lecture = !edition.has(id);
+    d.classList.toggle('lecture', lecture);
+    d.querySelectorAll('input, select, textarea').forEach(el => { if (el.id !== 'fiche-q' && !el.dataset.action) el.disabled = lecture; });
+  });
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-edit-section]');
+  if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const id = b.dataset.editSection, l = new Set(state.sectionsEdition || []);
+  if (l.has(id)) l.delete(id); else { l.add(id); const d = b.closest('details'); if (d) d.open = true; }
+  state.sectionsEdition = [...l];
+  render();
+}, true);
 function ranger_aides(racine = document) {
   for (const el of [...racine.querySelectorAll('.aide')]) {
     const carte = el.closest('details.card, section.card, .card');
@@ -6095,6 +6128,7 @@ function render(garderScroll = true) {
   $('#app').innerHTML = html;
   ranger_aides($('#app'));
   restaurerDetails($('#app'), ouverts);
+  appliquerLecture($('#app'));
   ajusterTextes($('#app'));
   majBulle();
   const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
@@ -6104,7 +6138,7 @@ function render(garderScroll = true) {
     const mien = monPerso();
     chip.hidden = !mien || page === 'mj';
     if (mien) {
-      chip.href = `#/perso/${mien.id}/fiche`;
+      chip.href = `#/perso/${mien.id}/combat`;
       chip.innerHTML = `${mien.portrait ? `<img src="${mien.portrait}" alt="">` : `<span class="initiale">${esc((mien.nom || '?')[0])}</span>`}<span class="nom">${esc(mien.nom || 'Mon personnage')}</span>`;
     }
   }

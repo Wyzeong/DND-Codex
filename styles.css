@@ -1726,3 +1726,26 @@ h3 { position: relative; }
 .res-fiche { text-align: left; padding: .35rem .5rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); color: var(--ivoire); font-size: .84rem; cursor: pointer; }
 .res-fiche:hover { border-color: var(--bronze); }
 .trouve { outline: 2px solid var(--bronze); outline-offset: 2px; transition: outline-color .3s; }
+h4.sous-titre { margin: .7rem 0 .35rem; color: var(--bronze-clair); font-size: .9rem; border-bottom: 1px solid var(--line); padding-bottom: .15rem; }
+
+/* ===== Barre de résumé collée sous l'en-tête ===== */
+.recap.recap-collant { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 52px); z-index: 9; background: rgba(6, 19, 29, .94); backdrop-filter: blur(8px); padding: .35rem .4rem; margin: 0 -.4rem .6rem; border-bottom: 1px solid var(--line-bronze); flex-wrap: wrap; }
+.recap .pv-critique b, .recap .pv-ko b { color: var(--rouge-clair); }
+.recap .pv-blesse b { color: #E8C07A; }
+.recap .recap-forme { border-color: #8E7BD6 !important; color: #CFC6F2; }
+.recap .recap-etats { border-color: var(--rouge-clair) !important; color: #F2B8AE; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titre-perso .sub2 { margin-top: .1rem; font-size: .82rem; }
+
+/* ===== Mode lecture ===== */
+.edit-toggle { margin-left: .5rem; padding: .1rem .55rem; border: 1px solid var(--line-bronze); border-radius: 99px; background: transparent; color: var(--bronze-clair); font: 600 .72rem/1.4 var(--font); letter-spacing: 0; text-transform: none; cursor: pointer; vertical-align: middle; }
+.edit-toggle:hover { border-color: var(--bronze); }
+details.lecture input:disabled, details.lecture select:disabled, details.lecture textarea:disabled {
+  border-color: transparent; background: transparent; color: var(--ivoire); opacity: 1; -webkit-text-fill-color: var(--ivoire); cursor: default; padding-left: 0; padding-right: 0; appearance: none; -webkit-appearance: none; }
+details.lecture input::placeholder, details.lecture textarea::placeholder { color: transparent; }
+details.lecture .btn, details.lecture .lien, details.lecture .icon, details.lecture .chip[data-action], details.lecture .ajout-rapide, details.lecture .image-cadre span { display: none; }
+details.lecture .image-cadre { pointer-events: none; }
+details.lecture .carac input:disabled { text-align: center; font-weight: 700; font-size: 1.15rem; }
+details.lecture .cl-in:disabled { text-align: center; }
+details.lecture label.check:has(input:disabled) { opacity: .8; }
+.fiche-haut { display: block !important; }
+details.lecture label.check:has(input[data-action]) { opacity: 1; }
