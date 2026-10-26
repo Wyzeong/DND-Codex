@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '91';
+const VERSION_APPLI = '103';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -266,6 +266,7 @@ function bonusObjets(p) {
     if (et.actif === false) continue;
     for (const b of et.bonus || []) ajouter(b, et.nom || 'État');
   }
+  { const f = formeActive(p); if (f) for (const b of f.bonus || []) ajouter({ ...b, cond: b.cond || !!String(b.quand || '').trim() }, `Forme : ${f.nom || 'active'}`); }
   if (p.familier) for (const b of p.familier.bonus || []) ajouter({ ...b, cond: b.cond || !!String(b.quand || '').trim() }, `Familier${p.familier.nom ? ' : ' + p.familier.nom : ''}`);
   for (const am of p.ameliorations || []) {
     const src = (am.permanent ? 'Bonus permanent' : 'Amélioration temporaire') + (am.note ? ` (${am.note})` : '');
@@ -287,6 +288,9 @@ function nouveauNiveau(n, classe = '') {
 
 /* Reprend les fiches créées avec la première version */
 function migrer(p) {
+  initialiserFormes(p);
+  if (!p.compValidees) p.compValidees = rangsActuels(p);
+  synchroSortsProgression(p);
   if (p.schema >= 2) return;
   const trouve = (liste, v) => liste.find(x => norm(x) === norm(v));
   const notes = [];
@@ -762,15 +766,22 @@ function pagePerso(id, tab) {
   if (p.pnjMJ && !peutModifier(p)) { state.ctx = null; return pagePersoPublic(p); }
   state.ctx = p;
   if (!p.pnjMJ && (!enLigne() || (db.cles || {})[p.id]) && db.monPerso !== p.id) { db.monPerso = p.id; saveNow(); }
+  if (peutModifier(p)) {
+    const avant = JSON.stringify([p.formes, p.compValidees, p.sorts]);
+    initialiserFormes(p);
+    if (!p.compValidees) p.compValidees = rangsActuels(p);
+    synchroSortsProgression(p);
+    if (JSON.stringify([p.formes, p.compValidees, p.sorts]) !== avant) { p.maj = Date.now(); saveNow(); persoModifie(p); }
+  }
   if (state.effetForm && state.effetForm.persoId === p.id) return formEffet() + pagePersoSuite(p, tab);
   return pagePersoSuite(p, tab);
 }
 function pagePersoSuite(p, tab) {
-  tab = tab || 'fiche';
+  tab = tab || 'combat';
   const e = etat(p);
-  const tabs = [['fiche', 'Fiche'], ['inventaire', 'Inventaire'], ['sorts', 'Sorts'], ['progression', 'Progression']]
+  const tabs = [['combat', 'Combat'], ['fiche', 'Personnage'], ['inventaire', 'Inventaire'], ['sorts', 'Sorts'], ['progression', 'Progression']]
     .map(([k, l]) => `<a href="#/perso/${p.id}/${k}" class="${tab === k ? 'active' : ''}">${l}</a>`).join('');
-  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : tab === 'inventaire' ? ongletInventaire(p, e) : ongletFiche(p, e);
+  const contenu = tab === 'sorts' ? ongletSorts(p) : tab === 'progression' ? ongletProgression(p) : tab === 'inventaire' ? repliable(ongletInventaire(p, e)) : tab === 'combat' ? ongletFiche(p, e, 'combat') : ongletFiche(p, e, 'perso');
   const lecture = !peutModifier(p);
   const body = lecture ? `<fieldset class="lecture" disabled>${contenu}</fieldset>` : contenu;
   return `
@@ -778,7 +789,8 @@ function pagePersoSuite(p, tab) {
       <div class="titre-perso">
         <div class="avatar">${p.portrait ? `<img src="${p.portrait}" alt="Portrait">` : '<span class="vide"></span>'}${p.embleme ? `<img class="embleme-avatar" src="${p.embleme}" alt="Emblème">` : ''}</div>
         <div><h1 id="ptitle">${esc(p.nom || 'Sans nom')}</h1>
-        <p class="sub">${esc([raceNom(p), classesTxt(e) || 'aucun niveau atteint'].filter(Boolean).join(', '))}${p.joueur ? ', joué par ' + esc(p.joueur) : ''}</p></div>
+        <p class="sub">${esc([raceNom(p), classesTxt(e) || 'aucun niveau atteint'].filter(Boolean).join(', '))}${p.joueur ? ', joué par ' + esc(p.joueur) : ''}</p>
+        ${[p.alignement, p.divinite && p.divinite !== 'Aucune' ? (p.divinite === 'Autre' ? p.diviniteAutre : p.divinite) : ''].filter(Boolean).length ? `<p class="sub sub2">${esc([p.alignement, p.divinite && p.divinite !== 'Aucune' ? (p.divinite === 'Autre' ? p.diviniteAutre : p.divinite) : ''].filter(Boolean).join(' · '))}</p>` : ''}</div>
       </div>
       <div class="btns">
         <button class="btn ghost" data-action="export-perso">Exporter la fiche</button>
@@ -787,7 +799,6 @@ function pagePersoSuite(p, tab) {
     </div>
     ${encartDroits(p)}
     ${recap(p, e)}
-    ${puceEtats(p)}
     <nav class="tabs" aria-label="Sections du personnage">${tabs}</nav>
     ${body}`;
 }
@@ -796,7 +807,10 @@ function recap(p, e) {
   if (!e.niveau && !e.race) return '';
   const s = stats(p, e);
   const pv = pvMaxEff(p) ? `${pvActuels(p)}/${pvMaxEff(p)}` : '—';
-  return `<div class="recap"><span>PV<b>${esc(pv)}</b></span><span>CA<b>${s.ca}</b></span><span>Initiative<b>${R.signe(s.init)}</b></span><span>Vitesse<b>${s.vitesse} m</b></span><span>BBA<b>${R.attTxt(s.att)}</b></span></div>`;
+  const b = barrePV(p);
+  const etats = (p.etats || []).filter(x => x.actif !== false);
+  const forme = formeActive(p);
+  return `<div class="recap recap-collant"><span class="pv-${b.etat}">PV<b>${esc(pv)}</b></span><span>CA<b>${s.ca}</b></span><span>Init.<b>${R.signe(s.init)}</b></span><span>Vitesse<b>${s.vitesse} m</b></span><span>BBA<b>${R.attTxt(s.att)}</b></span>${forme ? `<span class="recap-forme">${esc(forme.nom)}</span>` : ''}${p.familier ? (v => `<span class="recap-fam pv-${v.etat}" title="${esc(p.familier.nom || 'Familier')}">${iconeFamilier(p.familier)}<b>${v.act}/${v.max}</b></span>`)(pvFamilier(p)) : ''}${etats.length ? `<span class="recap-etats" title="${esc(etats.map(x => x.nom).join(', '))}">${esc(etats.slice(0, 2).map(x => x.nom).join(' · '))}${etats.length > 2 ? ` +${etats.length - 2}` : ''}</span>` : ''}</div>`;
 }
 
 function blocImages(p) {
@@ -813,19 +827,53 @@ function blocImages(p) {
 }
 
 /* Transforme les sections titrées de la fiche en blocs repliables (état mémorisé sur l'appareil) */
-function repliable(html) {
+function repliable(html, fermesParDefaut = []) {
   return html.replace(/<section class="card([^"]*)"><h3>(.*?)<\/h3>([\s\S]*?)<\/section>/g, (m, classes, titre, corps) => {
     const id = slug(titre.replace(/<[^>]+>/g, ''));
-    const ferme = (db.replis || {})[id];
+    const replis = db.replis || {};
+    const ferme = id in replis ? replis[id] : ['notes', 'quetes-personnelles', 'familier', ...fermesParDefaut].includes(id);
     return `<details class="card repli${classes}" data-section="${id}"${ferme ? '' : ' open'}><summary><h3>${titre}</h3></summary>${corps}</details>`;
   });
 }
-const outilsReplis = () => `<div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
+const outilsReplis = () => `<div class="fiche-recherche"><input type="search" id="fiche-q" placeholder="Chercher sur la fiche : vigueur, discrétion, CA…" aria-label="Chercher sur la fiche" autocomplete="off"><div id="fiche-res" class="fiche-res" hidden></div></div><div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
 
-function ongletFiche(p, e) {
-  return outilsReplis() + repliable(ongletFicheBrut(p, e));
+function ongletFiche(p, e, partie = 'perso') {
+  return outilsReplis() + repliable(ongletFicheBrut(p, e, partie), p.nom && p.race ? ['identite'] : []);
 }
-function ongletFicheBrut(p, e) {
+/* Dons et capacités de classe : une seule section (le contenu des deux anciennes, sans leur cadre) */
+function sansCadre(html) { return String(html || '').replace(/^\s*<section[^>]*>\s*<h3>[\s\S]*?<\/h3>/, '').replace(/<\/section>\s*$/, ''); }
+function ficheDonsEtCapacites(p, e, valsClasses) {
+  const dons = sansCadre(ficheDons(p, e)), cap = sansCadre(ficheCapacitesLisible(p, e, valsClasses));
+  if (!dons.trim() && !cap.trim()) return '';
+  return `<section class="card"><h3>Dons et capacités</h3>${dons.trim() ? `<h4 class="sous-titre">Dons</h4>${dons}` : ''}${cap.trim() ? `<h4 class="sous-titre">Capacités de classe et de race</h4>${cap}` : ''}</section>`;
+}
+function defenseStats(p, e, s, stat) {
+  return `
+  <section class="card"><h3>Défense et statistiques</h3>
+    <div class="stats">
+      ${stat('Classe d\'armure', s.ca)}${stat('Contact', s.contact)}${stat('Pris au dépourvu', s.depourvu, s.esquiveInst ? 'Esquive instinctive' : '')}
+      ${stat('Taille', `${R.TAILLES[e.taille]?.court || 'M'} (${R.TAILLES[e.taille]?.en || 'M'})`, e.ecartTaille ? `${R.TAILLES[e.taille].nom}, normalement ${R.TAILLES[e.tailleBase].nom.toLowerCase()} · allonge ${R.TAILLES[e.taille].allonge} m` : `${R.TAILLES[e.taille]?.nom || 'Moyenne'} · allonge ${R.TAILLES[e.taille]?.allonge ?? 1.5} m`)}
+      ${stat('Initiative', R.signe(s.init))}${stat('Vitesse', s.vitesse + ' m')}
+      ${stat('Vigueur', R.signe(s.js.vig))}${stat('Réflexes', R.signe(s.js.ref))}${stat('Volonté', R.signe(s.js.vol))}
+      ${stat('BBA', R.attTxt(s.att))}${stat('Corps à corps', R.signe(s.cac))}${stat('Distance', R.signe(s.dist))}${stat('Lutte', R.signe(s.lutte))}
+
+    </div>
+
+    ${blocProtections(p, e, s)}
+    ${e.objets.maxDex != null && e.mods.dex > e.objets.maxDex ? `<p class="hint">Ton armure limite ta Dextérité à ${R.signe(e.objets.maxDex)} pour la CA.</p>` : ''}
+    ${e.objets.acp ? `<p class="hint">Malus d'armure ${e.objets.acp} appliqué aux compétences marquées ◘.</p>` : ''}
+    ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets et états inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
+    ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
+    <div class="grid" style="margin-top:.8rem">
+
+    </div>
+    ${Object.keys(e.objets.cond).length ? `<h4>Bonus conditionnels <small class="hint">(non comptés dans les totaux)</small></h4>
+      <ul class="liste-cond">${Object.entries(e.objets.cond).flatMap(([k, l]) => l.map(x => `<li><span class="bonus-cond">${R.signe(x.val)} ${esc(NOM_CIBLE[k] || k)}</span> ${esc(x.quand)} <small>(${esc(x.source)})</small></li>`)).join('')}</ul>` : ''}
+    ${Object.entries(p.ajust || {}).some(([, v]) => v !== '' && v != null && v !== 0 && v !== '0') ? `<p class="hint ancien-ajust">D'anciens ajustements manuels sont encore comptés (${esc(Object.entries(p.ajust).filter(([, v]) => v !== '' && v != null && v !== '0' && v !== 0).map(([k, v]) => `${k} ${v}`).join(', '))}). Ces bonus se gèrent désormais avec les objets et les états. <button class="lien" data-action="ajust-effacer">Les effacer</button></p>` : ''}
+    ${p.attaques ? `<p class="hint ancien-ajust">Ancienne note d'attaques : ${esc(p.attaques)} <button class="lien" data-action="attaques-effacer">Effacer</button></p>` : ''}
+  </section>`;
+}
+function ongletFicheBrut(p, e, partie = 'perso') {
   if (p.languesAutres && peutModifier(p)) {
     p.langues = [...new Set([...(p.langues || []), ...p.languesAutres.split(/[,;]+/).map(x => x.trim()).filter(Boolean)])];
     p.languesAutres = ''; save();
@@ -842,9 +890,14 @@ function ongletFicheBrut(p, e) {
   const aj = (path, label) => `<label class="aj"><span>${label}</span><input type="text" inputmode="numeric" data-bind="ajust.${path}" data-recalc value="${esc(getP(p, 'ajust.' + path))}" placeholder="0"></label>`;
   const valsClasses = Object.entries(e.classes).map(([id, k]) => ({ id, k, vals: valeursClasse(id, k, e) })).filter(x => x.vals.length);
   const deluge = valsClasses.find(x => x.id === 'moine')?.vals.find(v => v[0] === 'Déluge de coups');
+  const enCombat = partie === 'combat';
+  if (enCombat) return `
+  ${carteVitalite(p)}
+  ${ficheEffets(p)}
+  ${ficheCombat(p, e)}
+  ${defenseStats(p, e, s, stat)}`;
   return `
   ${p.pnjMJ && peutModifier(p) ? carteVisibilite(p) : ''}
-  ${carteVitalite(p)}
   <div class="fiche-haut">
   <section class="card carte-identite"><h3>Identité</h3>
     <div class="identite">
@@ -867,7 +920,6 @@ function ongletFicheBrut(p, e) {
     ${blocLangues(p)}
     ${ta(p, 'apparence', 'Apparence et historique')}
   </section>
-  <div class="col-reliques">${carteBaguette(p)}${carteFocalisateur(p)}</div>
   </div>
 
   <section class="card"><h3>Caractéristiques</h3>
@@ -885,44 +937,11 @@ function ongletFicheBrut(p, e) {
     <p class="hint aide">Saisis les valeurs de base (ajustements raciaux compris, sans les objets). Les bonus des objets équipés s'ajoutent <span class="bonus-objet">en couleur</span>, et les modificateurs se calculent seuls.</p>
   </section>
 
-  ${(p.etats || []).some(x => x.actif !== false) ? ficheEtats(p) : ''}
-  ${ficheAmeliorations(p)}
+  ${ficheCompetences(p, e)}
+  ${ficheDonsEtCapacites(p, e, valsClasses)}
   ${carteFamilier(p, e)}
   ${(() => { const q = fichesToutes().filter(f => porteeQuete(f) === 'personnelle' && f.extra?.persoId === p.id); return q.length ? `<section class="card"><h3>Quêtes personnelles</h3><div class="fiches">${q.map(carteFiche).join('')}</div></section>` : ''; })()}
-  ${ficheCombat(p, e)}
 
-  <section class="card"><h3>Défense et statistiques</h3>
-    <div class="stats">
-      ${stat('Classe d\'armure', s.ca)}${stat('Contact', s.contact)}${stat('Pris au dépourvu', s.depourvu, s.esquiveInst ? 'Esquive instinctive' : '')}
-      ${stat('Taille', `${R.TAILLES[e.taille]?.court || 'M'} (${R.TAILLES[e.taille]?.en || 'M'})`, e.ecartTaille ? `${R.TAILLES[e.taille].nom}, normalement ${R.TAILLES[e.tailleBase].nom.toLowerCase()} · allonge ${R.TAILLES[e.taille].allonge} m` : `${R.TAILLES[e.taille]?.nom || 'Moyenne'} · allonge ${R.TAILLES[e.taille]?.allonge ?? 1.5} m`)}
-      ${stat('Initiative', R.signe(s.init))}${stat('Vitesse', s.vitesse + ' m')}
-      ${stat('Vigueur', R.signe(s.js.vig))}${stat('Réflexes', R.signe(s.js.ref))}${stat('Volonté', R.signe(s.js.vol))}
-      ${stat('BBA', R.attTxt(s.att))}${stat('Corps à corps', R.signe(s.cac))}${stat('Distance', R.signe(s.dist))}${stat('Lutte', R.signe(s.lutte))}
-
-    </div>
-
-    ${blocProtections(p, e, s)}
-    ${e.objets.maxDex != null && e.mods.dex > e.objets.maxDex ? `<p class="hint">Ton armure limite ta Dextérité à ${R.signe(e.objets.maxDex)} pour la CA.</p>` : ''}
-    ${e.objets.acp ? `<p class="hint">Malus d'armure ${e.objets.acp} appliqué aux compétences marquées ◘.</p>` : ''}
-    ${Object.keys(e.objets.tot).some(k => !R.CARACS.some(c => c.k === k)) ? `<p class="hint"><b>Objets et états inclus :</b> ${esc(Object.entries(e.objets.detail).filter(([k]) => !R.CARACS.some(c => c.k === k)).map(([k, l]) => `${NOM_CIBLE[k]} (${l.join(', ')})`).join(' ; '))}</p>` : ''}
-    ${[...s.notesJs, ...s.notesVit].length ? `<p class="hint">${esc((t => t[0].toUpperCase() + t.slice(1))([...s.notesJs, ...s.notesVit].join(' ; ')))}.</p>` : ''}
-    <div class="grid" style="margin-top:.8rem">
-      <p class="hint" style="grid-column:1/-1">Points de vie et dés de vie : voir la section Vitalité en haut de la fiche.</p>
-    </div>
-    ${Object.keys(e.objets.cond).length ? `<h4>Bonus conditionnels <small class="hint">(non comptés dans les totaux)</small></h4>
-      <ul class="liste-cond">${Object.entries(e.objets.cond).flatMap(([k, l]) => l.map(x => `<li><span class="bonus-cond">${R.signe(x.val)} ${esc(NOM_CIBLE[k] || k)}</span> ${esc(x.quand)} <small>(${esc(x.source)})</small></li>`)).join('')}</ul>` : ''}
-    ${Object.entries(p.ajust || {}).some(([, v]) => v !== '' && v != null && v !== 0 && v !== '0') ? `<p class="hint ancien-ajust">D'anciens ajustements manuels sont encore comptés (${esc(Object.entries(p.ajust).filter(([, v]) => v !== '' && v != null && v !== '0' && v !== 0).map(([k, v]) => `${k} ${v}`).join(', '))}). Ces bonus se gèrent désormais avec les objets et les états. <button class="lien" data-action="ajust-effacer">Les effacer</button></p>` : ''}
-    ${p.attaques ? `<p class="hint ancien-ajust">Ancienne note d'attaques : ${esc(p.attaques)} <button class="lien" data-action="attaques-effacer">Effacer</button></p>` : ''}
-  </section>
-
-  ${ficheCompetences(p, e)}
-  ${(p.etats || []).some(x => x.actif !== false) ? '' : ficheEtats(p)}
-  ${ficheDons(p, e)}
-  ${ficheCapacitesLisible(p, e, valsClasses)}
-
-  <section class="card"><h3>Équipement</h3>
-    ${resumeEquipement(p)}
-  </section>
 
   <section class="card"><h3>Notes</h3>
     ${ta(p, 'notes', 'Notes libres', { rows: 5 })}
@@ -1008,6 +1027,15 @@ const FAMILIERS = [
   { id: 'rat', nom: 'Rat', bonus: [{ cible: 'vig', val: 2 }], txt: '+2 aux jets de Vigueur' },
   { id: 'serpent', nom: 'Serpent (vipère minuscule)', bonus: [{ cible: 'comp:bluff', val: 3 }], txt: '+3 en Bluff' },
 ];
+function pvFamilier(p) {
+  const f = p.familier; if (!f) return null;
+  const max = num(f.pvMax) || Math.max(1, Math.floor(pvMaxEff(p) / 2));
+  const act = f.pvActuels === undefined || f.pvActuels === '' ? max : num(f.pvActuels);
+  const pct = max ? Math.max(0, Math.min(100, Math.round(act / max * 100))) : 0;
+  return { max, act, pct, etat: act <= 0 ? 'ko' : pct <= 25 ? 'critique' : pct <= 50 ? 'blesse' : 'ok' };
+}
+const ICONES_FAMILIER = { 'chauve-souris': '🦇', chat: '🐈', corbeau: '🐦‍⬛', crapaud: '🐸', belette: '🦦', faucon: '🦅', hibou: '🦉', lezard: '🦎', rat: '🐀', serpent: '🐍' };
+const iconeFamilier = f => ICONES_FAMILIER[f?.type] || '🐾';
 const aDesFamiliers = e => !!(e.classes.magicien || e.classes.ensorceleur);
 function carteFamilier(p, e) {
   if (!aDesFamiliers(e) && !p.familier) return '';
@@ -1035,7 +1063,12 @@ function carteFamilier(p, e) {
       <div class="familier-infos">
         ${mod ? `<label class="f"><span>Nom</span><input type="text" data-bind="familier.nom" value="${esc(f.nom || '')}" placeholder="Son nom"></label>` : `<h4>${esc(f.nom || 'Sans nom')}</h4>`}
         <p class="sub">${esc(type?.nom || f.type || 'Familier')}${nivMage ? ` · maître de niveau ${nivMage}` : ''}</p>
-        <p class="hint">PV : la moitié des tiens${pvMaitre ? ` (${Math.floor(pvMaitre / 2)})` : ''}. Tant qu'il est à portée de main, tu gagnes le don <b>Vigilance</b> (+2 en Détection et en Perception auditive).</p>
+        ${(() => { const v = pvFamilier(p); return `<div class="fam-pv pv-${v.etat}">
+          ${mod ? `<button class="pv-btn" data-action="familier-pv" data-d="-5" aria-label="−5 PV">−5</button><button class="pv-btn" data-action="familier-pv" data-d="-1" aria-label="−1 PV">−1</button>` : ''}
+          <span class="fam-pv-val"><b>${v.act}</b> / ${v.max} PV</span>
+          ${mod ? `<button class="pv-btn" data-action="familier-pv" data-d="1" aria-label="+1 PV">+1</button><button class="pv-btn" data-action="familier-pv" data-d="5" aria-label="+5 PV">+5</button>` : ''}
+        </div><div class="pv-barre"><span style="width:${v.pct}%"></span></div>`; })()}
+        <p class="hint">PV max : la moitié des tiens${pvMaitre ? ` (${Math.floor(pvMaitre / 2)})` : ''}${mod ? ` · <button class="lien" data-action="familier-pv-repos">PV au maximum</button>` : ''}. Tant qu'il est à portée de main, tu gagnes le don <b>Vigilance</b> (+2 en Détection et en Perception auditive).</p>
       </div>
     </div>
     <p class="lbl">Bonus pour toi</p>
@@ -1075,12 +1108,61 @@ function ficheAmeliorations(p) {
       <p class="hint">Une valeur négative est un malus.${estMJ() && enLigne() ? ' Ceux que tu ajoutes sont « accordés par le MJ » : le joueur les voit mais ne peut ni les modifier ni les retirer.' : ''}</p>` : ''}
   </section>`;
 }
-function ficheEtats(p) {
+/* Une seule carte pour tout ce qui modifie le personnage : états et blessures, bonus et malus, sorts de taille */
+const cibleCourte = c => String(NOM_CIBLE[c] || c || '?').replace(/\s*\(.*\)\s*$/, '');
+const aDesEffets = p => (p.etats || []).some(x => x.actif !== false) || (p.ameliorations || []).length > 0;
+function ficheEffets(p) {
+  const mod = peutModifier(p);
+  const mj = estMJ() || !enLigne();
+  const { actifs, gueris } = cartesEtats(p);
+  const opts = cur => CIBLES_BONUS.map(([g, li]) => `<optgroup label="${g}">${li.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  const am = (p.ameliorations || []).map((a, i) => {
+    const verrou = a.parMJ && enLigne() && !estMJ();
+    const titre = a.preset ? (a.preset === 'agrandissement' ? 'Agrandissement' : 'Rapetissement') : `${R.signe(num(a.val))} ${cibleCourte(a.cible)}`;
+    const detail = a.preset ? (a.preset === 'agrandissement' ? 'taille +1, For +2, Dex −2' : 'taille −1, For −2, Dex +2') : '';
+    if (mod && !verrou && state.editAm === a.id && !a.preset) {
+      return `<div class="effet-ligne en-edition">
+        <div class="effet-edit">
+          <input type="text" inputmode="numeric" class="s" data-bind="ameliorations.${i}.val" data-recalc value="${esc(a.val)}" placeholder="+2 / −2" aria-label="Valeur (négative pour un malus)">
+          <select data-bind="ameliorations.${i}.cible" data-rerender aria-label="Ce qui est modifié"><option value="">— Ce qui est modifié —</option>${opts(a.cible)}</select>
+          <select data-bind="ameliorations.${i}.permanent" data-rerender aria-label="Durée"><option value="" ${a.permanent ? '' : 'selected'}>Temporaire</option><option value="1" ${a.permanent ? 'selected' : ''}>Permanent</option></select>
+          <input type="text" data-bind="ameliorations.${i}.note" value="${esc(a.note || '')}" placeholder="Origine (sort, malédiction, récompense…)" aria-label="Origine">
+        </div>
+        <div class="btns"><button class="btn petit" data-action="am-fin">Terminé</button><button class="btn ghost danger petit" data-action="am-suppr" data-idx="${i}">Retirer</button></div>
+      </div>`;
+    }
+    return `<div class="effet-ligne ${a.preset ? 'preset' : num(a.val) < 0 ? 'malus' : 'bonus'}">
+      <div class="effet-corps">
+        <div class="effet-titre"><b class="${a.preset ? '' : num(a.val) < 0 ? 'txt-malus' : 'txt-bonus'}">${esc(titre)}</b>
+          <span class="tag-cat">${a.permanent ? 'Permanent' : 'Temporaire'}</span>${a.parMJ ? '<span class="tag-cat tag-mj">par le MJ</span>' : ''}</div>
+        ${detail || a.note ? `<small class="hint">${esc([detail, a.note].filter(Boolean).join(' · '))}</small>` : ''}
+      </div>
+      ${mod && !verrou ? `<div class="effet-actions">${a.preset ? '' : `<button class="icon" data-action="am-edit" data-id="${a.id}" aria-label="Modifier" title="Modifier">✎</button>`}<button class="icon" data-action="am-suppr" data-idx="${i}" aria-label="Retirer" title="Retirer">✕</button></div>` : ''}
+    </div>`;
+  });
+  const vide = !actifs.length && !am.length;
+  return `<section class="card effets-fiche"><h3>États, bonus et malus</h3>
+    ${vide ? '<p class="empty">Rien en cours. Tout va bien… pour l\'instant.</p>' : `<div class="effets-liste">${actifs.join('')}${am.join('')}</div>`}
+    ${gueris.length ? `<details class="effet-anciens"><summary>Anciens états (${gueris.length})</summary><div class="effets-liste">${gueris.join('')}</div></details>` : ''}
+    ${mod ? `<div class="row effet-ajout">
+      <select id="effet-choix" aria-label="Ajouter">
+        <optgroup label="Bonus et malus"><option value="bonus">Bonus (+)</option><option value="malus">Malus (−)</option></optgroup>
+        <optgroup label="Sorts de taille"><option value="agrandissement">Agrandissement</option><option value="rapetissement">Rapetissement</option></optgroup>
+        <optgroup label="États des règles">${Object.entries(ETATS_PREDEFINIS).map(([k, v]) => `<option value="etat:${k}">${esc(v.nom)}</option>`).join('')}</optgroup>
+        <optgroup label="Autre"><option value="etat:perso">Blessure ou état personnalisé…</option></optgroup>
+      </select>
+      <button class="btn ghost" data-action="effet-add">+ Ajouter</button>
+    </div>` : ''}
+    <p class="hint aide">Tout ce qui modifie le personnage, au même endroit. Les <b>états</b> (blessures, conditions) peuvent porter des effets chiffrés et une description ; les <b>bonus et malus</b> sont des valeurs simples (une valeur négative est un malus). Tout est compté sur la fiche. ✎ modifie, ✓ termine un état (ou le marque guéri s'il est permanent), ✕ retire. Ce que le MJ accorde ne peut être retiré que par lui.${mj ? '' : ''}</p>
+  </section>`;
+}
+function cartesEtats(p) {
   const mod = peutModifier(p);
   const etats = p.etats || [];
   const opts = cur => CIBLES_BONUS.map(([g, l]) => `<optgroup label="${g}">${l.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
   const cartes = etats.map((et, i) => {
-    if (mod && state.editEtat === et.id) {
+    const garde = html => ({ html, gueri: et.actif === false && state.editEtat !== et.id });
+    if (mod && state.editEtat === et.id) return garde((() => {
       return `<div class="etat en-edition">
         <div class="grid">
           ${fi(et, 'nom', 'Nom', { span: true }).replace('data-bind="nom"', `data-bind="etats.${i}.nom"`)}
@@ -1100,32 +1182,24 @@ function ficheEtats(p) {
         <div class="btns"><button class="lien" data-action="etat-add-bonus" data-idx="${i}">+ Effet chiffré (ex. −4 attaque)</button></div>
         <div class="btns"><button class="btn" data-action="etat-fin">Terminé</button><button class="btn danger" data-action="etat-suppr" data-idx="${i}">Supprimer</button></div>
       </div>`;
-    }
+    })());
     const effets = (et.bonus || []).filter(b => b.cible && num(b.val));
-    return `<div class="etat ${gravite(et)} ${et.actif === false ? 'gueri' : ''}">
-      <div class="etat-tete"><b>${esc(et.nom || 'État')}</b>
-        <span class="etat-duree">${et.duree === 'permanent' ? 'Permanent' : 'Temporaire'}</span>
-        ${et.actif === false ? '<span class="etat-duree">guéri</span>' : ''}
-        ${mod ? `<button class="lien" data-action="etat-edit" data-id="${et.id}">Modifier</button>` : ''}</div>
-      ${et.description ? `<p>${esc(et.description)}</p>` : ''}
-      ${effets.length ? `<p class="objet-bonus">${effets.map(b => `<span class="malus-etat">${R.signe(num(b.val))} ${esc(NOM_CIBLE[b.cible] || b.cible)}</span>`).join('')}</p>` : ''}
-      ${et.depuis ? `<p class="hint">Depuis : ${esc(et.depuis)}</p>` : ''}
-      ${mod ? `<div class="btns">${et.actif === false
-        ? `<button class="btn ghost" data-action="etat-actif" data-idx="${i}">Réactiver</button><button class="btn danger" data-action="etat-suppr" data-idx="${i}">Supprimer</button>`
-        : `<button class="btn ghost" data-action="etat-actif" data-idx="${i}">${et.duree === 'permanent' ? 'Marquer comme guéri' : 'Terminé, retirer'}</button>`}</div>` : ''}
-    </div>`;
-  }).join('');
-  return `<section class="card"><h3>États et blessures</h3>
-    ${cartes ? `<div class="etats">${cartes}</div>` : '<p class="empty">Aucun état en cours. Tout va bien… pour l\'instant.</p>'}
-    ${mod ? `<div class="row etat-ajout">
-      <select id="etat-choix" aria-label="État à ajouter">
-        <option value="perso">Blessure ou état personnalisé…</option>
-        <optgroup label="États des règles">${Object.entries(ETATS_PREDEFINIS).map(([k, v]) => `<option value="${k}">${esc(v.nom)}</option>`).join('')}</optgroup>
-      </select>
-      <button class="btn ghost" data-action="etat-add">Ajouter</button>
-    </div>
-    <p class="hint aide">Les états actifs apparaissent en haut de la fiche, sur l'accueil et dans l'espace MJ. Leurs effets chiffrés s'appliquent aux statistiques.</p>` : ''}
-  </section>`;
+    return garde(`<div class="effet-ligne etat-l ${gravite(et)} ${et.actif === false ? 'gueri' : ''}">
+      <div class="effet-corps">
+        <div class="effet-titre"><b>${esc(et.nom || 'État')}</b><span class="tag-cat">${et.duree === 'permanent' ? 'Permanent' : 'Temporaire'}</span>${et.actif === false ? '<span class="tag-cat">guéri</span>' : ''}</div>
+        ${effets.length ? `<div class="effet-chips">${effets.map(b => `<span class="${num(b.val) < 0 ? 'malus-etat' : 'bonus-objet'}">${R.signe(num(b.val))} ${esc(cibleCourte(b.cible))}</span>`).join('')}</div>` : ''}
+        ${et.description ? `<details class="effet-desc"><summary>${esc(String(et.description).slice(0, 70))}${String(et.description).length > 70 ? '…' : ''}</summary><p>${esc(et.description)}</p></details>` : ''}
+        ${et.depuis ? `<small class="hint">Depuis : ${esc(et.depuis)}</small>` : ''}
+      </div>
+      ${mod ? `<div class="effet-actions">
+        <button class="icon" data-action="etat-edit" data-id="${et.id}" aria-label="Modifier" title="Modifier">✎</button>
+        ${et.actif === false
+          ? `<button class="icon" data-action="etat-actif" data-idx="${i}" aria-label="Réactiver" title="Réactiver">↺</button><button class="icon" data-action="etat-suppr" data-idx="${i}" aria-label="Supprimer" title="Supprimer">✕</button>`
+          : `<button class="icon" data-action="etat-actif" data-idx="${i}" aria-label="${et.duree === 'permanent' ? 'Marquer comme guéri' : 'Terminé, retirer'}" title="${et.duree === 'permanent' ? 'Marquer comme guéri' : 'Terminé, retirer'}">✓</button>`}
+      </div>` : ''}
+    </div>`);
+  });
+  return { actifs: cartes.filter(c => !c.gueri).map(c => c.html), gueris: cartes.filter(c => c.gueri).map(c => c.html) };
 }
 
 /* Toutes les résistances et protections : race, classe, objets, états, saisie manuelle */
@@ -1279,7 +1353,7 @@ function ongletInventaire(p, e) {
       <div class="chips">${[['', 'Tout'], ...GROUPES_INV.map(([t, c]) => [c[0] || 'objet', t.replace(/ \(.*\)$/, '')])].filter(([k]) => !k || items.some(it => (it.cat || 'objet') === k || (k === 'armure' && it.cat === 'bouclier'))).map(([k, l]) => `<button class="chip ${(state.invCat || '') === k ? 'on' : ''}" data-action="inv-cat" data-c="${k}">${esc(l)}</button>`).join('')}</div>
     </div>
     <div id="inv-groupes">${groupesInvHTML(p, items, mod)}</div>`;
-  return carteBourse(p) + `<section class="card"><h3>Inventaire et équipement</h3>
+  return carteBourse(p) + `<div class="col-reliques">${carteBaguette(p)}${carteFocalisateur(p)}</div>` + `<section class="card"><h3>Inventaire et équipement</h3>
     <div class="inv-resume">
       <span>Objets<b>${items.length}</b></span>
       ${poids ? `<span>Poids total<b>${poidsTxt(poids)}</b></span>` : ''}
@@ -1551,7 +1625,7 @@ function blocTour(p, e, st, mn, armes, res) {
   if (!monTour) {
     const i = noms.findIndex(n => norm(n) === norm(cp.tour)), j = noms.findIndex(n => norm(n) === norm(p.nom));
     const dans = i >= 0 && j >= 0 ? (j - i + noms.length) % noms.length : null;
-    return `<section class="tour-bloc attente"><b>${esc(cp.nom || 'Combat')}</b> · round ${esc(cp.round)} · au tour de <b>${esc(cp.tour || '?')}</b>${dans ? ` · tu joues dans ${dans} tour${dans > 1 ? 's' : ''}` : ''}</section>`;
+    return `<div class="tour-bloc attente"><b>${esc(cp.nom || 'Combat')}</b> · round ${esc(cp.round)} · au tour de <b>${esc(cp.tour || '?')}</b>${dans ? ` · tu joues dans ${dans} tour${dans > 1 ? 's' : ''}` : ''}</div>`;
   }
   const typeRes = r => /libre|annonce|avant l'attaque/i.test(r.action || '') ? 'libre' : /complexe/i.test(r.action || '') ? 'complexe' : /rapide|immédiate/i.test(r.action || '') ? 'rapide' : /simple|standard/i.test(r.action || '') ? 'simple' : /mouvement/i.test(r.action || '') ? 'mouvement' : '';
   const restant = r => (r.max || 0) - num((p.compteurs || {})[r.id]);
@@ -1560,7 +1634,7 @@ function blocTour(p, e, st, mn, armes, res) {
   const bouton = (k, l, extra = '', epuise = false) => { const ok = peut(k) && !epuise; return `<button class="chip ${ok ? '' : 'off'}" data-action="tour-act" data-k="${k}" data-l="${esc(l)}" ${extra} ${ok ? '' : 'disabled'}>${esc(l)}</button>`; };
   const resBoutons = k => res.filter(r => typeRes(r) === k).map(r => bouton(k, `${r.nom}${r.max ? ` (${Math.max(0, restant(r))}/${r.max})` : ''}`, `data-res="${r.id}"`, r.max && restant(r) <= 0)).join('');
   const jauge = (n, l) => `<span class="jeton ${n > 0 ? 'dispo' : 'pris'}">${l}</span>`;
-  return `<section class="tour-bloc a-moi">
+  return `<div class="tour-bloc a-moi">
     <div class="tour-tete"><b>⚔ C'est ton tour</b><span>${esc(cp.nom || 'Combat')} · round ${esc(cp.round)}</span></div>
     <div class="jetons">${jauge(t.simple, 'Simple')}${jauge(t.mouvement, 'Mouvement')}${jauge(t.rapide, 'Rapide')}${jauge(t.pas && !t.bouge ? 1 : 0, 'Pas 1,5 m')}</div>
     ${t.fini ? '<p class="hint">Tour terminé : le MJ va passer au suivant.</p>' : `
@@ -1572,7 +1646,7 @@ function blocTour(p, e, st, mn, armes, res) {
     ${t.journal.length ? `<ol class="tour-journal">${t.journal.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
     <div class="btns">${t.hist.length && !t.fini ? '<button class="btn ghost petit" data-action="tour-annuler">Annuler la dernière</button>' : ''}
       ${t.fini ? '<button class="btn ghost petit" data-action="tour-reprendre">Reprendre mon tour</button>' : '<button class="btn petit" data-action="tour-fin">Terminer mon tour</button>'}</div>
-  </section>`;
+  </div>`;
 }
 /* Une arme dans « En combat » : jets calculés et capacités qui s'y appliquent */
 function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
@@ -1667,6 +1741,7 @@ function ficheCombat(p, e) {
 
     </div>
 
+    ${blocFormes(p)}
     ${blocTour(p, e, st, mn, armes, res)}
     ${blocEffets(p)}
     ${resPar('libre').length ? `<h4 class="type-action">Actions libres</h4><div class="ressources">${resPar('libre').map(r => compteur(p, r)).join('')}</div>` : ''}
@@ -2160,6 +2235,7 @@ function majLocaleJourSuivant(p) {
   (p.sorts || []).forEach(x => { x.utilises = 0; });
   p.pvActuels = p.pvMax;
   p.dvUtilises = 0;
+  if (p.familier) p.familier.pvActuels = '';
 }
 function majLocaleRation(p) {
   const r = rationDefaut(p);
@@ -2196,6 +2272,12 @@ function pageMJReelle() {
         <button class="pv-btn" data-action="mj-pvj" data-id="${x.id}" data-d="5" aria-label="+5 PV">+5</button>
       </div>
       <div class="pv-barre"><span style="width:${b.pct}%"></span></div>
+      ${x.familier ? (v => `<div class="mj-familier pv-${v.etat}" title="Familier de ${esc(x.nom)}">
+        <span class="fam-ico" aria-hidden="true">${iconeFamilier(x.familier)}</span><span class="fam-nom">${esc(x.familier.nom || 'Familier')}</span>
+        <button class="pv-btn" data-action="mj-fam-pv" data-id="${x.id}" data-d="-1" aria-label="Familier : −1 PV">−1</button>
+        <span class="mj-pv-val"><b>${v.act}</b> / ${v.max}</span>
+        <button class="pv-btn" data-action="mj-fam-pv" data-id="${x.id}" data-d="1" aria-label="Familier : +1 PV">+1</button>
+      </div>`)(pvFamilier(x)) : ''}
       <div class="mj-stats">
         <span>CA<b>${st.ca}</b></span><span>Contact<b>${st.contact}</b></span><span>Dépourvu<b>${st.depourvu}</b></span><span>Init<b>${R.signe(st.init)}</b></span>
         <span>Vig<b>${R.signe(st.js.vig)}</b></span><span>Réf<b>${R.signe(st.js.ref)}</b></span><span>Vol<b>${R.signe(st.js.vol)}</b></span><span>Vitesse<b>${st.vitesse} m</b></span>
@@ -2338,7 +2420,8 @@ function carteXP() {
 function validerNiveau(x) {
   const l = (x.progression || []).find(y => !y.atteint);
   if (!l || !l.classe) return false;
-  l.atteint = true; appliquerAugment(x, l);
+  l.atteint = true; appliquerAugment(x, l); synchroSortsProgression(x);
+  x.compValidees = rangsActuels(x);
   const i = x.progression.indexOf(l);
   x.mjChamps = { ...(x.mjChamps || {}), [`progression.${i}.atteint`]: Date.now(), ...(l.augmentApplique ? { [`caracs.${l.augmentApplique}.val`]: Date.now() } : {}) };
   x.mjMaj = Date.now(); x.maj = Date.now();
@@ -3615,6 +3698,8 @@ function ficheCompetences(p, e) {
   return `<section class="card"><h3>Compétences</h3>
     <div class="cl-resume">
       <span>Points : <b>${depense}</b> / ${dispo}${e.race?.pcBonus ? ' (humain compris)' : ''}</span>
+      ${enLigne() && !p.pnjMJ && peutModifier(p) && !(db.reglages || {}).compLibres && rangsNonValides(p) ? `<span><button class="lien" data-action="comp-valider">🔒 Valider mes rangs</button></span>` : ''}
+      ${(db.reglages || {}).compLibres ? '<span class="tag-cat">rangs libres (réglage de la campagne)</span>' : ''}
       <span>Rang max CC = niveau + 3 = <b>${rangsMax}</b></span>
       <span>Rang max CaC = (niveau + 3) / 2 = <b>${String(rangsMax / 2).replace('.', ',')}</b></span>
     </div>
@@ -4345,6 +4430,7 @@ async function chargerInfos() {
     if (l && l[0] && l[0].bourse) db.bourseCommune = { bourse: l[0].bourse, porteur_id: l[0].porteur_id || '', journal: l[0].bourse_journal || [], objets: l[0].coffre_objets || [] };
     db.conteur = (l && l[0]) || null;
     if (l && l[0] && l[0].jour) db.jour = l[0].jour;
+    if (l && l[0]) db.reglages = l[0].reglages || {};
     saveNow();
   } catch (e) { console.warn('Infos de campagne indisponibles (base pas encore en v3 ?)', e); }
 }
@@ -5452,7 +5538,7 @@ function encartDroits(p) {
 
 function pageNouveauPerso() {
   return `
-  <p><a href="#/persos">← Personnages</a></p>
+  <p><a href="#/persos">← Compagnie</a></p>
   <h1>Nouveau personnage</h1>
   <section class="card" style="margin-top:1rem">
     <p>Tout le monde pourra voir ta fiche, mais toi seul pourras la modifier grâce à ton code personnel. Il protège aussi tes notes de session. Garde-le bien : il sert à retrouver ton personnage sur un autre appareil.</p>
@@ -5694,6 +5780,10 @@ function pageDonnees() {
   <div class="pagehead"><div><h1>Partage et sauvegarde</h1>
     <p class="sub">Les données restent sur cet appareil. Le partage se fait par fichier.</p></div></div>
 
+  <section class="card"><h3>Réglages de la campagne</h3>
+    <label class="check"><input type="checkbox" data-action="reglage" data-cle="compLibres" ${(db.reglages || {}).compLibres ? 'checked' : ''}> Rangs de compétence libres : les joueurs ajoutent et retirent leurs rangs sans limite de points ni verrou de validation</label>
+    <p class="hint aide">Par défaut, un joueur ne peut ajouter des rangs que dans la limite de ses points, et ne peut pas retirer des rangs validés : seul le MJ le peut. Coche cette case pour lever la restriction (pendant une création de personnage ou une correction, par exemple), puis décoche-la. Le réglage s'applique à toute la campagne.</p>
+  </section>
   <section class="card intro"><h3>Partager avec la troupe</h3>
     <div class="btns">
       <button class="btn" data-action="import">Importer un fichier</button>
@@ -5758,13 +5848,129 @@ function restaurerDetails(racine, m) {
   }
 }
 /* Les zones de texte prennent la hauteur de leur contenu : plus besoin de les agrandir à la main */
-function ajusterTexte(t) {
+/* ===== Formes : un aspect au choix (bras d'Alin, posture…), dont les bonus ne comptent que lorsqu'il est actif ===== */
+function initialiserFormes(p) {
+  if (p.formesInit || p.formes || !/norik/i.test(p.nom || '')) return;
+  p.formesInit = true;
+  p.formes = [
+    { id: uid(), nom: 'Bras de Sawu', bonus: [] },
+    { id: uid(), nom: 'Bras Cristal sombre', bonus: [{ cible: 'caArmure', val: 1, quand: '' }] },
+    { id: uid(), nom: 'Bras brume', bonus: [] },
+  ];
+  p.formeActive = p.formes[0].id;
+  /* le +1 CA du bras ne vaut que sous forme Cristal sombre : on le retire de l'arme */
+  for (const it of p.equipement || []) if (it.membre && /sawu/i.test(it.nom || '')) it.bonus = (it.bonus || []).filter(b => !(b.cible === 'caArmure' && num(b.val) === 1));
+}
+const formeActive = p => (p.formes || []).find(f => f.id === p.formeActive) || null;
+function blocFormes(p) {
+  const mod = peutModifier(p);
+  const l = p.formes || [];
+  if (!l.length) return ''; /* seuls les personnages qui ont des formes (Norik et son bras d'Alin) voient ce bloc */
+  const act = formeActive(p);
+  const opts = cur => CIBLES_BONUS.map(([g, li]) => `<optgroup label="${g}">${li.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>`).join('');
+  const resume = f => (f.bonus || []).filter(b => b.cible && num(b.val)).map(b => `${R.signe(num(b.val))} ${cibleCourte(b.cible)}`).join(', ');
+  return `<div class="formes">
+    <div class="formes-boutons">${l.map(f => `<button class="forme-btn ${act && act.id === f.id ? 'on' : ''}" data-action="forme-choisir" data-id="${f.id}" ${mod ? '' : 'disabled'}><b>${esc(f.nom || 'Forme')}</b>${resume(f) ? `<small>${esc(resume(f))}</small>` : ''}</button>`).join('')}
+      ${mod ? `<button class="icon" data-action="forme-reglages" aria-label="Régler les formes" title="Régler les formes">⚙</button>` : ''}</div>
+    ${mod && state.formesEdit ? `<div class="formes-edit">${l.map((f, i) => `<div class="forme-edit">
+        <div class="row"><input type="text" data-bind="formes.${i}.nom" value="${esc(f.nom || '')}" placeholder="Nom de la forme" aria-label="Nom de la forme"><button class="icon" data-action="forme-suppr" data-idx="${i}" aria-label="Supprimer la forme">✕</button></div>
+        ${(f.bonus || []).map((b, j) => `<div class="fam-ligne">
+          <input type="text" inputmode="numeric" class="s" data-bind="formes.${i}.bonus.${j}.val" data-recalc value="${esc(b.val)}" aria-label="Valeur">
+          <select data-bind="formes.${i}.bonus.${j}.cible" data-rerender aria-label="Ce qui est modifié"><option value="">— Choisir —</option>${opts(b.cible)}</select>
+          <input type="text" data-bind="formes.${i}.bonus.${j}.quand" value="${esc(b.quand || '')}" placeholder="Toujours (ou : seulement quand…)" aria-label="Condition">
+          <button class="icon" data-action="forme-bonus-suppr" data-idx="${i}" data-j="${j}" aria-label="Retirer">✕</button></div>`).join('')}
+        <button class="lien" data-action="forme-bonus-ajout" data-idx="${i}">+ Bonus ou malus pour cette forme</button>
+      </div>`).join('')}
+      <div class="btns"><button class="btn ghost petit" data-action="forme-ajout">+ Forme</button><button class="btn petit" data-action="forme-reglages">Terminé</button></div></div>` : ''}
+    <p class="hint aide">Choisis l'aspect actif : seuls les bonus et malus de cette forme comptent sur la fiche (CA, sauvegardes, attaques…). La roue ⚙ permet de nommer les formes et de leur donner leurs bonus.</p>
+  </div>`;
+}
+
+/* ===== Recherche sur la fiche ===== */
+function chercherSurFiche(q) {
+  const z = document.getElementById('fiche-res');
+  if (!z) return;
+  const qq = norm(q || '').trim();
+  if (qq.length < 2) { z.innerHTML = ''; z.hidden = true; return; }
+  const sel = '#app .stat, #app .cl:not(.cl-tete), #app .arme, #app .ressource, #app .effet-ligne, #app .carte-don, #app .don, #app .sort-c, #app .car, #app .objet-vue, #app .passif, #app .forme-btn, #app .action-complexe';
+  const res = [];
+  document.querySelectorAll(sel).forEach(el => {
+    if (el.closest('#fiche-res')) return;
+    const txt = (el.innerText || '').replace(/\s+/g, ' ').trim();
+    if (!txt || !norm(txt).includes(qq)) return;
+    res.push({ el, txt });
+  });
+  window.__resFiche = res.map(r => r.el);
+  z.hidden = false;
+  z.innerHTML = res.length ? res.slice(0, 12).map((r, i) => `<button class="res-fiche" data-res-fiche="${i}">${esc(r.txt.slice(0, 110))}${r.txt.length > 110 ? '…' : ''}</button>`).join('') : '<p class="hint">Rien trouvé sur la fiche.</p>';
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-res-fiche]');
+  if (!b) return;
+  const el = (window.__resFiche || [])[Number(b.dataset.resFiche)];
+  if (!el) return;
+  let d = el.closest('details'); while (d) { d.open = true; d = d.parentElement && d.parentElement.closest('details'); }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('trouve'); setTimeout(() => el.classList.remove('trouve'), 2200);
+  const z = document.getElementById('fiche-res'); if (z) z.hidden = true;
+});
+
+/* ===== Rangs de compétence : un joueur ajoute dans la limite de ses points, mais ne retire pas ce qui est validé ===== */
+function pointsDepenses(p, e) {
+  const deClasse = compDeClasse(e);
+  let d = 0;
+  for (const c of R.COMPETENCES) {
+    const v = p.comp?.[c.id] || {};
+    const classe = v && typeof v.classe === 'boolean' ? v.classe : deClasse.has(c.id);
+    d += classe ? num(v.rangs) : num(v.rangs) * 2;
+  }
+  for (const v of p.compPerso || []) d += v.classe ? num(v.rangs) : num(v.rangs) * 2;
+  return d;
+}
+function rangsActuels(p) {
+  const o = {};
+  for (const [k, v] of Object.entries(p.comp || {})) if (num(v.rangs)) o['comp.' + k] = num(v.rangs);
+  (p.compPerso || []).forEach((v, i) => { if (num(v.rangs)) o['compPerso.' + i] = num(v.rangs); });
+  return o;
+}
+const rangsNonValides = p => Object.entries(rangsActuels(p)).some(([k, v]) => v > num((p.compValidees || {})[k]));
+/* Les sorts choisis dans la Progression ne sont appris qu'une fois le niveau atteint */
+function synchroSortsProgression(p) {
+  let change = false;
+  for (const l of p.progression || []) {
+    const note = `Appris au niveau ${l.niveau}`;
+    for (const x of l.sortsAppris || []) {
+      const present = (p.sorts || []).some(s => s.id === x.id);
+      if (l.atteint && !present) { p.sorts = [...(p.sorts || []), { id: x.id, statut: 'Connu', notes: note }]; change = true; }
+      if (!l.atteint && present) { const avant = (p.sorts || []).length; p.sorts = p.sorts.filter(s => !(s.id === x.id && s.notes === note)); if (p.sorts.length !== avant) change = true; }
+    }
+  }
+  return change;
+}
+
+function ajusterTexte(t, reduire = true) {
   if (!t || t.offsetParent === null) return;
-  t.style.height = 'auto';
-  t.style.height = (t.scrollHeight + 2) + 'px';
+  /* On garde la position de la page : réduire puis agrandir la zone faisait remonter l'écran tout en haut */
+  const y = window.scrollY;
+  if (reduire) { t.style.height = t.offsetHeight + 'px'; t.style.height = 'auto'; }
+  const h = t.scrollHeight + 2;
+  if (reduire || h > t.offsetHeight) t.style.height = h + 'px';
+  if (window.scrollY !== y) window.scrollTo(0, y);
 }
 function ajusterTextes(racine) { if (racine) racine.querySelectorAll('textarea').forEach(ajusterTexte); }
-document.addEventListener('input', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target); });
+document.addEventListener('input', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target, false); });
+document.addEventListener('focusout', ev => { if (ev.target.tagName === 'TEXTAREA') ajusterTexte(ev.target); });
+/* Fin de saisie d'un rang trop bas pour un joueur : on remet le minimum validé */
+document.addEventListener('change', ev => {
+  const t = ev.target;
+  if (!t.dataset || t.dataset.rangMin == null || !state.ctx) return;
+  const min = num(t.dataset.rangMin);
+  delete t.dataset.rangMin;
+  if (num(t.value) < min || t.value.trim() === '') {
+    t.value = min; setP(state.ctx, t.dataset.bind, String(min)); save();
+    toast(`Ces rangs sont validés : seul le MJ peut les retirer (minimum ${min}).`);
+  }
+});
 document.addEventListener('toggle', ev => { if (ev.target.tagName === 'DETAILS' && ev.target.open) ajusterTextes(ev.target); }, true);
 window.addEventListener('resize', () => ajusterTextes($('#app')));
 /* ===== Bulle de notes : un bloc de texte par séance, accessible sur toutes les pages ===== */
@@ -5880,6 +6086,30 @@ document.addEventListener('click', ev => {
     else toast('Code incorrect');
   }).catch(e => alert('Vérification impossible : ' + e.message));
 }, true);
+/* Sections en mode lecture tant qu'on ne touche pas ✎ Modifier */
+const SECTIONS_LECTURE = ['identite', 'caracteristiques', 'competences', 'dons-et-capacites', 'familier', 'notes'];
+function appliquerLecture(racine) {
+  if (!racine || !state.ctx || !db.personnages.includes(state.ctx) || !peutModifier(state.ctx)) return;
+  const edition = new Set(state.sectionsEdition || []);
+  racine.querySelectorAll('details[data-section]').forEach(d => {
+    const id = d.dataset.section;
+    if (!SECTIONS_LECTURE.includes(id)) return;
+    const h3 = d.querySelector(':scope > summary h3');
+    if (h3 && !h3.querySelector('.edit-toggle')) h3.insertAdjacentHTML('beforeend', `<button type="button" class="edit-toggle" data-edit-section="${id}">${edition.has(id) ? '✓ Terminé' : '✎ Modifier'}</button>`);
+    const lecture = !edition.has(id);
+    d.classList.toggle('lecture', lecture);
+    d.querySelectorAll('input, select, textarea').forEach(el => { if (el.id !== 'fiche-q' && !el.dataset.action) el.disabled = lecture; });
+  });
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-edit-section]');
+  if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const id = b.dataset.editSection, l = new Set(state.sectionsEdition || []);
+  if (l.has(id)) l.delete(id); else { l.add(id); const d = b.closest('details'); if (d) d.open = true; }
+  state.sectionsEdition = [...l];
+  render();
+}, true);
 function ranger_aides(racine = document) {
   for (const el of [...racine.querySelectorAll('.aide')]) {
     const carte = el.closest('details.card, section.card, .card');
@@ -5936,6 +6166,7 @@ function render(garderScroll = true) {
   $('#app').innerHTML = html;
   ranger_aides($('#app'));
   restaurerDetails($('#app'), ouverts);
+  appliquerLecture($('#app'));
   ajusterTextes($('#app'));
   majBulle();
   const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
@@ -5945,7 +6176,7 @@ function render(garderScroll = true) {
     const mien = monPerso();
     chip.hidden = !mien || page === 'mj';
     if (mien) {
-      chip.href = `#/perso/${mien.id}/fiche`;
+      chip.href = `#/perso/${mien.id}/combat`;
       chip.innerHTML = `${mien.portrait ? `<img src="${mien.portrait}" alt="">` : `<span class="initiale">${esc((mien.nom || '?')[0])}</span>`}<span class="nom">${esc(mien.nom || 'Mon personnage')}</span>`;
     }
   }
@@ -5986,6 +6217,7 @@ document.addEventListener('input', ev => {
     if (state.ctx) $('#pickres').innerHTML = pickResults(state.ctx);
     return;
   }
+  if (t.id === 'fiche-q') { chercherSurFiche(t.value); return; }
   if (t.dataset && t.dataset.priere && state.ctx && db.personnages.includes(state.ctx)) {
     const [classe, champ, niv, i] = t.dataset.priere.split('|');
     const pr = priereDe(state.ctx, classe);
@@ -6131,10 +6363,27 @@ document.addEventListener('input', ev => {
   if (state.ctx === state.editFicheObj && estEnAttente(state.ctx)) { setTimeout(() => saveMJ('quetesAttente'), 0); }
   if (state.ctx === state.editFicheObj && path === 'extra.persoId') state.ctx.extra = { ...(state.ctx.extra || {}), persoNom: findPerso(t.value)?.nom || '' };
   /* Valider un niveau est réservé au MJ (le joueur le prépare seulement) */
+  const mRang = path.match(/^(comp\.[^.]+|compPerso\.\d+)\.rangs$/);
+  if (mRang && db.personnages.includes(state.ctx) && !state.ctx.pnjMJ && enLigne() && !(db.reglages || {}).compLibres) {
+    const x = state.ctx, e2 = etat(x), cle = mRang[1];
+    const avant = num(getP(x, path)), apres = num(t.value), min = num((x.compValidees || {})[cle]);
+    if (!estMJ()) {
+      /* Pendant la frappe (effacer « 5 » pour écrire « 6 »), la valeur passe un instant sous le minimum :
+         on attend la fin de la saisie pour la refuser, au lieu de la remettre aussitôt */
+      if (t.value.trim() === '' || apres < min) { t.dataset.rangMin = min; return; }
+      setP(x, path, t.value);
+      if (pointsDepenses(x, e2) > pointsComp(x, e2)) { setP(x, path, String(avant)); t.value = avant; toast('Plus assez de points de compétence pour ce rang.'); return; }
+      setP(x, path, String(avant));
+    } else if (apres < min) {
+      x.compValidees = { ...(x.compValidees || {}), [cle]: apres };
+      x.mjChamps = { ...(x.mjChamps || {}), compValidees: Date.now() };
+    }
+  }
   if (/^progression\.\d+\.atteint$/.test(path) && enLigne() && !estMJ() && db.personnages.includes(state.ctx)) { t.checked = !t.checked; toast('C\'est le MJ qui valide le passage de niveau.'); return; }
   const mAm = path.match(/^ameliorations\.(\d+)\./);
   if (mAm && enLigne() && !estMJ() && state.ctx.ameliorations?.[Number(mAm[1])]?.parMJ) return;
   setP(state.ctx, path, t.type === 'checkbox' ? t.checked : t.value);
+  if (/^progression\.\d+\.atteint$/.test(path) && db.personnages.includes(state.ctx)) synchroSortsProgression(state.ctx);
   if (state.ctx === state.draft) return; // le sort n'est enregistré qu'au clic sur le bouton
   if (estMJ() && enLigne() && db.personnages.includes(state.ctx) && !state.ctx.pnjMJ) {
     state.ctx.mjChamps = { ...(state.ctx.mjChamps || {}), [path.startsWith('ameliorations.') ? 'ameliorations' : path]: Date.now() };
@@ -6207,7 +6456,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['mj-fam-pv', 'reglage', 'quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -6730,6 +6979,34 @@ document.addEventListener('click', ev => {
     case 'actualiser':
       actualiser(true);
       break;
+    case 'effet-add': {
+      const v = $('#effet-choix').value;
+      if (v === 'bonus' || v === 'malus') {
+        const a = { id: uid(), cible: 'caParade', val: v === 'malus' ? '-1' : '1', note: '', permanent: '' };
+        if (estMJ() && enLigne()) { a.parMJ = true; p.mjChamps = { ...(p.mjChamps || {}), ameliorations: Date.now() }; p.mjMaj = Date.now(); }
+        p.ameliorations = [...(p.ameliorations || []), a]; state.editAm = a.id; save(); render();
+      } else if (v === 'agrandissement' || v === 'rapetissement') {
+        const a = { id: uid(), preset: v, note: v === 'agrandissement' ? 'sort Agrandissement' : 'sort Rapetissement' };
+        if (estMJ() && enLigne()) { a.parMJ = true; p.mjChamps = { ...(p.mjChamps || {}), ameliorations: Date.now() }; p.mjMaj = Date.now(); }
+        p.ameliorations = [...(p.ameliorations || []), a]; save(); render();
+      } else if (v.startsWith('etat:')) {
+        const k = v.slice(5), pre = ETATS_PREDEFINIS[k];
+        const et = pre
+          ? { id: uid(), nom: pre.nom, description: pre.texte, duree: '', depuis: '', bonus: pre.bonus.map(x => ({ ...x })), actif: true }
+          : { id: uid(), nom: '', description: '', duree: 'permanent', depuis: '', bonus: [], actif: true };
+        p.etats = [...(p.etats || []), et];
+        if (!pre) state.editEtat = et.id;
+        save(); render();
+        if (!pre) setTimeout(() => $(`[data-bind="etats.${p.etats.length - 1}.nom"]`)?.focus(), 60);
+      }
+      break;
+    }
+    case 'am-edit':
+      state.editAm = b.dataset.id; render();
+      break;
+    case 'am-fin':
+      state.editAm = null; render();
+      break;
     case 'etat-add': {
       const k = $('#etat-choix').value;
       const pre = ETATS_PREDEFINIS[k];
@@ -6798,6 +7075,15 @@ document.addEventListener('click', ev => {
       else { fini(); if (x.pnjMJ) persoModifie(x); }
       break;
     }
+    case 'mj-fam-pv': {
+      const x = findPerso(b.dataset.id); const v = x && pvFamilier(x);
+      if (!v) break;
+      const nv = Math.max(-10, Math.min(v.max, v.act + Number(b.dataset.d)));
+      const fini = () => { x.familier.pvActuels = String(nv); x.mjChamps = { ...(x.mjChamps || {}), 'familier.pvActuels': Date.now() }; x.mjMaj = Date.now(); saveNow(); render(); };
+      if (enLigne() && !x.pnjMJ) rpc('mj_familier_pv', { p_code: db.codeMJ, p_id: x.id, p_pv: nv }).then(fini).catch(e => alert('Impossible (la base est-elle en v21 ?) : ' + e.message));
+      else { fini(); persoModifie(x); }
+      break;
+    }
     case 'mj-ration': {
       if (!confirm('Chaque joueur consomme une ration (celle choisie par défaut). Continuer ?')) break;
       /* Les membres du groupe joués par le MJ : leur version complète est sur cet appareil */
@@ -6807,7 +7093,7 @@ document.addEventListener('click', ev => {
       break;
     }
     case 'mj-jour': {
-      if (!confirm('Jour suivant : tout le monde récupère ses PV max, ses dés de vie, ses sorts et ses capacités du jour. Continuer ?')) break;
+      if (!confirm('Jour suivant : tout le monde récupère ses PV max (familiers compris), ses dés de vie, ses sorts et ses capacités du jour. Continuer ?')) break;
       const locaux = () => db.personnages.filter(x => x.pnjMJ && !x._public).forEach(x => { majLocaleJourSuivant(x); persoModifie(x); });
       if (enLigne()) rpc('mj_jour_suivant', { p_code: db.codeMJ }).then(() => { locaux(); db.jour = num(db.jour || 1) + 1; toast('☀ Un nouveau jour se lève'); actualiser(); }).catch(e => alert('Impossible : ' + e.message));
       else { db.personnages.forEach(majLocaleJourSuivant); db.jour = num(db.jour || 1) + 1; saveNow(); render(); toast('☀ Un nouveau jour se lève'); }
@@ -7208,8 +7494,8 @@ document.addEventListener('click', ev => {
     case 'prog-sort-ajout': {
       const l = p.progression[Number(b.dataset.i)];
       l.sortsAppris = [...(l.sortsAppris || []), { id: b.dataset.id, bloc: b.dataset.bloc }];
-      if (!(p.sorts || []).some(x => x.id === b.dataset.id)) p.sorts = [...(p.sorts || []), { id: b.dataset.id, statut: 'Connu', notes: `Appris au niveau ${l.niveau}` }];
-      save(); render(); toast(`${findSort(b.dataset.id)?.nom || 'Sort'} appris`);
+      synchroSortsProgression(p);
+      save(); render(); toast(l.atteint ? `${findSort(b.dataset.id)?.nom || 'Sort'} appris` : `${findSort(b.dataset.id)?.nom || 'Sort'} prévu : il sera appris quand le MJ validera le niveau ${l.niveau}`);
       break;
     }
     case 'prog-sort-suppr': {
@@ -7575,6 +7861,14 @@ document.addEventListener('click', ev => {
       save(); render();
       break;
     }
+    case 'familier-pv':
+    case 'familier-pv-repos': {
+      const v = pvFamilier(p); if (!v) break;
+      p.familier.pvActuels = String(a === 'familier-pv-repos' ? v.max : Math.max(-10, Math.min(v.max, v.act + Number(b.dataset.d))));
+      if (estMJ() && enLigne() && !p.pnjMJ) { p.mjChamps = { ...(p.mjChamps || {}), 'familier.pvActuels': Date.now() }; p.mjMaj = Date.now(); }
+      save(); render();
+      break;
+    }
     case 'familier-image-retirer':
       p.familier.image = ''; save(); render();
       break;
@@ -7582,6 +7876,40 @@ document.addEventListener('click', ev => {
       if (!confirm('Retirer le familier de la fiche ? Ses bonus disparaissent.')) break;
       p.familier = null; save(); render();
       break;
+    case 'forme-choisir':
+      p.formeActive = b.dataset.id; save(); render(); toast(`Forme : ${formeActive(p)?.nom || ''}`);
+      break;
+    case 'forme-reglages':
+      state.formesEdit = !state.formesEdit; render();
+      break;
+    case 'forme-ajout':
+      p.formes = [...(p.formes || []), { id: uid(), nom: 'Nouvelle forme', bonus: [] }]; if (!p.formeActive) p.formeActive = p.formes[0].id; state.formesEdit = true; save(); render();
+      break;
+    case 'forme-suppr': {
+      const f = p.formes[idx]; if (!confirm(`Supprimer la forme « ${f.nom} » ?`)) break;
+      p.formes.splice(idx, 1); if (p.formeActive === f.id) p.formeActive = p.formes[0]?.id || ''; save(); render();
+      break;
+    }
+    case 'forme-bonus-ajout':
+      p.formes[idx].bonus = [...(p.formes[idx].bonus || []), { cible: 'caArmure', val: '1', quand: '' }]; save(); render();
+      break;
+    case 'forme-bonus-suppr':
+      p.formes[idx].bonus.splice(Number(b.dataset.j), 1); save(); render();
+      break;
+    case 'comp-valider':
+      if (!confirm('Valider tes rangs de compétence ? Une fois validés, seul le MJ pourra les retirer.')) break;
+      p.compValidees = rangsActuels(p); save(); render(); toast('Rangs validés');
+      break;
+    case 'reglage': {
+      if (!estAdmin()) { b.checked = !b.checked; break; }
+      const cle = b.dataset.cle, val = !!b.checked;
+      db.reglages = { ...(db.reglages || {}), [cle]: val }; saveNow();
+      if (enLigne()) rpc('definir_reglage', { p_code: codeAdmin(), p_cle: cle, p_val: val })
+        .then(r => { db.reglages = r || db.reglages; saveNow(); toast(val ? 'Restriction levée pour toute la campagne' : 'Restriction rétablie'); render(); })
+        .catch(e => { alert('Réglage non enregistré (la base est-elle en v20 ?) : ' + e.message); db.reglages = { ...(db.reglages || {}), [cle]: !val }; render(); });
+      else render();
+      break;
+    }
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -7874,7 +8202,22 @@ setInterval(() => {
     render();
   }
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service worker :', e));
+    /* Mise à jour sans attendre le cache du navigateur : on revérifie à chaque ouverture et à chaque retour sur l'appli */
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      const verifier = () => reg.update().catch(() => {});
+      verifier();
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') verifier(); });
+      setInterval(verifier, 5 * 60 * 1000);
+    }).catch(e => console.warn('Service worker :', e));
+    /* Une nouvelle version vient de prendre la main : on recharge, sauf pendant une saisie */
+    let dejaRecharge = false;
+    const recharger = () => { if (dejaRecharge) return; dejaRecharge = true; location.reload(); };
+    if (navigator.serviceWorker.controller) navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!enSaisie() && !state.editRecap && !state.editFiche && !state.mjEdit && !state.bulleOuverte) { recharger(); return; }
+      if (document.getElementById('bandeau-maj')) return;
+      document.body.insertAdjacentHTML('beforeend', '<div id="bandeau-maj" class="bandeau-maj">Nouvelle version prête <button class="btn petit" id="bandeau-maj-ok">Recharger</button></div>');
+      document.getElementById('bandeau-maj-ok').addEventListener('click', recharger);
+    });
   }
   navigator.storage?.persist?.().catch(() => {});
 })();

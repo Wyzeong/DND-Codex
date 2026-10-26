@@ -1,0 +1,42 @@
+# Mise à jour automatique de DND-Codex depuis un zip.
+# Il suffit d'envoyer codex-campagne.zip sur GitHub (Add file > Upload files) :
+# ce robot l'extrait, remplace les fichiers de l'appli, supprime le zip et relance le site.
+name: Mise à jour depuis un zip
+
+on:
+  push:
+    paths:
+      - '**.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deployer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Extraire le zip et remplacer les fichiers
+        run: |
+          set -e
+          ZIP=$(git ls-files '*.zip' | head -n 1)
+          if [ -z "$ZIP" ]; then echo "Aucun zip à traiter."; exit 0; fi
+          echo "Zip trouvé : $ZIP"
+          rm -rf /tmp/maj && mkdir -p /tmp/maj
+          unzip -q -o "$ZIP" -d /tmp/maj
+          SRC=/tmp/maj
+          # si le zip contient un seul dossier, on prend son contenu
+          if [ ! -f "$SRC/index.html" ] && [ "$(ls -1 "$SRC" | wc -l)" -eq 1 ]; then SRC="$SRC/$(ls -1 "$SRC")"; fi
+          if [ ! -f "$SRC/index.html" ] || [ ! -f "$SRC/app.js" ]; then echo "Ce zip ne ressemble pas à l'appli (index.html ou app.js absent)."; exit 1; fi
+          git rm -q "$ZIP"
+          # on ne touche jamais à .git, à config.js ni aux robots
+          ( cd "$SRC" && tar cf - --exclude='./.git' --exclude='./.github' --exclude='./config.js' . ) | tar xf -
+          git config user.name "Mise a jour automatique"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          VERSION=$(grep -o "VERSION_APPLI = '[0-9]*'" app.js | grep -o "[0-9]\+" || echo "?")
+          git commit -m "Version $VERSION (depuis $ZIP)" || echo "Rien de nouveau dans ce zip."
+          git push
