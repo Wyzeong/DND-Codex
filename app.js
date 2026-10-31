@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '104';
+const VERSION_APPLI = '105';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -1580,6 +1580,12 @@ function ressources(p, e) {
     texte: 'Tu présentes ton symbole sacré : les morts-vivants proches fuient, ou sont détruits s\'ils sont faibles.' });
   if ((c.druide || 0) >= 5) res.push({ id: 'forme-animale', nom: 'Forme animale', max: R.palier(c.druide, [[5, 1], [6, 2], [7, 3], [10, 4], [14, 5], [18, 6]]), unite: 'fois', action: 'Action simple',
     texte: 'Tu te transformes en animal pendant 1 heure par niveau de druide.' });
+  /* Effets du bras de Sawu qui se rechargent (Jour suivant) : ils deviennent des capacités du combat */
+  const ACT_BRAS = { libre: 'Action libre', rapide: 'Action rapide', simple: 'Action simple', mouvement: 'Action de mouvement', complexe: 'Action complexe' };
+  for (const x of p.brasEffets || []) {
+    if (!num(x.usages) || num(x.niveau) > niv) continue;
+    res.push({ id: 'bras-' + x.id, nom: x.nom || 'Effet du bras', max: num(x.usages), unite: 'fois', action: `${ACT_BRAS[x.action] || 'Action simple'} · bras de Sawu`, texte: x.texte || '', duree: '', bras: x });
+  }
   return res;
 }
 
@@ -1714,12 +1720,21 @@ function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
   </div>`;
 }
 
+function carteBrasCombat(p, r) {
+  const x = r.bras, reste = Math.max(0, r.max - num((p.compteurs || {})[r.id]));
+  const js = x.jet ? `JS ${x.jet}${x.dd ? ' DD ' + x.dd : ''}${x.moitie ? ' (½)' : ''}` : '';
+  return `<details class="action-complexe bras-capacite"><summary><b>${esc(x.nom || 'Effet du bras')}</b>${x.degats ? ` <span class="gros">${esc(x.degats)}</span>` : ''} <small>${esc([x.zone, js].filter(Boolean).join(' · '))}</small><span class="reste-bras ${reste ? '' : 'epuise'}">${reste} / ${r.max}</span></summary>
+    ${x.texte ? `<p class="hint">${esc(x.texte)}</p>` : ''}
+    ${peutModifier(p) ? `<div class="btns"><button class="btn" data-action="cpt-use" data-id="${r.id}" ${reste ? '' : 'disabled'}>Utiliser</button>${num((p.compteurs || {})[r.id]) ? `<button class="lien" data-action="cpt-annuler" data-id="${r.id}">Annuler la dernière</button>` : ''}</div>` : ''}
+    <p class="hint">Se recharge avec le bouton Jour suivant du MJ.</p>
+  </details>`;
+}
 function ficheCombat(p, e) {
   const st = stats(p, e);
   const mn = infosMainsNues(p, e, st);
   const armes = (p.equipement || []).filter(it => it.cat === 'arme');
   const munitions = (p.equipement || []).map((it, i) => ({ it, i })).filter(x => x.it.cat === 'munition');
-  const consommables = (p.equipement || []).map((it, i) => ({ it, i })).filter(x => x.it.cat === 'consommable' || x.it.cat === 'fourniture');
+  const consommables = (p.equipement || []).map((it, i) => ({ it, i })).filter(x => x.it.cat === 'consommable');
   const res = ressources(p, e);
   const taille = R.TAILLES[e.taille]?.ca || 0;
 
@@ -1785,12 +1800,12 @@ function ficheCombat(p, e) {
       if (out.length) blocs.push(`<details class="action-complexe"><summary><b>Attaque à outrance</b> <small>toutes tes attaques avec une arme</small></summary>
         <table class="table-deluge"><thead><tr><th>Avec</th><th>Pour toucher</th><th>Dégâts</th></tr></thead>
         <tbody>${out.map(d => `<tr><th>${esc(d.nom)}</th><td><b>${R.attTxt(d.liste)}</b></td><td><b>${esc(d.deg)}</b></td></tr>`).join('')}</tbody></table></details>`);
-      blocs.push(...resPar('complexe').map(r => compteur(p, r)));
+      blocs.push(...resPar('complexe').map(r => r.bras && (r.bras.degats || r.bras.zone) ? carteBrasCombat(p, r) : compteur(p, r)));
       return blocs.length ? `<h4 class="type-action">Actions complexes <small>tout le tour</small></h4><div class="actions-complexes">${blocs.join('')}</div>` : '';
     })()}
 
     <h4>Lancer un sort</h4>
-    ${sorts.length ? `<div class="sorts-combat">${sorts.map(({ x, i, s }) => {
+    ${sorts.length ? `<details class="grimoire-combat"><summary>📖 Ouvrir le grimoire <small>${sorts.length} sort${sorts.length > 1 ? 's' : ''} · ${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length} disponible${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length > 1 ? 's' : ''}</small></summary><div class="sorts-combat">${sorts.map(({ x, i, s }) => {
       const infini = !!x.illimite, max = infini ? 0 : num(x.max), reste = Math.max(0, max - num(x.utilises));
       const ef = etatFocal(p, x);
       return `<div class="sort-c ${ecoleClass(s.ecole)} ${ef !== 'ok' ? 'bloque' : ''}">
@@ -1808,7 +1823,7 @@ function ficheCombat(p, e) {
           ${max ? `<button class="btn" data-action="sort-use" data-idx="${i}" ${reste && ef === 'ok' ? '' : 'disabled'}>Lancer</button>${num(x.utilises) ? `<button class="lien" data-action="sort-annuler" data-idx="${i}">Annuler</button>` : ''}` : ''}
         </div>
       </div>`;
-    }).join('')}</div>` : '<p class="empty">Aucun sort. Ajoute ceux de ta baguette dans l\'onglet Sorts.</p>'}
+    }).join('')}</div></details>` : '<p class="empty">Aucun sort. Ajoute ceux de ta baguette dans l\'onglet Sorts.</p>'}
 
     ${(() => {
       /* Ce qui joue en permanence : pouvoirs de domaine sans compteur, incantation spontanée du prêtre… */
@@ -1821,7 +1836,7 @@ function ficheCombat(p, e) {
     })()}
     ${resPar('autre').length ? `<h4>Autres capacités</h4><div class="ressources">${resPar('autre').map(r => compteur(p, r)).join('')}</div>` : ''}
 
-    ${consommables.length ? `<h4>Consommables</h4><div class="consos">${consommables.map(({ it, i }) => `<div class="munition">
+    ${consommables.length ? `<h4>Potions et élixirs</h4><div class="consos">${consommables.map(({ it, i }) => `<div class="munition">
       <span><b>${esc(it.nom || 'Objet')}</b> <small>× ${esc(it.qte || 0)}</small>${it.effet ? `<br><small>${esc(it.effet)}</small>` : ''}</span>
       <button class="btn ghost" data-action="objet-use" data-idx="${i}" ${num(it.qte) > 0 ? '' : 'disabled'}>Utiliser</button></div>`).join('')}</div>` : ''}
   </section>`;
@@ -5921,8 +5936,17 @@ function panneauSawu(p, e) {
         ${l.filter(({ x }) => num(x.niveau) === n).map(({ x, i }) => mod && state.editBras === x.id ? `<div class="sawu-effet edition">
             <div class="row"><input type="text" inputmode="numeric" class="s" data-bind="brasEffets.${i}.niveau" value="${esc(x.niveau)}" aria-label="Niveau"><input type="text" data-bind="brasEffets.${i}.nom" value="${esc(x.nom)}" placeholder="Nom de l'effet" aria-label="Nom"></div>
             <textarea data-bind="brasEffets.${i}.texte" rows="2" placeholder="Ce que fait l'effet" aria-label="Effet">${esc(x.texte || '')}</textarea>
+            <div class="sawu-champs">
+              <label class="f"><span>Utilisations / jour</span><input type="text" inputmode="numeric" data-bind="brasEffets.${i}.usages" value="${esc(x.usages || '')}" placeholder="vide = permanent"></label>
+              <label class="f"><span>Action</span><select data-bind="brasEffets.${i}.action">${[['', 'Passif'], ['libre', 'Libre'], ['rapide', 'Rapide'], ['simple', 'Simple'], ['mouvement', 'Mouvement'], ['complexe', 'Complexe']].map(([v, l]) => `<option value="${v}" ${(x.action || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+              <label class="f"><span>Dégâts</span><input type="text" data-bind="brasEffets.${i}.degats" value="${esc(x.degats || '')}" placeholder="2d6 perforants"></label>
+              <label class="f"><span>Zone ou portée</span><input type="text" data-bind="brasEffets.${i}.zone" value="${esc(x.zone || '')}" placeholder="cône de 4,50 m"></label>
+              <label class="f"><span>Sauvegarde</span><select data-bind="brasEffets.${i}.jet">${['', 'Réflexes', 'Vigueur', 'Volonté'].map(v => `<option value="${v}" ${(x.jet || '') === v ? 'selected' : ''}>${v || 'Aucune'}</option>`).join('')}</select></label>
+              <label class="f"><span>DD</span><input type="text" inputmode="numeric" data-bind="brasEffets.${i}.dd" value="${esc(x.dd || '')}" placeholder="13"></label>
+              <label class="check"><input type="checkbox" data-bind="brasEffets.${i}.moitie" ${x.moitie ? 'checked' : ''}> Moitié des dégâts si réussi</label>
+            </div>
             <div class="btns"><button class="btn petit" data-action="bras-fin">Terminé</button><button class="btn ghost danger petit" data-action="bras-suppr" data-idx="${i}">Supprimer</button></div>
-          </div>` : `<div class="sawu-effet"><div class="sawu-tete"><b>${esc(x.nom || 'Effet')}</b>${mod ? `<button class="icon" data-action="bras-edit" data-id="${x.id}" aria-label="Modifier">✎</button>` : ''}</div>${x.texte ? `<p>${esc(x.texte)}</p>` : ''}</div>`).join('')}
+          </div>` : `<div class="sawu-effet"><div class="sawu-tete"><b>${esc(x.nom || 'Effet')}</b>${num(x.usages) ? `<span class="tag-cat">${esc(x.usages)}/jour${x.action ? ' · ' + ({ libre: 'libre', rapide: 'rapide', simple: 'simple', mouvement: 'mouvement', complexe: 'complexe' })[x.action] : ''}</span>` : ''}${mod ? `<button class="icon" data-action="bras-edit" data-id="${x.id}" aria-label="Modifier">✎</button>` : ''}</div>${x.texte ? `<p>${esc(x.texte)}</p>` : ''}</div>`).join('')}
       </div>`).join('') || '<p class="hint">Aucun effet pour l\'instant.</p>'}</div>
     ${mod ? `<button class="btn ghost petit" data-action="bras-ajout">+ Effet</button>` : ''}
     </details>

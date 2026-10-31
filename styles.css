@@ -1792,3 +1792,12 @@ details.lecture label.check:has(input[data-action]) { opacity: 1; }
 .fiche-monstre .bloc-stat { margin-top: .3rem; }
 .fiche-monstre-mini { margin-top: .2rem; font-size: .84rem; }
 .fiche-monstre-mini > summary { cursor: pointer; color: var(--bronze-clair); }
+/* Effets du bras en combat, grimoire repliable */
+.sawu-champs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem .45rem; }
+.sawu-champs .check { grid-column: 1 / -1; font-size: .82rem; }
+.bras-capacite { border-color: #8E7BD6; background: rgba(142, 123, 214, .08); }
+.bras-capacite > summary b { color: #CFC6F2; }
+.reste-bras { margin-left: auto; font-weight: 700; color: #CFC6F2; }
+.reste-bras.epuise { color: var(--muted); text-decoration: line-through; }
+.grimoire-combat > summary { cursor: pointer; font-weight: 600; color: var(--bronze-clair); padding: .35rem 0; }
+.grimoire-combat > summary small { color: var(--muted); font-weight: 400; margin-left: .3rem; }
