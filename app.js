@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '103';
+const VERSION_APPLI = '104';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -892,6 +892,7 @@ function ongletFicheBrut(p, e, partie = 'perso') {
   const deluge = valsClasses.find(x => x.id === 'moine')?.vals.find(v => v[0] === 'Déluge de coups');
   const enCombat = partie === 'combat';
   if (enCombat) return `
+  ${panneauSawu(p, e)}
   ${carteVitalite(p)}
   ${ficheEffets(p)}
   ${ficheCombat(p, e)}
@@ -2763,6 +2764,13 @@ function lancerCombat(prep) {
   m.combat = { id: uid(), nom: prep.nom, phase: 'initiative', tour: 0, round: 1, combattants };
   saveMJ('combat');
 }
+function ficheMonstreCombat(t, x) {
+  const ligne = (l, v) => v ? `<div class="bloc-stat"><span>${l}</span><div>${esc(v).replace(/\n/g, '<br>')}</div></div>` : '';
+  return `<div class="fiche-monstre">
+    <div class="creature-chiffres"><span><b>${esc(x?.pv ?? t.pvMax)}</b>/${esc(t.pvMax || '?')} PV</span><span><b>${esc(t.ca || '?')}</b> CA</span><span><b>${R.signe(num(t.init))}</b> init.</span>${t.fp ? `<span>FP <b>${esc(t.fp)}</b></span>` : ''}${t.camp ? `<span>${esc(t.camp)}</span>` : ''}</div>
+    ${ligne('Attaques', t.attaques)}${ligne('Caractéristiques', t.caracs)}${ligne('Notes', t.notes)}
+  </div>`;
+}
 function pageCombatMJ() {
   const c = mjd().combat;
   if (!c) return `<section class="card intro"><h3>Aucun combat en cours</h3><p>Prépare une rencontre dans l'onglet Préparation, puis touche « Activer ce combat ».</p></section>`;
@@ -2782,13 +2790,19 @@ function pageCombatMJ() {
   const courant = ordre[c.tour % (ordre.length || 1)];
   return `<section class="card"><h3>${esc(c.nom)}</h3>
     <p class="xp-ligne"><b>Round ${c.round}</b> <span>au tour de ${esc(courant?.nom || '—')}</span></p>
+    ${(() => {
+      /* Le monstre dont c'est le tour : sa fiche complète, sans retourner dans la préparation */
+      const t = courant && courant.type === 'pnj' ? mjd().pnj.find(y => y.id === courant.pnjId) : null;
+      return t ? `<div class="monstre-courant"><p class="lbl">Fiche de ${esc(courant.nom)}</p>${ficheMonstreCombat(t, courant)}</div>` : '';
+    })()}
     <ol class="mj-init">${ordre.map(x => {
       const i = c.combattants.indexOf(x);
       return `<li class="${x === courant ? 'actif' : ''} ${x.type === 'pnj' && x.camp !== 'allie' ? 'ennemi' : ''} ${x.mort ? 'mort' : ''}">
         <span class="mj-init-val">${esc(x.init || '—')}</span>
         <span><b>${esc(x.nom)}</b>${x.ca ? ` <small>CA ${esc(x.ca)}</small>` : ''}${x.mort ? ' <small>mort</small>' : ''}
           ${effetsDuCombattant(x, c).map(f => `<span class="effet-mj ${f.type}" title="par ${esc(f.de)}">${esc(f.nom)} <b>${f.reste}</b></span>`).join('')}
-          ${!x.mort ? `<button class="lien effet-mj-ajout" data-action="mj-cb-effet" data-i="${i}" title="Ajouter un effet qui dure">+ effet</button>` : ''}</span>
+          ${!x.mort ? `<button class="lien effet-mj-ajout" data-action="mj-cb-effet" data-i="${i}" title="Ajouter un effet qui dure">+ effet</button>` : ''}
+          ${x.type === 'pnj' ? (t => t ? `<details class="fiche-monstre-mini"><summary>Fiche</summary>${ficheMonstreCombat(t, x)}</details>` : '')(mjd().pnj.find(y => y.id === x.pnjId)) : ''}</span>
         <span class="mj-pv">${x.pvMax ? `<button class="icon" data-action="mj-cb-pv" data-i="${i}" data-d="-1" aria-label="−1 PV">−</button>${x.pv}/${x.pvMax}<button class="icon" data-action="mj-cb-pv" data-i="${i}" data-d="1" aria-label="+1 PV">+</button>` : ''}
           ${x.type === 'pnj' && !x.mort ? `<button class="icon" data-action="mj-cb-mort" data-i="${i}" title="Mort : son butin passe dans les objets en attente">☠</button>` : ''}</span>
       </li>`;
@@ -5848,6 +5862,73 @@ function restaurerDetails(racine, m) {
   }
 }
 /* Les zones de texte prennent la hauteur de leur contenu : plus besoin de les agrandir à la main */
+/* ===== Transactions d'objets dans le Log ===== */
+const categorieObjet = it => (GROUPES_INV.find(([, cats]) => cats.includes(it?.cat || '')) || ['Objets'])[0].replace(/ \(.*\)$/, '');
+const libelleObjet = it => `${it?.nom || 'Objet'}${num(it?.qte) > 1 ? ' ×' + it.qte : ''} (${categorieObjet(it)})`;
+function journalObjet(pid, code, ligne) {
+  if (!enLigne() || !code) return;
+  rpc('journal_objet', { p_id: pid || null, p_code: code, p_ligne: ligne }).catch(() => {});
+}
+
+/* ===== Notification : un objet reçu du MJ ===== */
+function verifierCadeaux() {
+  const mes = db.personnages.filter(x => !x._public && !x.pnjMJ && (db.cles || {})[x.id]);
+  if (!mes.length) return;
+  const vus = db.objetsNotifies = db.objetsNotifies || {};
+  const premiere = !db.objetsNotifiesInit;
+  const nouveaux = [];
+  for (const x of mes) for (const it of x.equipement || []) {
+    if (!it.donParMJ || vus[it.id]) continue;
+    vus[it.id] = true;
+    if (!premiere) nouveaux.push({ perso: x, it });
+  }
+  db.objetsNotifiesInit = true;
+  if (!nouveaux.length) { if (premiere) saveNow(); return; }
+  saveNow();
+  const z = document.getElementById('notif-cadeau') || (document.body.insertAdjacentHTML('beforeend', '<div id="notif-cadeau" class="notif-cadeau" role="status"></div>'), document.getElementById('notif-cadeau'));
+  const deja = z.querySelectorAll('li').length;
+  z.innerHTML = `<b>🎁 Le MJ t'a donné</b><ul>${[...z.querySelectorAll('li')].map(li => li.outerHTML).join('')}${nouveaux.map(n => `<li><a href="#/perso/${n.perso.id}/inventaire">${esc(libelleObjet(n.it))}</a>${mes.length > 1 ? ` <small>à ${esc(n.perso.nom)}</small>` : ''}</li>`).join('')}</ul><button class="btn petit" id="notif-cadeau-ok">OK</button>`;
+  z.hidden = false;
+  document.getElementById('notif-cadeau-ok').addEventListener('click', () => { z.hidden = true; z.innerHTML = ''; });
+  if (!deja && navigator.vibrate) try { navigator.vibrate(120); } catch (e) { /* */ }
+}
+
+/* ===== Le bras de Sawu de Norik : effets gagnés niveau par niveau ===== */
+function initialiserBras(p) {
+  if (p.brasEffets || !p.formes) return;
+  p.brasEffets = [
+    { id: uid(), niveau: 3, nom: 'Frappe d\'Alin', texte: 'Chaque coup avec le bras inflige 1d6 + modificateur de Sagesse. Compte comme une frappe à mains nues (déluge de coups compris).' },
+    { id: uid(), niveau: 3, nom: 'Inaltérable', texte: 'Le bras ne peut être ni brisé ni endommagé.' },
+    { id: uid(), niveau: 3, nom: 'Trois formes', texte: 'Bras de Sawu (forme de base), Bras Cristal sombre et Bras brume. Le bras évolue avec Norik.' },
+    { id: uid(), niveau: 3, nom: 'Parade de cristal', texte: '+1 à la CA en forme Cristal sombre, comme un bouclier.' },
+    { id: uid(), niveau: 3, nom: 'Résistance des Alins', texte: 'Dégâts de froid et d\'énergie négative reçus divisés par 2.' },
+    { id: uid(), niveau: 3, nom: 'Énergie négative', texte: 'Le bras émet de l\'énergie négative, qui peut affecter ce qu\'il touche.' },
+    { id: uid(), niveau: 3, nom: 'Prix du bras', texte: '+2 en Force, −2 en Constitution, PV réduits de 10 %.' },
+  ];
+}
+function panneauSawu(p, e) {
+  if (!p.formes || !p.formes.length) return '';
+  initialiserBras(p);
+  const mod = peutModifier(p);
+  const niv = e.niveau || 0;
+  const l = (p.brasEffets || []).map((x, i) => ({ x, i })).sort((a, b) => num(a.x.niveau) - num(b.x.niveau) || a.i - b.i);
+  const forme = formeActive(p);
+  const paliers = [...new Set(l.map(({ x }) => num(x.niveau)))];
+  return `<aside class="panneau-sawu" aria-label="Bras de Sawu">
+    <details class="sawu" open><summary><b>✦ Bras de Sawu</b><span>${forme ? esc(forme.nom) : ''} · niveau ${niv}</span></summary>
+    <div class="sawu-liste">${paliers.map(n => `<div class="sawu-palier ${n <= niv ? 'acquis' : 'futur'}">
+        <div class="sawu-niv">${n <= niv ? '' : '🔒 '}Niveau ${n}</div>
+        ${l.filter(({ x }) => num(x.niveau) === n).map(({ x, i }) => mod && state.editBras === x.id ? `<div class="sawu-effet edition">
+            <div class="row"><input type="text" inputmode="numeric" class="s" data-bind="brasEffets.${i}.niveau" value="${esc(x.niveau)}" aria-label="Niveau"><input type="text" data-bind="brasEffets.${i}.nom" value="${esc(x.nom)}" placeholder="Nom de l'effet" aria-label="Nom"></div>
+            <textarea data-bind="brasEffets.${i}.texte" rows="2" placeholder="Ce que fait l'effet" aria-label="Effet">${esc(x.texte || '')}</textarea>
+            <div class="btns"><button class="btn petit" data-action="bras-fin">Terminé</button><button class="btn ghost danger petit" data-action="bras-suppr" data-idx="${i}">Supprimer</button></div>
+          </div>` : `<div class="sawu-effet"><div class="sawu-tete"><b>${esc(x.nom || 'Effet')}</b>${mod ? `<button class="icon" data-action="bras-edit" data-id="${x.id}" aria-label="Modifier">✎</button>` : ''}</div>${x.texte ? `<p>${esc(x.texte)}</p>` : ''}</div>`).join('')}
+      </div>`).join('') || '<p class="hint">Aucun effet pour l\'instant.</p>'}</div>
+    ${mod ? `<button class="btn ghost petit" data-action="bras-ajout">+ Effet</button>` : ''}
+    </details>
+  </aside>`;
+}
+
 /* ===== Formes : un aspect au choix (bras d'Alin, posture…), dont les bonus ne comptent que lorsqu'il est actif ===== */
 function initialiserFormes(p) {
   if (p.formesInit || p.formes || !/norik/i.test(p.nom || '')) return;
@@ -7204,7 +7285,7 @@ document.addEventListener('click', ev => {
       if ($('#cible-' + obj.id).value === '__coffre__') {
         const { source, type, detenteur, ...propre } = obj;
         const item = { ...propre, id: uid(), deposePar: 'MJ' };
-        const fin = () => { bc().objets = [...(bc().objets || []), item]; mjd().objets.splice(i, 1); saveMJ('objets'); render(); toast(`${obj.nom || 'Objet'} déposé dans le coffre commun`); };
+        const fin = () => { journalObjet(null, db.codeMJ, `MJ → coffre commun : ${libelleObjet(item)}`); bc().objets = [...(bc().objets || []), item]; mjd().objets.splice(i, 1); saveMJ('objets'); render(); toast(`${obj.nom || 'Objet'} déposé dans le coffre commun`); };
         if (enLigne()) rpc('coffre_deposer', { p_id: null, p_code: db.codeMJ, p_objet: item }).then(fin).catch(e => alert('Impossible (la base est-elle en v14 ?) : ' + e.message));
         else fin();
         break;
@@ -7212,8 +7293,9 @@ document.addEventListener('click', ev => {
       const cible = findPerso($('#cible-' + obj.id).value);
       if (!cible) break;
       const { source, type, detenteur, ...propre } = obj;
-      const item = { ...propre, id: uid() };
+      const item = { ...propre, id: uid(), donParMJ: true };
       const fini = () => {
+        journalObjet(cible.id, db.codeMJ, `MJ → ${cible.nom} : ${libelleObjet(item)}`);
         if (b.dataset.session) {
           const ss = sessionMJ(b.dataset.session), et = ss && ss.etapes[Number(b.dataset.etape)];
           if (et) { et.donnes = { ...(et.donnes || {}), [obj.id]: `${obj.nom || 'Objet'} → ${cible.nom}` }; saveMJ(cleSession(ss.id)); }
@@ -7235,7 +7317,7 @@ document.addEventListener('click', ev => {
       const objet = { ...it, equipe: undefined, deposePar: x.nom };
       const retirer = () => { x.equipement = x.equipement.filter(o => o.id !== it.id); x.maj = Date.now(); saveNow(); persoModifie(x); };
       if (enLigne()) rpc('coffre_deposer', { p_id: x.id, p_code: codePour(x), p_objet: objet })
-        .then(() => { retirer(); bc().objets = [...(bc().objets || []), objet]; toast(`${it.nom} est dans le coffre`); return actualiser(); })
+        .then(() => { journalObjet(x.id, codePour(x), `${x.nom} → coffre commun : ${libelleObjet(it)}`); retirer(); bc().objets = [...(bc().objets || []), objet]; toast(`${it.nom} est dans le coffre`); return actualiser(); })
         .then(render).catch(e => alert('Impossible (la base est-elle en v14 ?) : ' + e.message));
       else { retirer(); bc().objets = [...(bc().objets || []), objet]; journalLocal(x.nom, 'dépose ' + (it.nom || 'un objet'), {}); saveNow(); render(); }
       break;
@@ -7246,7 +7328,7 @@ document.addEventListener('click', ev => {
       if (!x || !o || !confirm(`${x.nom} prend « ${o.nom || 'cet objet'} » dans le coffre ?`)) break;
       const ajouter = obj => { const { deposePar, ...propre } = obj; x.equipement = [...(x.equipement || []), { ...propre, id: uid() }]; x.maj = Date.now(); bc().objets = (bc().objets || []).filter(y => y.id !== o.id); saveNow(); persoModifie(x); };
       if (enLigne()) rpc('coffre_prendre', { p_id: x.id, p_code: codePour(x), p_objet_id: o.id })
-        .then(obj => { ajouter(obj); toast(`${o.nom} est dans l'inventaire de ${x.nom}`); return actualiser(); })
+        .then(obj => { journalObjet(x.id, codePour(x), `Coffre commun → ${x.nom} : ${libelleObjet(obj)}`); ajouter(obj); toast(`${o.nom} est dans l'inventaire de ${x.nom}`); return actualiser(); })
         .then(render).catch(e => { alert('Impossible : ' + e.message); actualiser().then(render); });
       else { ajouter(o); journalLocal(x.nom, 'prend ' + (o.nom || 'un objet'), {}); saveNow(); render(); }
       break;
@@ -7344,7 +7426,7 @@ document.addEventListener('click', ev => {
         })().catch(e => { b.disabled = false; alert('Achat impossible : ' + e.message); });
       } else if (enLigne()) {
         rpc('acheter', { p_id: x.id, p_code: codePour(x), p_article: art.id, p_qte: qte, p_commune: commune === '1' })
-          .then(() => { toast(`${art.nom} acheté !`); return actualiser(); })
+          .then(() => { journalObjet(x.id, codePour(x), `Marché → ${x.nom} : ${art.nom}${qte > 1 ? ' ×' + qte : ''} (${categorieObjet(art)})${commune === '1' ? ', payé par le coffre commun' : ''}`); toast(`${art.nom} acheté !`); return actualiser(); })
           .catch(e => { b.disabled = false; alert('Achat impossible : ' + e.message); });
       } else {
         try { acheterLocal(art, x, qte, commune === '1'); saveNow(); render(); toast(`${art.nom} acheté !`); }
@@ -7910,6 +7992,21 @@ document.addEventListener('click', ev => {
       else render();
       break;
     }
+    case 'bras-ajout': {
+      const x = { id: uid(), niveau: String((etat(p).niveau || 1) + 1), nom: '', texte: '' };
+      p.brasEffets = [...(p.brasEffets || []), x]; state.editBras = x.id; save(); render();
+      break;
+    }
+    case 'bras-edit':
+      state.editBras = b.dataset.id; render();
+      break;
+    case 'bras-fin':
+      state.editBras = null; render();
+      break;
+    case 'bras-suppr':
+      if (!confirm('Supprimer cet effet du bras ?')) break;
+      p.brasEffets.splice(idx, 1); state.editBras = null; save(); render();
+      break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
       document.querySelectorAll('details[data-section]').forEach(d => { d.open = ouvrir; });
@@ -8153,6 +8250,7 @@ async function actualiser(manuel = false) {
     await chargerMarche();
     await chargerClasses();
     if (manuel) statutSync(state.syncErreur ? 'Hors ligne' : 'À jour');
+    try { verifierCadeaux(); } catch (e2) { console.warn(e2); }
     /* Rien de nouveau : on ne touche pas à l'écran (les menus ouverts restent ouverts) */
     if (!manuel && empreinteDonnees() === avant) return;
     /* On ne redessine pas sous les doigts de quelqu'un qui est en train d'écrire */

@@ -1759,3 +1759,36 @@ details.lecture label.check:has(input[data-action]) { opacity: 1; }
 .mj-familier .fam-nom { margin-right: auto; color: var(--bronze-clair); }
 .mj-familier .pv-btn { padding: .1rem .45rem; font-size: .78rem; }
 .recap .recap-fam { display: inline-flex; gap: .25rem; align-items: baseline; }
+
+/* ===== Bras de Sawu : panneau à gauche sur grand écran, carte en haut de Combat sinon ===== */
+.panneau-sawu { margin-bottom: .6rem; }
+.panneau-sawu .sawu { border: 1px solid #8E7BD6; border-radius: var(--radius-m); background: linear-gradient(180deg, rgba(142, 123, 214, .14), rgba(6, 19, 29, .9)); padding: .55rem .7rem; }
+.panneau-sawu summary { cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.panneau-sawu summary b { font-family: var(--font-titre); color: #CFC6F2; font-size: 1.05rem; }
+.panneau-sawu summary span { color: var(--muted); font-size: .8rem; }
+.sawu-liste { display: flex; flex-direction: column; gap: .45rem; margin: .5rem 0; }
+.sawu-niv { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: #B7AAEB; margin-bottom: .2rem; }
+.sawu-palier.futur { opacity: .55; }
+.sawu-effet { border-left: 2px solid #8E7BD6; padding: .25rem .5rem; margin-bottom: .25rem; background: rgba(142, 123, 214, .07); border-radius: 0 var(--radius-s) var(--radius-s) 0; }
+.sawu-effet.edition { display: flex; flex-direction: column; gap: .3rem; }
+.sawu-tete { display: flex; justify-content: space-between; align-items: center; gap: .3rem; }
+.sawu-tete b { font-size: .88rem; }
+.sawu-effet p { margin: .15rem 0 0; font-size: .82rem; color: var(--muted); line-height: 1.45; }
+.sawu-effet .icon { padding: .05rem .35rem; font-size: .8rem; }
+@media (min-width: 1480px) {
+  .panneau-sawu { position: fixed; z-index: 8; top: 9.5rem; left: max(1rem, calc((100vw - 900px) / 2 - 360px)); width: min(340px, calc((100vw - 900px) / 2 - 2rem)); max-height: calc(100vh - 15rem); overflow-y: auto; margin: 0; }
+}
+
+/* ===== Notification d'un objet reçu ===== */
+.notif-cadeau { position: fixed; z-index: 95; top: calc(env(safe-area-inset-top, 0px) + 4.2rem); left: 50%; transform: translateX(-50%); width: min(420px, 92vw); padding: .7rem .9rem; border: 1px solid var(--bronze); border-radius: var(--radius-m); background: var(--nuit-profonde); box-shadow: 0 14px 40px rgba(0, 0, 0, .6); animation: notif-entree .3s ease-out; }
+.notif-cadeau[hidden] { display: none; }
+.notif-cadeau b { color: var(--bronze-clair); font-family: var(--font-titre); }
+.notif-cadeau ul { margin: .4rem 0 .5rem; padding-left: 1.1rem; }
+.notif-cadeau a { color: var(--ivoire); }
+@keyframes notif-entree { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ===== Fiche du monstre dans le combat en cours ===== */
+.monstre-courant { border: 1px solid var(--rouge-clair); border-radius: var(--radius-s); background: rgba(180, 70, 50, .08); padding: .5rem .65rem; margin: .4rem 0 .6rem; }
+.fiche-monstre .bloc-stat { margin-top: .3rem; }
+.fiche-monstre-mini { margin-top: .2rem; font-size: .84rem; }
+.fiche-monstre-mini > summary { cursor: pointer; color: var(--bronze-clair); }
