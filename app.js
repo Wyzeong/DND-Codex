@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '107';
+const VERSION_APPLI = '108';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -1584,7 +1584,13 @@ function ressources(p, e) {
   const ACT_BRAS = { libre: 'Action libre', rapide: 'Action rapide', simple: 'Action simple', mouvement: 'Action de mouvement', complexe: 'Action complexe' };
   for (const x of p.brasEffets || []) {
     if (!num(x.usages) || num(x.niveau) > niv) continue;
-    res.push({ id: 'bras-' + x.id, nom: x.nom || 'Effet du bras', max: num(x.usages), unite: 'fois', action: `${ACT_BRAS[x.action] || 'Action simple'} · bras de Sawu`, texte: x.texte || '', duree: '', bras: x });
+    const fr = x.forme && (p.formes || []).find(f => f.id === x.forme);
+    res.push({ id: 'bras-' + x.id, nom: x.nom || 'Effet du bras', max: num(x.usages), unite: 'fois', action: `${ACT_BRAS[x.action] || 'Action simple'} · bras de Sawu`, texte: x.texte || '', duree: '', bras: x,
+      requis: fr && p.formeActive !== fr.id ? fr.nom : '' });
+  }
+  /* Actions créées par le MJ ou l'administrateur sur la fiche */
+  for (const x of p.actionsPerso || []) {
+    res.push({ id: 'act-' + x.id, nom: x.nom || 'Action', max: num(x.usages), unite: 'fois', action: x.action === 'passif' ? 'Passif' : `${ACT_BRAS[x.action] || 'Action simple'}`, texte: x.texte || '', duree: '', perso: x, bras: (x.degats || x.zone) ? x : null });
   }
   return res;
 }
@@ -1592,13 +1598,18 @@ function ressources(p, e) {
 /* Une capacité en une ligne : nom, type d'action, utilisations, bouton (le détail se déplie) */
 function ligneCapacite(p, r, extra = '') {
   if (r.pool) return compteur(p, r);
+  const illimite = !r.max;
   const utilise = num((p.compteurs || {})[r.id]), reste = Math.max(0, r.max - utilise);
   const action = String(r.action || '').split(' · ')[0].replace(/^Action /, '').replace(/^À annoncer avant ton jet d'attaque$/, 'à annoncer');
-  return `<details class="ligne-cap ${reste ? '' : 'epuisee'}"><summary>
-      <span class="cap-nom">${esc(r.nom)}${extra}</span><span class="cap-action">${esc(action)}</span><span class="cap-reste">${reste}/${r.max}</span>
-      ${peutModifier(p) ? `<button class="btn petit" data-action="cpt-use" data-id="${r.id}" ${reste ? '' : 'disabled'}>Utiliser</button>` : ''}
+  const x = r.bras;
+  const offensif = x ? [x.degats, x.zone, x.jet ? `JS ${x.jet}${x.dd ? ' DD ' + x.dd : ''}${x.moitie ? ' (½)' : ''}` : ''].filter(Boolean).join(' · ') : '';
+  const possible = (illimite || reste) && !r.requis;
+  const editable = r.perso && (estAdmin() || estMJ());
+  return `<details class="ligne-cap ${r.bras && r.id.startsWith('bras-') ? 'cap-bras' : ''} ${possible ? '' : 'epuisee'}"><summary>
+      <span class="cap-nom">${esc(r.nom)}${extra}${offensif ? `<small>${esc(offensif)}</small>` : ''}${r.requis ? `<small class="cap-requis">nécessite ${esc(r.requis)}</small>` : ''}</span><span class="cap-action">${esc(action)}</span><span class="cap-reste">${illimite ? '∞' : `${reste}/${r.max}`}</span>
+      ${peutModifier(p) && !illimite ? `<button class="btn petit" data-action="cpt-use" data-id="${r.id}" ${possible ? '' : 'disabled'}>Utiliser</button>` : ''}
     </summary>
-    <div class="cap-detail"><p>${esc(r.texte || '')}</p>${r.action ? `<p class="hint">${esc(r.action)}</p>` : ''}${utilise && peutModifier(p) ? `<button class="lien" data-action="cpt-annuler" data-id="${r.id}">Annuler la dernière utilisation</button>` : ''}</div>
+    <div class="cap-detail"><p>${esc(r.texte || '')}</p>${r.action ? `<p class="hint">${esc(r.action)}</p>` : ''}${utilise && peutModifier(p) ? `<button class="lien" data-action="cpt-annuler" data-id="${r.id}">Annuler la dernière utilisation</button>` : ''}${editable ? ` <button class="lien" data-action="act-edit" data-id="${r.perso.id}">✎ Modifier cette action</button>` : ''}</div>
   </details>`;
 }
 function compteur(p, r) {
@@ -1646,7 +1657,7 @@ function blocTour(p, e, st, mn, armes, res) {
     const dans = i >= 0 && j >= 0 ? (j - i + noms.length) % noms.length : null;
     return `<div class="tour-bloc attente"><b>${esc(cp.nom || 'Combat')}</b> · round ${esc(cp.round)} · au tour de <b>${esc(cp.tour || '?')}</b>${dans ? ` · tu joues dans ${dans} tour${dans > 1 ? 's' : ''}` : ''}</div>`;
   }
-  const typeRes = r => /libre|annonce|avant l'attaque/i.test(r.action || '') ? 'libre' : /complexe/i.test(r.action || '') ? 'complexe' : /rapide|immédiate/i.test(r.action || '') ? 'rapide' : /simple|standard/i.test(r.action || '') ? 'simple' : /mouvement/i.test(r.action || '') ? 'mouvement' : '';
+  const typeRes = r => /^passif/i.test(r.action || '') ? 'passif' : /libre|annonce|avant l'attaque/i.test(r.action || '') ? 'libre' : /complexe/i.test(r.action || '') ? 'complexe' : /rapide|immédiate/i.test(r.action || '') ? 'rapide' : /simple|standard/i.test(r.action || '') ? 'simple' : /mouvement/i.test(r.action || '') ? 'mouvement' : '';
   const restant = r => (r.max || 0) - num((p.compteurs || {})[r.id]);
   const peut = k => t.fini ? false : k === 'libre' ? true : k === 'simple' ? t.simple > 0 : k === 'rapide' ? t.rapide > 0
     : k === 'mouvement' ? (t.mouvement > 0 || t.simple > 0) : k === 'complexe' ? (t.simple > 0 && t.mouvement > 0 && !t.bouge) : k === 'pas' ? (t.pas > 0 && !t.bouge) : false;
@@ -1744,6 +1755,28 @@ function carteBrasCombat(p, r) {
     <p class="hint">Se recharge avec le bouton Jour suivant du MJ.</p>
   </details>`;
 }
+function blocActionsPerso(p) {
+  if (!(estAdmin() || estMJ()) || (enLigne() && !estAdmin() && !estMJ())) return '';
+  const l = p.actionsPerso || [];
+  const ed = l.findIndex(x => x.id === state.editAction);
+  const x = l[ed];
+  return `<div class="actions-perso">
+    ${x ? `<div class="action-perso-form"><b>${x.nom ? esc(x.nom) : 'Nouvelle action'}</b>
+      <div class="sawu-champs">
+        <label class="f"><span>Nom</span><input type="text" data-bind="actionsPerso.${ed}.nom" value="${esc(x.nom || '')}"></label>
+        <label class="f"><span>Type d'action</span><select data-bind="actionsPerso.${ed}.action" data-rerender>${[['libre', 'Libre'], ['rapide', 'Rapide'], ['simple', 'Simple'], ['mouvement', 'Mouvement'], ['complexe', 'Complexe'], ['passif', 'Passif (toujours actif)']].map(([v, t]) => `<option value="${v}" ${(x.action || 'simple') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="f"><span>Utilisations / jour</span><input type="text" inputmode="numeric" data-bind="actionsPerso.${ed}.usages" value="${esc(x.usages || '')}" placeholder="vide = illimité"></label>
+        <label class="f"><span>Dégâts</span><input type="text" data-bind="actionsPerso.${ed}.degats" value="${esc(x.degats || '')}"></label>
+        <label class="f"><span>Zone ou portée</span><input type="text" data-bind="actionsPerso.${ed}.zone" value="${esc(x.zone || '')}"></label>
+        <label class="f"><span>Sauvegarde</span><select data-bind="actionsPerso.${ed}.jet">${['', 'Réflexes', 'Vigueur', 'Volonté'].map(v => `<option value="${v}" ${(x.jet || '') === v ? 'selected' : ''}>${v || 'Aucune'}</option>`).join('')}</select></label>
+        <label class="f"><span>DD</span><input type="text" inputmode="numeric" data-bind="actionsPerso.${ed}.dd" value="${esc(x.dd || '')}"></label>
+      </div>
+      <label class="f"><span>Ce que fait l'action</span><textarea data-bind="actionsPerso.${ed}.texte" rows="2">${esc(x.texte || '')}</textarea></label>
+      <div class="btns"><button class="btn petit" data-action="act-fin">Terminé</button><button class="btn ghost danger petit" data-action="act-suppr" data-idx="${ed}">Supprimer</button></div>
+    </div>` : ''}
+    <button class="lien" data-action="act-ajout">+ Créer une action sur cette fiche</button>
+  </div>`;
+}
 function ficheCombat(p, e) {
   const st = stats(p, e);
   const mn = infosMainsNues(p, e, st);
@@ -1810,6 +1843,7 @@ function ficheCombat(p, e) {
         <table class="table-deluge"><thead><tr><th>Avec</th><th>Pour toucher</th><th>Dégâts</th></tr></thead>
         <tbody>${del.map(d => `<tr><th>${esc(d.nom)}<br><small>${esc(d.note || '')}</small></th><td><b>${R.attTxt(d.liste)}</b></td><td><b>${esc(d.deg)}</b>${d.noteDeg ? ` <small>(${esc(d.noteDeg)})</small>` : ''}</td></tr>`).join('')}</tbody></table>
         ${res.some(r => r.id === 'coup-etourdissant') ? '<p class="liee"><b>Coup étourdissant</b> : utilisable sur l\'une de ces attaques, à mains nues (à annoncer avant le jet).</p>' : ''}
+        ${res.filter(r => r.bras && r.id.startsWith('bras-') && typeRes(r) === 'libre').map(r => `<p class="liee"><b>${esc(r.nom)}</b> : peut se déclencher pendant le déluge${r.requis ? ` (nécessite ${esc(r.requis)})` : ''}.</p>`).join('')}
       </details>`);
       if (out.length) blocs.push(`<details class="action-complexe"><summary><b>Attaque à outrance</b> <small>toutes tes attaques avec une arme</small></summary>
         <table class="table-deluge"><thead><tr><th>Avec</th><th>Pour toucher</th><th>Dégâts</th></tr></thead>
@@ -1849,11 +1883,13 @@ function ficheCombat(p, e) {
       for (const d of e.domaines || []) { const dm = R.DOMAINES[d]; if (dm && !dm.usage) passifs.push([`Domaine ${dm.nom}`, dm.pouvoir]); }
       if (e.classes.pretre) passifs.push(['Incantation spontanée', `Tu peux sacrifier un sort préparé (hors domaine) pour lancer à la place un sort de soins du même niveau${(p.alignement || '').toLowerCase().includes('mauvais') ? ' (ou de blessure)' : ''}.`]);
       if (e.classes.moine) passifs.push(['Esquive totale', e.classes.moine >= 2 ? 'Aucun dégât si tu réussis un jet de Réflexes contre un effet qui en inflige la moitié.' : '']);
+      for (const r of resPar('passif')) passifs.push([r.nom, r.texte || '—']);
       const l = passifs.filter(x => x[1]);
       return l.length ? `<h4 class="type-action">Toujours actif <small>sans action</small></h4><div class="passifs">${l.map(([n, t]) => `<details class="passif"><summary>${esc(n)}</summary><p>${esc(t)}</p></details>`).join('')}</div>` : '';
     })()}
     ${resPar('autre').length ? `<h4>Autres capacités</h4><div class="ressources">${resPar('autre').map(r => compteur(p, r)).join('')}</div>` : ''}
 
+    ${blocActionsPerso(p)}
     ${consommables.length ? `<h4 class="type-action">Potions et élixirs</h4><div class="liste-caps">${consommables.map(({ it, i }) => `<details class="ligne-cap ${num(it.qte) > 0 ? '' : 'epuisee'}"><summary>
       <span class="cap-nom">${esc(it.nom || 'Objet')}</span><span class="cap-reste">×${esc(it.qte || 0)}</span>
       ${peutModifier(p) ? `<button class="btn petit" data-action="objet-use" data-idx="${i}" ${num(it.qte) > 0 ? '' : 'disabled'}>Utiliser</button>` : ''}
@@ -5962,6 +5998,7 @@ function panneauSawu(p, e) {
               <label class="f"><span>Zone ou portée</span><input type="text" data-bind="brasEffets.${i}.zone" value="${esc(x.zone || '')}" placeholder="cône de 4,50 m"></label>
               <label class="f"><span>Sauvegarde</span><select data-bind="brasEffets.${i}.jet">${['', 'Réflexes', 'Vigueur', 'Volonté'].map(v => `<option value="${v}" ${(x.jet || '') === v ? 'selected' : ''}>${v || 'Aucune'}</option>`).join('')}</select></label>
               <label class="f"><span>DD</span><input type="text" inputmode="numeric" data-bind="brasEffets.${i}.dd" value="${esc(x.dd || '')}" placeholder="13"></label>
+              <label class="f"><span>Forme requise</span><select data-bind="brasEffets.${i}.forme"><option value="">Aucune</option>${(p.formes || []).map(f => `<option value="${f.id}" ${x.forme === f.id ? 'selected' : ''}>${esc(f.nom)}</option>`).join('')}</select></label>
               <label class="check"><input type="checkbox" data-bind="brasEffets.${i}.moitie" ${x.moitie ? 'checked' : ''}> Moitié des dégâts si réussi</label>
             </div>
             <div class="btns"><button class="btn petit" data-action="bras-fin">Terminé</button><button class="btn ghost danger petit" data-action="bras-suppr" data-idx="${i}">Supprimer</button></div>
@@ -6016,17 +6053,24 @@ function chercherSurFiche(q) {
   if (!z) return;
   const qq = norm(q || '').trim();
   if (qq.length < 2) { z.innerHTML = ''; z.hidden = true; return; }
-  const sel = '#app .stat, #app .cl:not(.cl-tete), #app .arme, #app .ressource, #app .effet-ligne, #app .carte-don, #app .don, #app .sort-c, #app .car, #app .objet-vue, #app .passif, #app .forme-btn, #app .action-complexe';
+  const sel = '#app .stat, #app .cl:not(.cl-tete), #app .table-attaques tbody tr, #app .ligne-cap, #app .ressource, #app .effet-ligne, #app .carte-don, #app .don, #app .sort-c, #app .carac, #app .objet-vue, #app .passif, #app .forme-btn, #app .action-complexe, #app .sawu-effet';
+  /* abréviations et noms complets se valent : « int » trouve Intelligence, « vigueur » trouve Vig… */
+  const SYN = [['int', 'intelligence'], ['for', 'force'], ['dex', 'dexterite'], ['con', 'constitution'], ['sag', 'sagesse'], ['cha', 'charisme'], ['ca', "classe d'armure"], ['ref', 'reflexes'], ['vol', 'volonte'], ['vig', 'vigueur'], ['pv', 'points de vie'], ['bba', 'bonus de base'], ['init', 'initiative']];
+  const variantes = new Set([qq]);
+  for (const [a, b] of SYN) { if (qq === a) variantes.add(b); if (b.startsWith(qq) && qq.length >= 3) variantes.add(a); }
+  const texteDe = el => norm([el.textContent, el.title, ...[...el.querySelectorAll('[title]')].map(x => x.title)].join(' ')).replace(/\s+/g, ' ');
+  const trouve = t => [...variantes].some(v => v.length <= 3 ? new RegExp('(^|[^a-z])' + v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z]|$)').test(t) : t.includes(v));
   const res = [];
   document.querySelectorAll(sel).forEach(el => {
     if (el.closest('#fiche-res')) return;
-    const txt = (el.innerText || '').replace(/\s+/g, ' ').trim();
-    if (!txt || !norm(txt).includes(qq)) return;
+    if (el.parentElement && el.parentElement.closest(sel)) return;
+    const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!txt || !trouve(texteDe(el))) return;
     res.push({ el, txt });
   });
   window.__resFiche = res.map(r => r.el);
   z.hidden = false;
-  z.innerHTML = res.length ? res.slice(0, 12).map((r, i) => `<button class="res-fiche" data-res-fiche="${i}">${esc(r.txt.slice(0, 110))}${r.txt.length > 110 ? '…' : ''}</button>`).join('') : '<p class="hint">Rien trouvé sur la fiche.</p>';
+  z.innerHTML = res.length ? res.slice(0, 12).map((r, i) => `<button class="res-fiche" data-res-fiche="${i}">${esc(r.txt.slice(0, 110))}${r.txt.length > 110 ? '…' : ''}</button>`).join('') : '<p class="hint">Rien trouvé sur cet onglet. Les attaques, la CA et les sauvegardes sont dans Combat ; les caractéristiques, compétences et dons dans Personnage.</p>';
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('[data-res-fiche]');
@@ -8054,6 +8098,29 @@ document.addEventListener('click', ev => {
     case 'bras-suppr':
       if (!confirm('Supprimer cet effet du bras ?')) break;
       p.brasEffets.splice(idx, 1); state.editBras = null; save(); render();
+      break;
+    case 'act-ajout': {
+      if (!(estAdmin() || estMJ())) break;
+      const x = { id: uid(), nom: '', action: 'simple', usages: '', texte: '' };
+      p.actionsPerso = [...(p.actionsPerso || []), x]; state.editAction = x.id;
+      if (estMJ() && enLigne() && !p.pnjMJ) { p.mjChamps = { ...(p.mjChamps || {}), actionsPerso: Date.now() }; p.mjMaj = Date.now(); }
+      save(); render();
+      break;
+    }
+    case 'act-edit':
+      if (!(estAdmin() || estMJ())) break;
+      state.editAction = b.dataset.id; render();
+      break;
+    case 'act-fin':
+      state.editAction = null;
+      if (estMJ() && enLigne() && !p.pnjMJ) { p.mjChamps = { ...(p.mjChamps || {}), actionsPerso: Date.now() }; p.mjMaj = Date.now(); save(); }
+      render();
+      break;
+    case 'act-suppr':
+      if (!confirm('Supprimer cette action de la fiche ?')) break;
+      p.actionsPerso.splice(idx, 1); state.editAction = null;
+      if (estMJ() && enLigne() && !p.pnjMJ) { p.mjChamps = { ...(p.mjChamps || {}), actionsPerso: Date.now() }; p.mjMaj = Date.now(); }
+      save(); render();
       break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';
