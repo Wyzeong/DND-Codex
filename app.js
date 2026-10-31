@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '105';
+const VERSION_APPLI = '106';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -1589,6 +1589,18 @@ function ressources(p, e) {
   return res;
 }
 
+/* Une capacité en une ligne : nom, type d'action, utilisations, bouton (le détail se déplie) */
+function ligneCapacite(p, r, extra = '') {
+  if (r.pool) return compteur(p, r);
+  const utilise = num((p.compteurs || {})[r.id]), reste = Math.max(0, r.max - utilise);
+  const action = String(r.action || '').split(' · ')[0].replace(/^Action /, '').replace(/^À annoncer avant ton jet d'attaque$/, 'à annoncer');
+  return `<details class="ligne-cap ${reste ? '' : 'epuisee'}"><summary>
+      <span class="cap-nom">${esc(r.nom)}${extra}</span><span class="cap-action">${esc(action)}</span><span class="cap-reste">${reste}/${r.max}</span>
+      ${peutModifier(p) ? `<button class="btn petit" data-action="cpt-use" data-id="${r.id}" ${reste ? '' : 'disabled'}>Utiliser</button>` : ''}
+    </summary>
+    <div class="cap-detail"><p>${esc(r.texte || '')}</p>${r.action ? `<p class="hint">${esc(r.action)}</p>` : ''}${utilise && peutModifier(p) ? `<button class="lien" data-action="cpt-annuler" data-id="${r.id}">Annuler la dernière utilisation</button>` : ''}</div>
+  </details>`;
+}
 function compteur(p, r) {
   const utilise = num((p.compteurs || {})[r.id]);
   const reste = Math.max(0, r.max - utilise);
@@ -1704,6 +1716,9 @@ function carteArmeCombat(p, e, st, it, munitions, sortie = {}) {
   const recharge = /arbalete-(legere|poing)/.test(it.armeType || '') ? 'action de mouvement' : it.armeType === 'arbalete-lourde' ? 'action complexe' : '';
   if (tou.length > 1) (sortie.outrance = sortie.outrance || []).push({ nom: titreArme(it, ref, dist), liste: tou, deg });
   const noteDeg = carDeg !== 'for' ? ` <small title="Caractéristique ajoutée aux dégâts">(${carDeg === 'aucune' ? 'sans carac.' : ({ sag: 'Sag', dex: 'Dex', con: 'Con', int: 'Int', cha: 'Cha' })[carDeg]})</small>` : '';
+  (sortie.lignes = sortie.lignes || []).push({ id: it.id, nom: it.nom || (ref ? ref.nom : 'Arme'), titre,
+    sous: it.membre ? ['mains nues', carDeg !== 'for' ? ({ sag: 'Sag', dex: 'Dex', con: 'Con', int: 'Int', cha: 'Cha' })[carDeg] : ''].filter(Boolean).join(' · ') : [it.nom && ref ? ref.nom : '', prise === 'double' ? 'arme double' : '', ref?.moine ? 'moine' : ''].filter(Boolean).join(' · '),
+    tou, deg, crit: /^\s*×/.test(critArme || '') ? '20/' + String(critArme).trim() : String(critArme || '').replace(/^20\s+×/, '20/×'), portee: it.portee || (dist && ref?.portee) || '', liees, mun, recharge, membre: !!it.membre });
   return `<div class="arme ${it.membre ? 'membre' : ''}">
     ${recharge ? `<p class="action-type">recharger : ${recharge}</p>` : ''}
     <div class="arme-tete"><b title="${esc(titre)}">${esc(it.nom || (ref ? ref.nom : 'Arme'))}</b><span class="tag-mode">${it.membre ? 'mains nues' : [it.nom && ref ? ref.nom : '', dist ? 'distance' : (R.PRISES[prise] || '').toLowerCase(), ref?.moine ? 'moine' : ''].filter(Boolean).join(' · ')}</span></div>
@@ -1760,33 +1775,32 @@ function ficheCombat(p, e) {
     ${blocFormes(p)}
     ${blocTour(p, e, st, mn, armes, res)}
     ${blocEffets(p)}
-    ${resPar('libre').length ? `<h4 class="type-action">Actions libres</h4><div class="ressources">${resPar('libre').map(r => compteur(p, r)).join('')}</div>` : ''}
-    <h4 class="type-action">Actions simples <small>une attaque</small></h4>
-    <div class="armes">
-      ${(() => {
-        /* Cartes d'attaque dans l'ordre choisi par le joueur (flèches ↑ ↓) */
-        const cartes = [];
-        const htmlMN = mn ? `<div class="arme">
-        <div class="arme-tete"><b>Combat à mains nues</b><span class="tag-mode">Corps à corps</span></div>
-        <dl class="arme-stats">
-          <dt>Pour toucher</dt><dd><span class="gros">${R.signe(mn.toucher[0])}</span>${mn.toucher.length > 1 ? ` <small>(attaque à outrance : ${R.attTxt(mn.toucher)})</small>` : ''}</dd>
-          <dt>Dégâts</dt><dd><span class="gros">${esc(mn.degats)}</span> <small class="crit" title="Critique">${aChoix(e, 'science-critique', 'mains-nues') ? '19-20/×2' : '20/×2'}</small></dd>
-        </dl>
-        ${mn.predi || aChoix(e, 'specialisation-martiale', 'mains-nues') ? `<p class="liee petit">${[mn.predi ? `Arme de prédilection ${R.signe(mn.predi)}` : '', aChoix(e, 'specialisation-martiale', 'mains-nues') ? 'Spécialisation martiale' : ''].filter(Boolean).join(' · ')} : inclus.</p>` : ''}
-
-
-      </div>` : '';
-        if (htmlMN) cartes.push({ id: 'mn', html: htmlMN });
-        for (const it of armes) cartes.push({ id: it.id, html: carteArme(it) });
-        const ordre = p.ordreArmes || [];
-        const rang = id => { const i = ordre.indexOf(id); return i < 0 ? 999 + cartes.findIndex(c => c.id === id) : i; };
-        cartes.sort((x, y) => rang(x.id) - rang(y.id));
-        const mod = peutModifier(p) && cartes.length > 1;
-        return cartes.map((c, i) => mod ? c.html.replace('<div class="arme', `<div data-carte="${c.id}" class="arme`).replace(/<div class="arme-tete">/, `<div class="ordre-arme"><button class="icon" data-action="arme-ordre" data-id="${c.id}" data-sens="-1" ${i ? '' : 'disabled'} aria-label="Monter">↑</button><button class="icon" data-action="arme-ordre" data-id="${c.id}" data-sens="1" ${i < cartes.length - 1 ? '' : 'disabled'} aria-label="Descendre">↓</button></div><div class="arme-tete">`) : c.html).join('');
-      })()}
-      ${!mn && !armes.length ? '<p class="empty">Aucune arme. Dans l\'onglet Inventaire, choisis le type « Arme » pour un objet.</p>' : ''}
-    </div>
-    ${resPar('simple').length ? `<div class="ressources">${resPar('simple').map(r => compteur(p, r)).join('')}</div>` : ''}
+    ${resPar('libre').length ? `<h4 class="type-action">Actions libres</h4><div class="liste-caps">${resPar('libre').map(r => ligneCapacite(p, r)).join('')}</div>` : ''}
+    <div class="type-action-ligne"><h4 class="type-action">Actions simples <small>une attaque</small></h4>${peutModifier(p) && (armes.length + (mn ? 1 : 0)) > 1 ? `<button class="lien" data-action="armes-reorg">${state.reorgArmes ? '✓ Terminé' : '⇅ Réorganiser'}</button>` : ''}</div>
+    ${(() => {
+      armes.forEach(it => carteArme(it));
+      const lignes = [];
+      if (mn) lignes.push({ id: 'mn', nom: 'Combat à mains nues', sous: [mn.predi ? `prédilection ${R.signe(mn.predi)}` : '', aChoix(e, 'specialisation-martiale', 'mains-nues') ? 'spécialisation' : ''].filter(Boolean).join(' · '), tou: mn.toucher, deg: mn.degats, crit: aChoix(e, 'science-critique', 'mains-nues') ? '19-20/×2' : '20/×2', portee: '', liees: [], mun: [] });
+      lignes.push(...(sortie.lignes || []));
+      if (!lignes.length) return '<p class="empty">Aucune arme. Dans l\'onglet Inventaire, choisis le type « Arme » pour un objet.</p>';
+      const ordre = p.ordreArmes || [];
+      const rang = id => { const i = ordre.indexOf(id); return i < 0 ? 999 + lignes.findIndex(c => c.id === id) : i; };
+      lignes.sort((x, y) => rang(x.id) - rang(y.id));
+      const reorg = state.reorgArmes && peutModifier(p);
+      return `<div class="attaques-cadre"><table class="table-attaques">
+        <thead><tr><th>Arme</th><th>Toucher</th><th>Dégâts</th><th>Crit.</th><th>Portée</th>${reorg ? '<th></th>' : ''}</tr></thead>
+        <tbody>${lignes.map((l, i) => `<tr data-carte="${l.id}" class="${l.membre ? 'membre' : ''}">
+          <td class="att-nom"><b title="${esc(l.titre || l.nom)}">${esc(l.nom)}</b>${l.sous ? `<small>${esc(l.sous)}</small>` : ''}${l.recharge ? `<small>recharger : ${esc(l.recharge)}</small>` : ''}
+            ${l.mun.length ? `<div class="att-mun">${l.mun.map(({ it: m, i: k }) => `<span class="mun-ligne" ${m.effet ? `title="${esc(m.effet)}"` : ''}><span class="mun-nom">${esc(m.nom || 'Munition')}${m.effet ? ' ✦' : ''}</span><span class="mun-qte">×${esc(m.qte || 0)}</span><button class="btn petit" data-action="objet-use" data-idx="${k}" ${num(m.qte) > 0 ? '' : 'disabled'} aria-label="Tirer : ${esc(m.nom || 'munition')}">Tirer</button></span>`).join('')}</div>` : ''}
+            ${l.liees.length ? `<details class="arme-plus"><summary>${l.liees.length} règle${l.liees.length > 1 ? 's' : ''}</summary>${l.liees.join('')}</details>` : ''}</td>
+          <td class="att-val">${R.signe(l.tou[0])}${l.tou.length > 1 ? `<small>${esc(R.attTxt(l.tou))}</small>` : ''}</td>
+          <td class="att-val">${esc(l.deg)}</td>
+          <td class="att-sec">${esc(l.crit || '—')}</td>
+          <td class="att-sec">${esc(l.portee || '—')}</td>
+          ${reorg ? `<td class="att-ordre"><button class="icon" data-action="arme-ordre" data-id="${l.id}" data-sens="-1" ${i ? '' : 'disabled'} aria-label="Monter">↑</button><button class="icon" data-action="arme-ordre" data-id="${l.id}" data-sens="1" ${i < lignes.length - 1 ? '' : 'disabled'} aria-label="Descendre">↓</button></td>` : ''}
+        </tr>`).join('')}</tbody></table></div>`;
+    })()}
+    ${resPar('simple').length ? `<div class="liste-caps">${resPar('simple').map(r => ligneCapacite(p, r)).join('')}</div>` : ''}
     ${(() => {
       const del = [...(mn?.deluge ? [{ nom: 'Combat à mains nues', liste: mn.deluge.liste, deg: mn.degats, pen: mn.deluge.pen, note: 'tes poings, pieds, coudes…' }] : []), ...(sortie.deluge || [])];
       const out = [...(mn && mn.toucher.length > 1 ? [{ nom: 'Combat à mains nues', liste: mn.toucher, deg: mn.degats }] : []), ...(sortie.outrance || [])];
@@ -1800,7 +1814,7 @@ function ficheCombat(p, e) {
       if (out.length) blocs.push(`<details class="action-complexe"><summary><b>Attaque à outrance</b> <small>toutes tes attaques avec une arme</small></summary>
         <table class="table-deluge"><thead><tr><th>Avec</th><th>Pour toucher</th><th>Dégâts</th></tr></thead>
         <tbody>${out.map(d => `<tr><th>${esc(d.nom)}</th><td><b>${R.attTxt(d.liste)}</b></td><td><b>${esc(d.deg)}</b></td></tr>`).join('')}</tbody></table></details>`);
-      blocs.push(...resPar('complexe').map(r => r.bras && (r.bras.degats || r.bras.zone) ? carteBrasCombat(p, r) : compteur(p, r)));
+      blocs.push(...resPar('complexe').map(r => r.bras && (r.bras.degats || r.bras.zone) ? carteBrasCombat(p, r) : ligneCapacite(p, r)));
       return blocs.length ? `<h4 class="type-action">Actions complexes <small>tout le tour</small></h4><div class="actions-complexes">${blocs.join('')}</div>` : '';
     })()}
 
@@ -1836,9 +1850,10 @@ function ficheCombat(p, e) {
     })()}
     ${resPar('autre').length ? `<h4>Autres capacités</h4><div class="ressources">${resPar('autre').map(r => compteur(p, r)).join('')}</div>` : ''}
 
-    ${consommables.length ? `<h4>Potions et élixirs</h4><div class="consos">${consommables.map(({ it, i }) => `<div class="munition">
-      <span><b>${esc(it.nom || 'Objet')}</b> <small>× ${esc(it.qte || 0)}</small>${it.effet ? `<br><small>${esc(it.effet)}</small>` : ''}</span>
-      <button class="btn ghost" data-action="objet-use" data-idx="${i}" ${num(it.qte) > 0 ? '' : 'disabled'}>Utiliser</button></div>`).join('')}</div>` : ''}
+    ${consommables.length ? `<h4 class="type-action">Potions et élixirs</h4><div class="liste-caps">${consommables.map(({ it, i }) => `<details class="ligne-cap ${num(it.qte) > 0 ? '' : 'epuisee'}"><summary>
+      <span class="cap-nom">${esc(it.nom || 'Objet')}</span><span class="cap-reste">×${esc(it.qte || 0)}</span>
+      ${peutModifier(p) ? `<button class="btn petit" data-action="objet-use" data-idx="${i}" ${num(it.qte) > 0 ? '' : 'disabled'}>Utiliser</button>` : ''}
+    </summary>${it.effet ? `<div class="cap-detail"><p>${esc(it.effet)}</p></div>` : ''}</details>`).join('')}</div>` : ''}
   </section>`;
 }
 
@@ -6215,6 +6230,8 @@ document.addEventListener('click', ev => {
   state.sectionsEdition = [...l];
   render();
 }, true);
+/* Un bouton placé dans le titre d'une ligne dépliable agit sans déplier la ligne */
+document.addEventListener('click', ev => { const b = ev.target.closest && ev.target.closest('summary button'); if (b && !b.classList.contains('aide-btn') && !b.classList.contains('edit-toggle')) ev.preventDefault(); }, true);
 function ranger_aides(racine = document) {
   for (const el of [...racine.querySelectorAll('.aide')]) {
     const carte = el.closest('details.card, section.card, .card');
@@ -6561,7 +6578,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['mj-fam-pv', 'reglage', 'quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['armes-reorg', 'mj-fam-pv', 'reglage', 'quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -7844,8 +7861,11 @@ document.addEventListener('click', ev => {
       document.body.appendChild(a2); a2.click(); setTimeout(() => { URL.revokeObjectURL(a2.href); a2.remove(); }, 1000);
       break;
     }
+    case 'armes-reorg':
+      state.reorgArmes = !state.reorgArmes; render();
+      break;
     case 'arme-ordre': {
-      const ids = [...document.querySelectorAll('.armes [data-carte]')].map(x => x.dataset.carte);
+      const ids = [...document.querySelectorAll('.table-attaques [data-carte]')].map(x => x.dataset.carte);
       const i = ids.indexOf(b.dataset.id), j = i + Number(b.dataset.sens);
       if (i < 0 || j < 0 || j >= ids.length) break;
       [ids[i], ids[j]] = [ids[j], ids[i]];

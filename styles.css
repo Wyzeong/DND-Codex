@@ -1801,3 +1801,44 @@ details.lecture label.check:has(input[data-action]) { opacity: 1; }
 .reste-bras.epuise { color: var(--muted); text-decoration: line-through; }
 .grimoire-combat > summary { cursor: pointer; font-weight: 600; color: var(--bronze-clair); padding: .35rem 0; }
 .grimoire-combat > summary small { color: var(--muted); font-weight: 400; margin-left: .3rem; }
+
+/* ===== En combat, version lisible ===== */
+.type-action-ligne { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.type-action-ligne .type-action { flex: 1; }
+.attaques-cadre { overflow-x: auto; margin: .2rem 0 .5rem; }
+.table-attaques { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.table-attaques th { text-align: left; font: 400 .72rem/1.2 var(--font); color: var(--muted); padding: .2rem .45rem; text-transform: none; letter-spacing: 0; }
+.table-attaques td { padding: .45rem .45rem; border-top: 1px solid var(--line); vertical-align: top; }
+.table-attaques tr.membre td { background: rgba(142, 123, 214, .08); }
+.table-attaques tr.membre td:first-child { box-shadow: inset 3px 0 0 #8E7BD6; }
+.att-nom { min-width: 11rem; }
+.att-nom b { display: block; font-family: var(--font); font-weight: 600; font-size: .92rem; color: var(--ivoire); letter-spacing: 0; text-transform: none; }
+.att-nom small { display: block; color: var(--muted); font-size: .74rem; }
+.att-val { font-weight: 700; font-size: 1rem; color: var(--ivoire); white-space: nowrap; }
+.att-val small { display: block; font-weight: 400; font-size: .72rem; color: var(--muted); }
+.att-sec { color: var(--muted); font-size: .82rem; white-space: nowrap; }
+.att-ordre { white-space: nowrap; }
+.att-mun { display: flex; flex-direction: column; gap: .15rem; margin-top: .25rem; }
+.att-mun .mun-ligne { display: flex; align-items: center; gap: .4rem; font-size: .78rem; }
+.att-mun .btn.petit { padding: .1rem .45rem; font-size: .72rem; }
+.att-nom .arme-plus { margin-top: .2rem; }
+.liste-caps { display: flex; flex-direction: column; margin: .2rem 0 .5rem; }
+.ligne-cap { border-top: 1px solid var(--line); }
+.ligne-cap:last-child { border-bottom: 1px solid var(--line); }
+.ligne-cap > summary { display: flex; align-items: center; gap: .6rem; padding: .4rem .45rem; cursor: pointer; list-style: none; }
+.ligne-cap > summary::-webkit-details-marker { display: none; }
+.cap-nom { flex: 1; min-width: 0; font-weight: 600; font-size: .9rem; }
+.cap-action { font-size: .74rem; color: var(--muted); white-space: nowrap; }
+.cap-reste { font-size: .85rem; font-weight: 700; color: var(--bronze-clair); min-width: 2.4rem; text-align: right; }
+.ligne-cap .btn.petit { padding: .2rem .65rem; font-size: .78rem; }
+.ligne-cap.epuisee .cap-nom, .ligne-cap.epuisee .cap-reste { color: var(--muted); }
+.cap-detail { padding: 0 .45rem .5rem; font-size: .85rem; color: var(--muted); }
+.cap-detail p { margin: .15rem 0; }
+/* moins de cadres et une typographie plus calme dans « En combat » */
+.combat .action-complexe { border: none; border-top: 1px solid var(--line); border-radius: 0; background: transparent; padding: .45rem .45rem; }
+.combat .action-complexe:last-child { border-bottom: 1px solid var(--line); }
+.combat .action-complexe > summary b { font-family: var(--font); font-weight: 600; font-size: .92rem; letter-spacing: 0; text-transform: none; }
+.combat .bras-capacite { background: rgba(142, 123, 214, .06); box-shadow: inset 3px 0 0 #8E7BD6; }
+.combat .actions-complexes { gap: 0; }
+.combat .passifs .passif { border: none; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
+.combat .grimoire-combat { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 0 .45rem; }
