@@ -8,7 +8,7 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '106';
+const VERSION_APPLI = '107';
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -1819,24 +1819,28 @@ function ficheCombat(p, e) {
     })()}
 
     <h4>Lancer un sort</h4>
-    ${sorts.length ? `<details class="grimoire-combat"><summary>📖 Ouvrir le grimoire <small>${sorts.length} sort${sorts.length > 1 ? 's' : ''} · ${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length} disponible${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length > 1 ? 's' : ''}</small></summary><div class="sorts-combat">${sorts.map(({ x, i, s }) => {
+    ${sorts.length ? `<details class="grimoire-combat"><summary>📖 Ouvrir le grimoire <small>${sorts.length} sort${sorts.length > 1 ? 's' : ''} · ${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length} disponible${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length > 1 ? 's' : ''}</small></summary><div class="liste-caps liste-sorts">${sorts.slice().sort((u, v) => (etatFocal(p, u.x) === 'ok' ? 0 : 1) - (etatFocal(p, v.x) === 'ok' ? 0 : 1)).map(({ x, i, s }) => {
       const infini = !!x.illimite, max = infini ? 0 : num(x.max), reste = Math.max(0, max - num(x.utilises));
       const ef = etatFocal(p, x);
-      return `<div class="sort-c ${ecoleClass(s.ecole)} ${ef !== 'ok' ? 'bloque' : ''}">
-        ${ef === 'ok' ? `<p class="focal-sort">✦ ${esc(nomFocal(p, x))}</p>` : `<p class="focal-alerte">${ef === 'absent' ? `⚠ ${esc(nomFocal(p, x))} absent : sort inutilisable` : '⚠ Relie ce sort à un focalisateur (onglet Sorts)'}</p>`}
-        <div class="sort-c-tete"><b>${esc(s.nom)}</b>
-          ${infini ? '<span class="reste">∞ à volonté</span>' : max ? `<span class="reste">${reste} / ${max}</span>` : ''}</div>
-        <p class="usages">${tagsUsages(s)}</p>
-        <details class="effet"><summary>${esc(s.ecole)}${ddEcole(e, s.ecole) ? ` <span class="tag-cat" title="École renforcée">DD ${R.signe(ddEcole(e, s.ecole))}</span>` : ''}${s.portee ? ', ' + esc(s.portee.split(' (')[0]) : ''} : voir l'effet</summary>
+      const mod = peutModifier(p);
+      return `<details class="ligne-cap ligne-sort ${ecoleClass(s.ecole)} ${ef !== 'ok' ? 'bloque' : ''} ${!infini && max && !reste ? 'epuisee' : ''}"><summary>
+          <span class="cap-nom">${esc(s.nom)}${ef !== 'ok' ? ` <span class="sort-alerte" title="${ef === 'absent' ? esc(nomFocal(p, x)) + ' absent' : 'Pas de focalisateur'}">⚠</span>` : ''}</span>
+          <span class="cap-action">${esc(s.ecole || '')}</span>
+          <span class="cap-reste">${infini ? '∞' : max ? `${reste}/${max}` : '—'}</span>
+          ${mod && max && !infini ? `<button class="btn petit" data-action="sort-use" data-idx="${i}" ${reste && ef === 'ok' ? '' : 'disabled'}>Lancer</button>` : ''}
+        </summary>
+        <div class="cap-detail">
+          ${ef === 'ok' ? `<p class="focal-sort">✦ ${esc(nomFocal(p, x))}</p>` : `<p class="focal-alerte">${ef === 'absent' ? `⚠ ${esc(nomFocal(p, x))} absent : sort inutilisable` : '⚠ Relie ce sort à un focalisateur (onglet Sorts)'}</p>`}
+          <p class="usages">${tagsUsages(s)}${ddEcole(e, s.ecole) ? ` <span class="tag-cat" title="École renforcée">DD ${R.signe(ddEcole(e, s.ecole))}</span>` : ''}</p>
           <p>${esc(s.description || '')}</p>
           <dl class="fiche-sort">${[['Temps', s.incantation], ['Portée', s.portee], ['Cible', s.cible], ['Durée', s.duree], ['Jet de sauvegarde', s.sauvegarde], ['Résistance à la magie', s.rm]].filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-        </details>
-        <div class="sort-c-pied">
-          ${infini ? '' : `<label class="mini">Par jour <input type="text" inputmode="numeric" data-bind="sorts.${i}.max" data-recalc value="${esc(x.max)}" placeholder="—"></label>`}
-          <button class="chip ${infini ? 'on' : ''}" data-action="sort-infini" data-idx="${i}" title="Utilisable sans limite" aria-pressed="${infini}">∞</button>
-          ${max ? `<button class="btn" data-action="sort-use" data-idx="${i}" ${reste && ef === 'ok' ? '' : 'disabled'}>Lancer</button>${num(x.utilises) ? `<button class="lien" data-action="sort-annuler" data-idx="${i}">Annuler</button>` : ''}` : ''}
+          ${mod ? `<div class="sort-c-pied">
+            ${infini ? '' : `<label class="mini">Par jour <input type="text" inputmode="numeric" data-bind="sorts.${i}.max" data-recalc value="${esc(x.max)}" placeholder="—"></label>`}
+            <button class="chip ${infini ? 'on' : ''}" data-action="sort-infini" data-idx="${i}" title="Utilisable sans limite" aria-pressed="${infini}">∞ à volonté</button>
+            ${num(x.utilises) ? `<button class="lien" data-action="sort-annuler" data-idx="${i}">Annuler</button>` : ''}
+          </div>` : ''}
         </div>
-      </div>`;
+      </details>`;
     }).join('')}</div></details>` : '<p class="empty">Aucun sort. Ajoute ceux de ta baguette dans l\'onglet Sorts.</p>'}
 
     ${(() => {

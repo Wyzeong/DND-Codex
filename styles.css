@@ -1842,3 +1842,11 @@ details.lecture label.check:has(input[data-action]) { opacity: 1; }
 .combat .actions-complexes { gap: 0; }
 .combat .passifs .passif { border: none; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
 .combat .grimoire-combat { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 0 .45rem; }
+/* Sorts en lignes */
+.liste-sorts .ligne-sort > summary { box-shadow: inset 3px 0 0 var(--ec, var(--line-bronze)); }
+.liste-sorts .ligne-sort.bloque .cap-nom { color: var(--muted); }
+.sort-alerte { color: var(--rouge-clair); font-size: .8rem; }
+.liste-sorts .cap-action { min-width: 6.5rem; text-align: right; }
+.liste-sorts .cap-detail .fiche-sort { margin: .3rem 0; }
+.liste-sorts .sort-c-pied { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .3rem; }
+.ligne-cap > summary { color: var(--ivoire); }
