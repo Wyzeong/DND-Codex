@@ -8,7 +8,17 @@
 const STORE_KEY = 'codex-dd35-v1';
 const APP_VERSION = 1; // format des données (ne pas changer)
 /* Version de l'appli, affichée sous le titre : à augmenter à chaque mise en ligne (avec CACHE dans sw.js) */
-const VERSION_APPLI = '108';
+const VERSION_APPLI = '109';
+/* Les pierres de magie de la campagne (réglables par le MJ) */
+const PIERRES_DEFAUT = [
+  ['Abjuration', 'Protection', '#7A1F2B'], ['Divination', 'Connaissance', '#1E5631'], ['Enchantement', 'Contrôle', '#E07B24'],
+  ['Évocation', 'Énergie', '#E6C229'], ['Illusion', 'Tromperie', '#7CCB5E'], ['Invocation', 'Appel', '#C0392B'],
+  ['Nécromancie', 'Mort et vie', '#1F3A7A'], ['Transmutation', 'Changement', '#7D3C98'], ['Universel', 'Le Tout, le Tissage', '#E58FB5'],
+].map(([ecole, nom, couleur], i) => ({ id: 'p' + (i + 1), ecole, nom, couleur, active: true }));
+const pierres = () => Array.isArray((db.reglages || {}).pierres) ? db.reglages.pierres : PIERRES_DEFAUT;
+const memeEcole = (a, b) => norm(a).slice(0, 6) === norm(b).slice(0, 6);
+const pierreDe = ecole => pierres().find(x => memeEcole(x.ecole, ecole || 'Universel'));
+const ecoleBrisee = ecole => { const x = pierreDe(ecole); return !!x && x.active === false; };
 
 const ECOLES = ['Abjuration', 'Divination', 'Enchantement', 'Évocation', 'Illusion', 'Invocation', 'Nécromancie', 'Transmutation', 'Universel'];
 const CLASSES_ABR = {
@@ -799,6 +809,7 @@ function pagePersoSuite(p, tab) {
     </div>
     ${encartDroits(p)}
     ${recap(p, e)}
+    ${champRecherche()}
     <nav class="tabs" aria-label="Sections du personnage">${tabs}</nav>
     ${body}`;
 }
@@ -835,7 +846,8 @@ function repliable(html, fermesParDefaut = []) {
     return `<details class="card repli${classes}" data-section="${id}"${ferme ? '' : ' open'}><summary><h3>${titre}</h3></summary>${corps}</details>`;
   });
 }
-const outilsReplis = () => `<div class="fiche-recherche"><input type="search" id="fiche-q" placeholder="Chercher sur la fiche : vigueur, discrétion, CA…" aria-label="Chercher sur la fiche" autocomplete="off"><div id="fiche-res" class="fiche-res" hidden></div></div><div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
+const champRecherche = () => `<div class="fiche-recherche"><input type="search" id="fiche-q" placeholder="Chercher dans toute la fiche : vigueur, discrétion, potion, sort…" aria-label="Chercher dans toute la fiche" autocomplete="off"><div id="fiche-res" class="fiche-res" hidden></div></div>`;
+const outilsReplis = () => `<div class="replis-outils"><button class="lien" data-action="replis-tout" data-ouvrir="0">Tout replier</button><button class="lien" data-action="replis-tout" data-ouvrir="1">Tout déplier</button></div>`;
 
 function ongletFiche(p, e, partie = 'perso') {
   return outilsReplis() + repliable(ongletFicheBrut(p, e, partie), p.nom && p.race ? ['identite'] : []);
@@ -892,6 +904,7 @@ function ongletFicheBrut(p, e, partie = 'perso') {
   const deluge = valsClasses.find(x => x.id === 'moine')?.vals.find(v => v[0] === 'Déluge de coups');
   const enCombat = partie === 'combat';
   if (enCombat) return `
+  ${panneauStats(p, e, s)}
   ${panneauSawu(p, e)}
   ${carteVitalite(p)}
   ${ficheEffets(p)}
@@ -1792,6 +1805,8 @@ function ficheCombat(p, e) {
   const resPar = t => res.filter(r => typeRes(r) === t);
 
   const sorts = (p.sorts || []).map((x, i) => ({ x, i, s: findSort(x.id) })).filter(o => o.s);
+  const sortsBrises = sorts.filter(({ s: sp }) => ecoleBrisee(sp?.ecole)).length;
+  sorts.splice(0, sorts.length, ...sorts.filter(({ s: sp }) => !ecoleBrisee(sp?.ecole)));
   return `<section class="card combat"><h3>En combat</h3>
     <div class="combat-tete">
       <details class="tour"><summary>Que puis-je faire à mon tour ?</summary>
@@ -1853,7 +1868,7 @@ function ficheCombat(p, e) {
     })()}
 
     <h4>Lancer un sort</h4>
-    ${sorts.length ? `<details class="grimoire-combat"><summary>📖 Ouvrir le grimoire <small>${sorts.length} sort${sorts.length > 1 ? 's' : ''} · ${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length} disponible${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length > 1 ? 's' : ''}</small></summary><div class="liste-caps liste-sorts">${sorts.slice().sort((u, v) => (etatFocal(p, u.x) === 'ok' ? 0 : 1) - (etatFocal(p, v.x) === 'ok' ? 0 : 1)).map(({ x, i, s }) => {
+    ${sorts.length ? `<details class="grimoire-combat"><summary>📖 Ouvrir le grimoire <small>${sortsBrises ? `${sortsBrises} sort${sortsBrises > 1 ? 's' : ''} privé${sortsBrises > 1 ? 's' : ''} de pierre · ` : ''}${sorts.length} sort${sorts.length > 1 ? 's' : ''} · ${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length} disponible${sorts.filter(({ x }) => x.illimite || num(x.max) - num(x.utilises) > 0).length > 1 ? 's' : ''}</small></summary><div class="liste-caps liste-sorts">${sorts.slice().sort((u, v) => (etatFocal(p, u.x) === 'ok' ? 0 : 1) - (etatFocal(p, v.x) === 'ok' ? 0 : 1)).map(({ x, i, s }) => {
       const infini = !!x.illimite, max = infini ? 0 : num(x.max), reste = Math.max(0, max - num(x.utilises));
       const ef = etatFocal(p, x);
       const mod = peutModifier(p);
@@ -2841,6 +2856,30 @@ function ficheMonstreCombat(t, x) {
     ${ligne('Attaques', t.attaques)}${ligne('Caractéristiques', t.caracs)}${ligne('Notes', t.notes)}
   </div>`;
 }
+function reglagesMJ() {
+  const l = pierres();
+  return `<section class="card"><h3>Pierres de magie</h3>
+    <p class="hint">Chaque école de magie existe grâce à sa pierre. Une pierre <b>brisée</b> rend ses sorts inutilisables : grisés dans l'onglet Sorts, absents d'« En combat », pour tous les personnages.</p>
+    <div class="pierres">${l.map((x, i) => `<div class="pierre ${x.active === false ? 'brisee' : ''}">
+      <input type="color" value="${esc(x.couleur || '#888888')}" data-pierre="${i}|couleur" aria-label="Couleur de la pierre">
+      <select data-pierre="${i}|ecole" aria-label="École">${ECOLES.map(ec => `<option ${memeEcole(ec, x.ecole) ? 'selected' : ''}>${ec}</option>`).join('')}</select>
+      <input type="text" value="${esc(x.nom || '')}" data-pierre="${i}|nom" placeholder="Nom de la pierre" aria-label="Nom">
+      <button class="btn petit ${x.active === false ? 'danger' : ''}" data-action="pierre-bascule" data-i="${i}">${x.active === false ? '💔 Brisée' : '💎 Intacte'}</button>
+      <button class="icon" data-action="pierre-suppr" data-i="${i}" aria-label="Supprimer la pierre">✕</button>
+    </div>`).join('')}</div>
+    <div class="btns"><button class="btn ghost petit" data-action="pierre-ajout">+ Pierre</button><button class="lien" data-action="pierres-defaut">Revenir à la liste d'origine</button></div>
+  </section>
+  <section class="card"><h3>Compétences</h3>
+    <label class="check"><input type="checkbox" data-action="reglage" data-cle="compLibres" ${(db.reglages || {}).compLibres ? 'checked' : ''}> Rangs de compétence libres : les joueurs ajoutent et retirent leurs rangs sans limite de points ni verrou de validation</label>
+    <p class="hint">Par défaut, un joueur ne peut ajouter des rangs que dans la limite de ses points, et ne peut pas retirer des rangs validés.</p>
+  </section>`;
+}
+function enregistrerPierres(l) {
+  db.reglages = { ...(db.reglages || {}), pierres: l }; saveNow(); render();
+  if (enLigne()) rpc('definir_reglage', { p_code: codeAdmin(), p_cle: 'pierres', p_val: l })
+    .then(r => { if (r) db.reglages = r; saveNow(); })
+    .catch(e => alert('Réglage non enregistré (la base est-elle en v20 ?) : ' + e.message));
+}
 function pageCombatMJ() {
   const c = mjd().combat;
   if (!c) return `<section class="card intro"><h3>Aucun combat en cours</h3><p>Prépare une rencontre dans l'onglet Préparation, puis touche « Activer ce combat ».</p></section>`;
@@ -3492,11 +3531,12 @@ function pageMJ2() {
   if (!estMJ()) return pageMJReelle();
   const o = state.mjOnglet || 'groupe';
   const m = mjd();
-  const onglets = [['groupe', 'Groupe'], ['sessions', 'Sessions'], ['combat', m.combat ? 'Combat ⚔' : 'Combat'], ['prepa', 'Préparation'], ['objets', `Objets${m.objets.length ? ' (' + m.objets.length + ')' : ''}`], ['notes', 'Notes']];
+  const onglets = [['groupe', 'Groupe'], ['sessions', 'Sessions'], ['combat', m.combat ? 'Combat ⚔' : 'Combat'], ['prepa', 'Préparation'], ['objets', `Objets${m.objets.length ? ' (' + m.objets.length + ')' : ''}`], ['notes', 'Notes'], ['reglages', 'Réglages']];
   let corps;
   if (o === 'combat') corps = pageCombatMJ();
   else if (o === 'sessions') corps = pageSessionsMJ();
   else if (o === 'objets') corps = pageObjetsMJ();
+  else if (o === 'reglages') corps = reglagesMJ();
   else if (o === 'notes') corps = `<section class="card"><h3>Notes secrètes</h3>${champMJ('notes', 'Rien que pour toi', { area: true, rows: 14 })}</section>`;
   else if (o === 'prepa') {
     corps = `${carteBestiaire()}${cartePNJGen()}${carteHistoriqueMJ()}<section class="card"><h3>PNJ et créatures</h3>
@@ -4019,8 +4059,8 @@ function ongletSorts(p) {
   const focs = focalisateurs(p);
   const nonRelies = items.filter(({ e }) => etatFocal(p, e) === 'non-relie').length;
   const linked = items.map(({ e, i, s }) => `
-    <div class="item ${ecoleClass(s?.ecole)} focal-${etatFocal(p, e)}">
-      <div>${s ? `<a href="#/sort/${s.id}">${esc(s.nom)}</a><span class="meta">${esc(s.ecole)}${ddEcole(e, s.ecole) ? ` (DD ${R.signe(ddEcole(e, s.ecole))})` : ''}, ${esc(niveauxTxt(s))}</span><span class="usages">${tagsUsages(s)}</span>`
+    <div class="item ${ecoleClass(s?.ecole)} focal-${etatFocal(p, e)} ${s && ecoleBrisee(s.ecole) ? 'brise' : ''}">
+      <div>${s ? `<a href="#/sort/${s.id}">${esc(s.nom)}</a>${ecoleBrisee(s.ecole) ? `<span class="tag-brise" style="--pc:${esc(pierreDe(s.ecole)?.couleur || '#888')}" title="La pierre de magie de cette école est brisée : sort inutilisable">💎 pierre brisée</span>` : ''}<span class="meta">${esc(s.ecole)}${ddEcole(e, s.ecole) ? ` (DD ${R.signe(ddEcole(e, s.ecole))})` : ''}, ${esc(niveauxTxt(s))}</span><span class="usages">${tagsUsages(s)}</span>`
         : '<em>Sort supprimé du grimoire</em>'}</div>
       <select data-bind="sorts.${i}.statut" aria-label="Statut">
         ${STATUTS.map(st => `<option ${e.statut === st ? 'selected' : ''}>${st}</option>`).join('')}
@@ -5864,10 +5904,6 @@ function pageDonnees() {
   <div class="pagehead"><div><h1>Partage et sauvegarde</h1>
     <p class="sub">Les données restent sur cet appareil. Le partage se fait par fichier.</p></div></div>
 
-  <section class="card"><h3>Réglages de la campagne</h3>
-    <label class="check"><input type="checkbox" data-action="reglage" data-cle="compLibres" ${(db.reglages || {}).compLibres ? 'checked' : ''}> Rangs de compétence libres : les joueurs ajoutent et retirent leurs rangs sans limite de points ni verrou de validation</label>
-    <p class="hint aide">Par défaut, un joueur ne peut ajouter des rangs que dans la limite de ses points, et ne peut pas retirer des rangs validés : seul le MJ le peut. Coche cette case pour lever la restriction (pendant une création de personnage ou une correction, par exemple), puis décoche-la. Le réglage s'applique à toute la campagne.</p>
-  </section>
   <section class="card intro"><h3>Partager avec la troupe</h3>
     <div class="btns">
       <button class="btn" data-action="import">Importer un fichier</button>
@@ -5976,6 +6012,23 @@ function initialiserBras(p) {
     { id: uid(), niveau: 3, nom: 'Prix du bras', texte: '+2 en Force, −2 en Constitution, PV réduits de 10 %.' },
   ];
 }
+/* Récapitulatif des caractéristiques et de la défense, à gauche de l'onglet Combat */
+function panneauStats(p, e, s) {
+  const pr = protections(p, e, s);
+  const res = ENERGIES.filter(([k]) => pr.res[k] || pr.moitie.has(k) || pr.imm.includes(k)).map(([k, l]) => `${l.replace(/^(à l'|au |à la )/, '').replace(/^./, c => c.toUpperCase())} ${pr.imm.includes(k) ? 'immunité' : [pr.moitie.has(k) ? '½' : '', pr.res[k] || ''].filter(Boolean).join(' + ')}`);
+  const case_ = (l, v, t = '') => `<div class="ps-case" ${t ? `title="${esc(t)}"` : ''}><span>${l}</span><b>${v}</b></div>`;
+  return `<aside class="panneau-stats" aria-label="Récapitulatif">
+    <div class="ps-titre">Caractéristiques</div>
+    <div class="ps-grille ps-car">${R.CARACS.map(c => case_(c.l, `${e.car[c.k] ?? '—'} <small>${e.car[c.k] == null ? '' : R.signe(e.mods[c.k])}</small>`, c.n)).join('')}</div>
+    <div class="ps-titre">Défense</div>
+    <div class="ps-grille">${case_('CA', s.ca, "Classe d'armure")}${case_('Contact', s.contact)}${case_('Dépourvu', s.depourvu, 'Pris au dépourvu')}</div>
+    <div class="ps-titre">Sauvegardes</div>
+    <div class="ps-grille">${case_('Vig', R.signe(s.js.vig), 'Vigueur')}${case_('Réf', R.signe(s.js.ref), 'Réflexes')}${case_('Vol', R.signe(s.js.vol), 'Volonté')}</div>
+    <div class="ps-titre">Combat</div>
+    <div class="ps-grille">${case_('Init.', R.signe(s.init), 'Initiative')}${case_('BBA', R.attTxt(s.att))}${case_('Lutte', R.signe(s.lutte))}${case_('Vitesse', s.vitesse + ' m')}${case_('Taille', R.TAILLES[e.taille]?.court || 'M')}${pr.rm ? case_('RM', pr.rm, 'Résistance à la magie') : ''}</div>
+    ${pr.rd.length || res.length ? `<div class="ps-titre">Protections</div><p class="ps-prot">${esc([pr.rd.length ? 'RD ' + pr.rd.join(', ') : '', ...res].filter(Boolean).join(' · '))}</p>` : ''}
+  </aside>`;
+}
 function panneauSawu(p, e) {
   if (!p.formes || !p.formes.length) return '';
   initialiserBras(p);
@@ -5986,6 +6039,7 @@ function panneauSawu(p, e) {
   const paliers = [...new Set(l.map(({ x }) => num(x.niveau)))];
   return `<aside class="panneau-sawu" aria-label="Bras de Sawu">
     <details class="sawu" open><summary><b>✦ Bras de Sawu</b><span>${forme ? esc(forme.nom) : ''} · niveau ${niv}</span></summary>
+    <div class="sawu-volonte" title="Chaque action du bras demande un jet de Volonté"><span>Jet de Volonté</span><b>${R.signe(stats(p, e).js.vol)}</b></div>
     <div class="sawu-liste">${paliers.map(n => `<div class="sawu-palier ${n <= niv ? 'acquis' : 'futur'}">
         <div class="sawu-niv">${n <= niv ? '' : '🔒 '}Niveau ${n}</div>
         ${l.filter(({ x }) => num(x.niveau) === n).map(({ x, i }) => mod && state.editBras === x.id ? `<div class="sawu-effet edition">
@@ -6048,40 +6102,62 @@ function blocFormes(p) {
 }
 
 /* ===== Recherche sur la fiche ===== */
+/* Recherche dans tous les onglets du personnage ouvert */
+const SEL_RECHERCHE = '.stat, .cl:not(.cl-tete), .table-attaques tbody tr, .ligne-cap, .ressource, .effet-ligne, .carte-don, .don, .sort-c, .carac, .objet-vue, .passif, .forme-btn, .action-complexe, .sawu-effet, .item, .level summary, .objet-ligne';
+const ONGLETS_RECHERCHE = [['combat', 'Combat'], ['fiche', 'Personnage'], ['inventaire', 'Inventaire'], ['sorts', 'Sorts'], ['progression', 'Progression']];
+function texteRecherche(el) { return norm([el.textContent, el.title, ...[...el.querySelectorAll('[title]')].map(x => x.title)].join(' ')).replace(/\s+/g, ' '); }
+function correspond(qq) {
+  const SYN = [['int', 'intelligence'], ['for', 'force'], ['dex', 'dexterite'], ['con', 'constitution'], ['sag', 'sagesse'], ['cha', 'charisme'], ['ca', "classe d'armure"], ['ref', 'reflexes'], ['vol', 'volonte'], ['vig', 'vigueur'], ['pv', 'points de vie'], ['bba', 'bonus de base'], ['init', 'initiative']];
+  const variantes = new Set([qq]);
+  for (const [a, b] of SYN) { if (qq === a) variantes.add(b); if (b.startsWith(qq) && qq.length >= 3) variantes.add(a); }
+  return t => [...variantes].some(v => v.length <= 3 ? new RegExp('(^|[^a-z])' + v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z]|$)').test(t) : t.includes(v));
+}
 function chercherSurFiche(q) {
   const z = document.getElementById('fiche-res');
   if (!z) return;
   const qq = norm(q || '').trim();
-  if (qq.length < 2) { z.innerHTML = ''; z.hidden = true; return; }
-  const sel = '#app .stat, #app .cl:not(.cl-tete), #app .table-attaques tbody tr, #app .ligne-cap, #app .ressource, #app .effet-ligne, #app .carte-don, #app .don, #app .sort-c, #app .carac, #app .objet-vue, #app .passif, #app .forme-btn, #app .action-complexe, #app .sawu-effet';
-  /* abréviations et noms complets se valent : « int » trouve Intelligence, « vigueur » trouve Vig… */
-  const SYN = [['int', 'intelligence'], ['for', 'force'], ['dex', 'dexterite'], ['con', 'constitution'], ['sag', 'sagesse'], ['cha', 'charisme'], ['ca', "classe d'armure"], ['ref', 'reflexes'], ['vol', 'volonte'], ['vig', 'vigueur'], ['pv', 'points de vie'], ['bba', 'bonus de base'], ['init', 'initiative']];
-  const variantes = new Set([qq]);
-  for (const [a, b] of SYN) { if (qq === a) variantes.add(b); if (b.startsWith(qq) && qq.length >= 3) variantes.add(a); }
-  const texteDe = el => norm([el.textContent, el.title, ...[...el.querySelectorAll('[title]')].map(x => x.title)].join(' ')).replace(/\s+/g, ' ');
-  const trouve = t => [...variantes].some(v => v.length <= 3 ? new RegExp('(^|[^a-z])' + v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z]|$)').test(t) : t.includes(v));
+  if (qq.length < 2 || !state.ctx) { z.innerHTML = ''; z.hidden = true; return; }
+  const p = state.ctx, e = etat(p), trouve = correspond(qq);
   const res = [];
-  document.querySelectorAll(sel).forEach(el => {
-    if (el.closest('#fiche-res')) return;
-    if (el.parentElement && el.parentElement.closest(sel)) return;
-    const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-    if (!txt || !trouve(texteDe(el))) return;
-    res.push({ el, txt });
-  });
-  window.__resFiche = res.map(r => r.el);
+  for (const [tab, libelle] of ONGLETS_RECHERCHE) {
+    let html = '';
+    try {
+      html = tab === 'combat' ? ongletFiche(p, e, 'combat') : tab === 'fiche' ? ongletFiche(p, e, 'perso') : tab === 'inventaire' ? repliable(ongletInventaire(p, e)) : tab === 'sorts' ? ongletSorts(p) : ongletProgression(p);
+    } catch (err) { continue; }
+    const boite = document.createElement('div'); boite.innerHTML = html;
+    const vus = new Set();
+    boite.querySelectorAll(SEL_RECHERCHE).forEach(el => {
+      if (el.parentElement && el.parentElement.closest(SEL_RECHERCHE)) return;
+      const t = texteRecherche(el);
+      if (!t || !trouve(t)) return;
+      const brut = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (vus.has(brut)) return; vus.add(brut);
+      res.push({ tab, libelle, txt: brut, cle: t });
+    });
+  }
+  window.__resFiche = res;
   z.hidden = false;
-  z.innerHTML = res.length ? res.slice(0, 12).map((r, i) => `<button class="res-fiche" data-res-fiche="${i}">${esc(r.txt.slice(0, 110))}${r.txt.length > 110 ? '…' : ''}</button>`).join('') : '<p class="hint">Rien trouvé sur cet onglet. Les attaques, la CA et les sauvegardes sont dans Combat ; les caractéristiques, compétences et dons dans Personnage.</p>';
+  z.innerHTML = res.length ? res.slice(0, 20).map((r, i) => `<button class="res-fiche" data-res-fiche="${i}"><span class="res-onglet">${esc(r.libelle)}</span>${esc(r.txt.slice(0, 100))}${r.txt.length > 100 ? '…' : ''}</button>`).join('') : '<p class="hint">Rien trouvé sur cette fiche.</p>';
 }
-document.addEventListener('click', ev => {
-  const b = ev.target.closest && ev.target.closest('[data-res-fiche]');
-  if (!b) return;
-  const el = (window.__resFiche || [])[Number(b.dataset.resFiche)];
+function allerAuResultat(cle) {
+  const el = [...document.querySelectorAll('#app :is(' + SEL_RECHERCHE + ')')].find(x => texteRecherche(x) === cle);
   if (!el) return;
   let d = el.closest('details'); while (d) { d.open = true; d = d.parentElement && d.parentElement.closest('details'); }
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.add('trouve'); setTimeout(() => el.classList.remove('trouve'), 2200);
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-res-fiche]');
+  if (!b) return;
+  const r = (window.__resFiche || [])[Number(b.dataset.resFiche)];
+  if (!r || !state.ctx) return;
   const z = document.getElementById('fiche-res'); if (z) z.hidden = true;
+  const tabActuel = (location.hash.split('/')[3] || 'combat');
+  if (tabActuel === r.tab) { allerAuResultat(r.cle); return; }
+  state.chercheCible = r.cle;
+  location.hash = `#/perso/${state.ctx.id}/${r.tab}`;
 });
+
 
 /* ===== Rangs de compétence : un joueur ajoute dans la limite de ses points, mais ne retire pas ce qui est validé ===== */
 function pointsDepenses(p, e) {
@@ -6207,6 +6283,12 @@ document.addEventListener('input', ev => {
   }
 });
 document.addEventListener('change', ev => {
+  if (ev.target.dataset && ev.target.dataset.pierre) {
+    if (!estMJ() && enLigne()) return;
+    const [i, champ] = ev.target.dataset.pierre.split('|');
+    const l = pierres().map(x => ({ ...x })); l[Number(i)][champ] = ev.target.value; enregistrerPierres(l);
+    return;
+  }
   if (ev.target.dataset && ev.target.dataset.choixDon && state.ctx && db.personnages.includes(state.ctx)) {
     const p = state.ctx;
     p.choixDons = { ...(p.choixDons || {}), [ev.target.dataset.choixDon]: ev.target.value };
@@ -6337,6 +6419,7 @@ function render(garderScroll = true) {
   ranger_aides($('#app'));
   restaurerDetails($('#app'), ouverts);
   appliquerLecture($('#app'));
+  if (state.chercheCible) { const c = state.chercheCible; state.chercheCible = null; setTimeout(() => allerAuResultat(c), 60); }
   ajusterTextes($('#app'));
   majBulle();
   const nav = page === 'mj' ? 'mj' : page === 'perso' || page === 'nouveau' ? 'persos' : page.startsWith('sort') ? 'sorts' : ['recaps', 'recap', 'notes', 'session', 'encyclo', 'fiche'].includes(page) ? 'journal' : page;
@@ -6626,7 +6709,7 @@ document.addEventListener('click', ev => {
   const p = state.ctx;
   const a = b.dataset.action;
   const idx = Number(b.dataset.idx);
-  const libres = ['armes-reorg', 'mj-fam-pv', 'reglage', 'quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
+  const libres = ['pierre-bascule', 'pierre-ajout', 'pierre-suppr', 'pierres-defaut', 'armes-reorg', 'mj-fam-pv', 'reglage', 'quete-reveler', 'quete-attente', 'don-commun-ajout', 'don-commun-modif', 'don-commun-annuler', 'don-commun-ok', 'don-commun-suppr', 'bulle-remettre', 'ajout-pnj-voir', 'ajout-pnj-ok', 'ajout-pnj-modele', 'mj-niveau-valider', 'mj-niveau-tous', 'coffre-deposer', 'coffre-prendre', 'mj-sauvegarde', 'mj-import-sauvegarde', 'histo-voir', 'histo-restaurer', 'gen-pnj', 'gen-combat', 'journal-actualiser', 'journal-filtre', 'apt-onglet', 'best-ouvrir', 'best-tout', 'best-pnj', 'best-combat', 'ajout-rapide-voir', 'ajout-rapide-ok', 'ajout-rapide-modele', 'ecran-image', 'ambiance-ajout', 'ambiance-suppr', 'mj-quete-nouvelle', 'mj-quete-statut', 'marche-image', 'marche-choisir', 'achat-ouvrir', 'marche-ajout', 'marche-suppr', 'effet-annuler', 'mj-cb-effet', 'pp-res-ajout', 'pp-res-suppr', 'pp-ajout', 'pp-edit', 'pp-fin', 'pp-suppr', 'pp-comp', 'pp-apt-ajout', 'pp-apt-suppr', 'mj-tiroir', 'mj-tiroir-fermer', 'inv-cat', 'mj-session-ajout', 'mj-session-ouvrir', 'mj-session-fermer', 'mj-session-mode', 'mj-session-suppr', 'mj-etape-ajout', 'mj-etape-monter', 'mj-etape-descendre', 'mj-etape-suppr', 'mj-etape-objet', 'mj-etape-image-suppr', 'mj-etape-xp', 'mj-etape-combat', 'img-zoom', 'bc-deposer', 'bc-prendre', 'bc-porteur', 'mj-argent', 'mj-vers-marche', 'marche-retirer', 'acheter', 'mj-onglet', 'mj-edit', 'mj-edit-fin', 'mj-xp-ajouter', 'mj-xp-fixer', 'mj-pnj-ajout', 'mj-pnj-suppr', 'mj-butin-ajout', 'mj-butin-suppr', 'mj-combat-ajout', 'mj-combat-suppr', 'mj-combat-activer', 'mj-init-pnj', 'mj-combat-go', 'mj-combat-fin', 'mj-cb-pv', 'mj-cb-mort', 'mj-obj-ajout', 'mj-obj-suppr', 'mj-donner', 'mj-pvj', 'mj-ration', 'mj-jour', 'mj-nouveau-perso', 'actualiser', 'pick-usage', 'lang-plus', 'mj-entrer', 'mj-sortir', 'mj-suivant', 'mj-pv', 'comp-reduit', 'replis-tout', 'new-perso', 'creer-perso', 'perso-en-ligne', 'revendiquer', 'export-perso', 'import', 'export-all', 'export-sorts', 'reset-sorts', 'code-verifier', 'code-oublier'];
   if (p && db.personnages.includes(p) && !peutModifier(p) && !libres.includes(a)) { toast('Lecture seule : ce personnage n\'est pas le tien'); return; }
 
   switch (a) {
@@ -8121,6 +8204,27 @@ document.addEventListener('click', ev => {
       p.actionsPerso.splice(idx, 1); state.editAction = null;
       if (estMJ() && enLigne() && !p.pnjMJ) { p.mjChamps = { ...(p.mjChamps || {}), actionsPerso: Date.now() }; p.mjMaj = Date.now(); }
       save(); render();
+      break;
+    case 'pierre-bascule': {
+      if (!estMJ() && enLigne()) break;
+      const l = pierres().map(x => ({ ...x })), x = l[Number(b.dataset.i)];
+      if (!confirm(x.active === false ? `Réparer la pierre de ${x.ecole} ? Ses sorts redeviennent utilisables.` : `Briser la pierre de ${x.ecole} ? Tous ses sorts deviennent inutilisables.`)) break;
+      x.active = x.active === false; enregistrerPierres(l); toast(x.active ? `Pierre de ${x.ecole} réparée` : `Pierre de ${x.ecole} brisée`);
+      break;
+    }
+    case 'pierre-ajout': {
+      if (!estMJ() && enLigne()) break;
+      enregistrerPierres([...pierres().map(x => ({ ...x })), { id: uid(), ecole: 'Universel', nom: '', couleur: '#888888', active: true }]);
+      break;
+    }
+    case 'pierre-suppr': {
+      if ((!estMJ() && enLigne()) || !confirm('Supprimer cette pierre de la liste ?')) break;
+      const l = pierres().map(x => ({ ...x })); l.splice(Number(b.dataset.i), 1); enregistrerPierres(l);
+      break;
+    }
+    case 'pierres-defaut':
+      if ((!estMJ() && enLigne()) || !confirm('Revenir aux neuf pierres d\'origine, toutes intactes ?')) break;
+      enregistrerPierres(PIERRES_DEFAUT.map(x => ({ ...x })));
       break;
     case 'replis-tout': {
       const ouvrir = b.dataset.ouvrir === '1';

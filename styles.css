@@ -1776,7 +1776,7 @@ details.lecture label.check:has(input[data-action]) { opacity: 1; }
 .sawu-effet p { margin: .15rem 0 0; font-size: .82rem; color: var(--muted); line-height: 1.45; }
 .sawu-effet .icon { padding: .05rem .35rem; font-size: .8rem; }
 @media (min-width: 1480px) {
-  .panneau-sawu { position: fixed; z-index: 8; top: 9.5rem; left: max(1rem, calc((100vw - 900px) / 2 - 360px)); width: min(340px, calc((100vw - 900px) / 2 - 2rem)); max-height: calc(100vh - 15rem); overflow-y: auto; margin: 0; }
+  .panneau-sawu { position: fixed; z-index: 8; top: 9.5rem; right: max(1rem, calc((100vw - 900px) / 2 - 360px)); width: min(340px, calc((100vw - 900px) / 2 - 2rem)); max-height: calc(100vh - 15rem); overflow-y: auto; margin: 0; }
 }
 
 /* ===== Notification d'un objet reçu ===== */
@@ -1855,3 +1855,33 @@ details.lecture label.check:has(input[data-action]) { opacity: 1; }
 .ligne-cap.cap-bras > summary { box-shadow: inset 3px 0 0 #8E7BD6; }
 .actions-perso { margin: .4rem 0 .6rem; }
 .action-perso-form { border: 1px dashed var(--line-bronze); border-radius: var(--radius-s); padding: .5rem .6rem; margin-bottom: .4rem; display: flex; flex-direction: column; gap: .35rem; }
+
+/* Bras : jet de Volonté en tête */
+.sawu-volonte { display: flex; justify-content: space-between; align-items: center; margin: .45rem 0 .2rem; padding: .35rem .6rem; border: 1px solid #8E7BD6; border-radius: var(--radius-s); background: rgba(142, 123, 214, .15); }
+.sawu-volonte span { font-size: .8rem; color: #CFC6F2; text-transform: uppercase; letter-spacing: .06em; }
+.sawu-volonte b { font-size: 1.35rem; color: #EDE8FF; }
+/* Récapitulatif à gauche de l'onglet Combat (grands écrans) */
+.panneau-stats { display: none; }
+@media (min-width: 1480px) {
+  .panneau-stats { display: block; position: fixed; z-index: 8; top: 9.5rem; left: max(1rem, calc((100vw - 900px) / 2 - 300px)); width: min(270px, calc((100vw - 900px) / 2 - 2rem)); max-height: calc(100vh - 15rem); overflow-y: auto;
+    padding: .6rem .7rem; border: 1px solid var(--line-bronze); border-radius: var(--radius-m); background: rgba(6, 19, 29, .92); }
+}
+.ps-titre { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--bronze); margin: .5rem 0 .25rem; }
+.ps-titre:first-child { margin-top: 0; }
+.ps-grille { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem; }
+.ps-case { display: flex; flex-direction: column; align-items: center; padding: .25rem .2rem; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--inset); }
+.ps-case span { font-size: .66rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.ps-case b { font-size: 1rem; color: var(--ivoire); }
+.ps-case b small { font-size: .72rem; color: var(--bronze-clair); font-weight: 600; }
+.ps-prot { font-size: .78rem; color: var(--muted); margin: 0; }
+/* Recherche : l'onglet de chaque résultat */
+.res-onglet { display: inline-block; font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; color: var(--nuit); background: var(--bronze); border-radius: 99px; padding: 0 .4rem; margin-right: .4rem; }
+/* Pierres de magie */
+.pierres { display: flex; flex-direction: column; gap: .35rem; margin: .4rem 0; }
+.pierre { display: grid; grid-template-columns: 2.4rem 9rem minmax(0, 1fr) auto auto; gap: .4rem; align-items: center; }
+.pierre input[type=color] { width: 2.4rem; height: 2rem; padding: 0; border: none; background: none; }
+.pierre.brisee { opacity: .6; }
+.pierre.brisee input[type=text] { text-decoration: line-through; }
+@media (max-width: 600px) { .pierre { grid-template-columns: 2.4rem minmax(0, 1fr) auto; } .pierre input[type=text] { grid-column: 1 / -1; grid-row: 2; } }
+.item.brise { opacity: .45; filter: grayscale(.7); }
+.tag-brise { margin-left: .4rem; font-size: .7rem; padding: 0 .4rem; border-radius: 99px; border: 1px solid var(--pc, #888); color: var(--ivoire); }
